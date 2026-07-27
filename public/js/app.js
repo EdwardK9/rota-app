@@ -152,7 +152,7 @@ const App = {
       leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
       notifications: '🔔 Notifications',
       'team-calendar': '🗓️ Team Calendar', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
-      'manage-people': '👤 Manage People',
+      'manage-people': '👤 Manage People', compare: '🔀 Compare Sources',
       'photo-library': '📷 Photo Library',
       'insights': '🔍 Insights',
       'whos-in': '🏪 Who\'s In Store',
@@ -188,6 +188,7 @@ const App = {
       case 'fatigue-audit': await FatigueAuditView.init(); break;
       case 'team-upload':    TeamUploadView.init(); break;
       case 'manage-people':  await ManagePeopleView.init(); break;
+      case 'compare':        await CompareView.init(); break;
       case 'photo-library':  PhotoLibrary.render(); break;
       case 'insights':       await InsightsView.init(); break;
       case 'whos-in':       await WhosInView.init(); break;

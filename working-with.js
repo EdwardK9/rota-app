@@ -2150,11 +2150,14 @@ router.get('/working-with/compare-sources', (req, res) => {
 
 // ─────────────────────────────────────────
 // Photo Library - filesystem storage
-// Photos saved to /app/data/photo-library/<folder-id>/<filename>
+// Photos saved under DATA_DIR/photo-library/<folder-id>/<filename> — uses the
+// same DATA_DIR convention as db.js rather than a hardcoded /app/data path, so
+// this still works if DATA_DIR is ever pointed elsewhere.
 
 const fs          = require('fs');
 const fsPath      = require('path');
-const PHOTO_BASE  = '/app/data/photo-library';
+const PHOTO_DATA_DIR = process.env.DATA_DIR || fsPath.join(__dirname, 'data');
+const PHOTO_BASE  = fsPath.join(PHOTO_DATA_DIR, 'photo-library');
 
 // Ensure base directory exists
 if (!fs.existsSync(PHOTO_BASE)) fs.mkdirSync(PHOTO_BASE, { recursive: true });
