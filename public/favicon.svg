@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Background rounded square -->
+  <rect width="32" height="32" rx="7" fill="#2d2b55"/>
+  <!-- Clipboard body -->
+  <rect x="8" y="10" width="16" height="17" rx="2" fill="#ffffff" opacity="0.15"/>
+  <rect x="8" y="10" width="16" height="17" rx="2" fill="none" stroke="#ffffff" stroke-width="1.5"/>
+  <!-- Clipboard clip at top -->
+  <rect x="12" y="7" width="8" height="5" rx="2" fill="#2d2b55" stroke="#ffffff" stroke-width="1.5"/>
+  <!-- Lines on clipboard -->
+  <line x1="11" y1="16" x2="21" y2="16" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="11" y1="19.5" x2="21" y2="19.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="11" y1="23" x2="17" y2="23" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+  <!-- Tick mark -->
+  <polyline points="18,22 20,24 24,20" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Screwfix Rota Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- PWA: installable to a phone home screen -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#1B2A4A" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Rota" />
+  <link rel="stylesheet" href="/css/style.css?v=20260711a" />
+</head>
+<body>
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">🔧</span>
+        <span class="logo-text">Rota Tracker</span>
+      </div>
+      <button class="sidebar-toggle" id="sidebarToggle">&#9776;</button>
+    </div>
+    <ul class="nav-links">
+      <li><a href="#" class="nav-link active" data-view="dashboard">
+        <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
+      </a></li>
+      <li><a href="#" class="nav-link" data-view="shifts">
+        <span class="nav-icon">📋</span><span class="nav-label">Shifts</span>
+      </a></li>
+      <li><a href="#" class="nav-link" data-view="settings">
+        <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
+      </a></li>
+      <li><a href="#" class="nav-link" data-view="people">
+        <span class="nav-icon">👥</span><span class="nav-label">People</span>
+      </a></li>
+      <li><a href="#" class="nav-link" data-view="whos-in">
+        <span class="nav-icon">🏪</span><span class="nav-label">Who's In</span>
+      </a></li>
+
+      <li class="nav-group" data-group="rota">
+        <button class="nav-group-header" type="button">
+          <span class="nav-icon">📅</span><span class="nav-label">My Rota</span>
+          <span class="nav-chevron">▸</span>
+        </button>
+        <ul class="nav-sublinks">
+          <li><a href="#" class="nav-link" data-view="calendar"><span class="nav-icon">📅</span><span class="nav-label">Calendar</span></a></li>
+          <li><a href="#" class="nav-link" data-view="clock"><span class="nav-icon">🕐</span><span class="nav-label">Clock In/Out</span></a></li>
+          <li><a href="#" class="nav-link" data-view="leave"><span class="nav-icon">🏖️</span><span class="nav-label">Leave</span></a></li>
+        </ul>
+      </li>
+
+      <li class="nav-group" data-group="pay">
+        <button class="nav-group-header" type="button">
+          <span class="nav-icon">💰</span><span class="nav-label">Pay &amp; Stats</span>
+          <span class="nav-chevron">▸</span>
+        </button>
+        <ul class="nav-sublinks">
+          <li><a href="#" class="nav-link" data-view="payslips"><span class="nav-icon">💰</span><span class="nav-label">Payslips</span></a></li>
+          <li><a href="#" class="nav-link" data-view="reports"><span class="nav-icon">📊</span><span class="nav-label">Reports</span></a></li>
+          <li><a href="#" class="nav-link" data-view="insights"><span class="nav-icon">🔍</span><span class="nav-label">Insights</span></a></li>
+          <li><a href="#" class="nav-link" data-view="leaderboard"><span class="nav-icon">🏆</span><span class="nav-label">Leaderboard</span></a></li>
+        </ul>
+      </li>
+
+      <li class="nav-group" data-group="team">
+        <button class="nav-group-header" type="button">
+          <span class="nav-icon">🗓️</span><span class="nav-label">Team</span>
+          <span class="nav-badge" id="ollamaQueueBadgeGroup" style="display:none"></span>
+          <span class="nav-chevron">▸</span>
+        </button>
+        <ul class="nav-sublinks">
+          <li><a href="#" class="nav-link" data-view="team-calendar"><span class="nav-icon">🗓️</span><span class="nav-label">Team Calendar</span></a></li>
+          <li><a href="#" class="nav-link" data-view="team-upload"><span class="nav-icon">📸</span><span class="nav-label">Team Upload</span><span class="nav-badge" id="ollamaQueueBadge" style="display:none"></span></a></li>
+          <li><a href="#" class="nav-link" data-view="manage-people"><span class="nav-icon">👤</span><span class="nav-label">Manage People</span></a></li>
+          <li><a href="#" class="nav-link" data-view="photo-library"><span class="nav-icon">📷</span><span class="nav-label">Photo Library</span></a></li>
+        </ul>
+      </li>
+
+      <li class="nav-group" data-group="tools">
+        <button class="nav-group-header" type="button">
+          <span class="nav-icon">🧰</span><span class="nav-label">Tools</span>
+          <span class="nav-chevron">▸</span>
+        </button>
+        <ul class="nav-sublinks">
+          <li><a href="#" class="nav-link" data-view="import"><span class="nav-icon">📥</span><span class="nav-label">Import</span></a></li>
+          <li><a href="#" class="nav-link" data-view="export"><span class="nav-icon">📤</span><span class="nav-label">Export</span></a></li>
+          <li><a href="#" class="nav-link" data-view="notes"><span class="nav-icon">📝</span><span class="nav-label">Notes</span></a></li>
+          <li><a href="#" class="nav-link" data-view="audit"><span class="nav-icon">📋</span><span class="nav-label">Audit Log</span></a></li>
+          <li><a href="#" class="nav-link" data-view="notifications"><span class="nav-icon">🔔</span><span class="nav-label">Notifications</span></a></li>
+          <li><a href="#" class="nav-link" data-view="key"><span class="nav-icon">🔑</span><span class="nav-label">Key</span></a></li>
+        </ul>
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <button class="dark-mode-toggle" id="darkModeToggle" title="Toggle dark mode">
+        <span class="dark-mode-icon">🌙</span>
+        <span class="nav-label">Dark Mode</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Sidebar backdrop (mobile) -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <!-- Main content -->
+  <main class="main-content" id="mainContent">
+    <!-- Top bar -->
+    <div class="topbar">
+      <button class="topbar-menu-btn" id="topbarMenuBtn">&#9776;</button>
+      <h1 class="topbar-title" id="topbarTitle">Shifts</h1>
+    </div>
+
+    <!-- Views -->
+    <div id="view-dashboard" class="view"></div>
+    <div id="view-shifts" class="view hidden"></div>
+    <div id="view-calendar" class="view hidden"></div>
+    <div id="view-payslips" class="view hidden"></div>
+    <div id="view-reports" class="view hidden"></div>
+    <div id="view-import" class="view hidden"></div>
+    <div id="view-leave" class="view hidden"></div>
+    <div id="view-export" class="view hidden"></div>
+    <div id="view-notes" class="view hidden"></div>
+    <div id="view-settings" class="view hidden"></div>
+    <div id="view-audit" class="view hidden"></div>
+    <div id="view-notifications" class="view hidden"></div>
+    <div id="view-leaderboard" class="view hidden"></div>
+    <div id="view-people" class="view hidden"></div>
+    <div id="view-team-calendar" class="view hidden"></div>
+    <div id="view-team-upload" class="view hidden"></div>
+      <div id="view-manage-people" class="view hidden"></div>
+      <div id="view-photo-library" class="view hidden"></div>
+      <div id="view-insights" class="view hidden"></div>
+      <div id="view-whos-in" class="view hidden"></div>
+      <div id="view-clock" class="view hidden"></div>
+      <div id="view-key" class="view hidden"></div>
+  </main>
+
+  <!-- Modal -->
+  <div class="modal-overlay hidden" id="modalOverlay">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">Modal</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- SheetJS (xlsx) is loaded lazily by utils.js's loadXlsxLib() only when the Import
+       view actually needs to read a .xlsx file — it's 700KB+ and was previously fetched
+       unconditionally on every page load, which was a big chunk of mobile load time. -->
+  <!-- defer lets the browser fetch all of these in parallel instead of one at a time
+       (no attribute = strictly sequential fetch+execute per file); execution still
+       happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
+  <script src="/js/api.js?v=20260714a" defer></script>
+  <script src="/js/utils.js?v=20260624d" defer></script>
+  <script src="/js/shifts.js?v=20260708a" defer></script>
+  <script src="/js/calendar.js?v=20260629a" defer></script>
+  <script src="/js/payslips.js?v=20260714a" defer></script>
+  <script src="/js/reports.js?v=20260714a" defer></script>
+  <script src="/js/import.js?v=20260714a" defer></script>
+  <script src="/js/leave.js?v=20260624d" defer></script>
+  <script src="/js/settings.js?v=20260714a" defer></script>
+  <script src="/js/export.js?v=20260708a" defer></script>
+  <script src="/js/notes.js?v=20260624d" defer></script>
+  <script src="/js/leaderboard.js?v=20260624d" defer></script>
+  <script src="/js/people.js?v=20260624d" defer></script>
+  <script src="/js/teamcalendar.js?v=20260713a" defer></script>
+  <script src="/js/teamupload.js?v=20260710a" defer></script>
+  <script src="/js/managePeople.js?v=20260624d" defer></script>
+  <script src="/js/photoLibrary.js?v=20260624d" defer></script>
+  <script src="/js/insights.js?v=20260711c" defer></script>
+  <script src="/js/whosin.js?v=20260714b" defer></script>
+  <script src="/js/audit.js?v=20260710a" defer></script>
+  <script src="/js/notifications.js?v=20260713a" defer></script>
+  <script src="/js/clockInOut.js?v=20260711a" defer></script>
+  <script src="/js/dashboard.js?v=20260714c" defer></script>
+  <script src="/js/key.js?v=20260711a" defer></script>
+  <script src="/js/app.js?v=20260708a" defer></script>
+  <script>
+    // PWA: register the (no-cache, passthrough) service worker so the app is installable
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
