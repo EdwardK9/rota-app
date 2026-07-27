@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rota" />
-  <link rel="stylesheet" href="/css/style.css?v=20260711a" />
+  <link rel="stylesheet" href="/css/style.css?v=20260727a" />
 </head>
 <body>
   <!-- Sidebar -->
@@ -74,6 +74,7 @@
         </button>
         <ul class="nav-sublinks">
           <li><a href="#" class="nav-link" data-view="team-calendar"><span class="nav-icon">🗓️</span><span class="nav-label">Team Calendar</span></a></li>
+          <li><a href="#" class="nav-link" data-view="synergy"><span class="nav-icon">🤝</span><span class="nav-label">Synergy Score</span></a></li>
           <li><a href="#" class="nav-link" data-view="team-upload"><span class="nav-icon">📸</span><span class="nav-label">Team Upload</span><span class="nav-badge" id="ollamaQueueBadge" style="display:none"></span></a></li>
           <li><a href="#" class="nav-link" data-view="manage-people"><span class="nav-icon">👤</span><span class="nav-label">Manage People</span></a></li>
           <li><a href="#" class="nav-link" data-view="photo-library"><span class="nav-icon">📷</span><span class="nav-label">Photo Library</span></a></li>
@@ -130,6 +131,7 @@
     <div id="view-leaderboard" class="view hidden"></div>
     <div id="view-people" class="view hidden"></div>
     <div id="view-team-calendar" class="view hidden"></div>
+    <div id="view-synergy" class="view hidden"></div>
     <div id="view-team-upload" class="view hidden"></div>
       <div id="view-manage-people" class="view hidden"></div>
       <div id="view-photo-library" class="view hidden"></div>
@@ -159,7 +161,7 @@
   <!-- defer lets the browser fetch all of these in parallel instead of one at a time
        (no attribute = strictly sequential fetch+execute per file); execution still
        happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
-  <script src="/js/api.js?v=20260714a" defer></script>
+  <script src="/js/api.js?v=20260727a" defer></script>
   <script src="/js/utils.js?v=20260624d" defer></script>
   <script src="/js/shifts.js?v=20260708a" defer></script>
   <script src="/js/calendar.js?v=20260629a" defer></script>
@@ -167,23 +169,24 @@
   <script src="/js/reports.js?v=20260714a" defer></script>
   <script src="/js/import.js?v=20260714a" defer></script>
   <script src="/js/leave.js?v=20260624d" defer></script>
-  <script src="/js/settings.js?v=20260714a" defer></script>
+  <script src="/js/settings.js?v=20260727a" defer></script>
   <script src="/js/export.js?v=20260708a" defer></script>
   <script src="/js/notes.js?v=20260624d" defer></script>
   <script src="/js/leaderboard.js?v=20260624d" defer></script>
   <script src="/js/people.js?v=20260624d" defer></script>
   <script src="/js/teamcalendar.js?v=20260713a" defer></script>
+  <script src="/js/synergyScore.js?v=20260727a" defer></script>
   <script src="/js/teamupload.js?v=20260710a" defer></script>
-  <script src="/js/managePeople.js?v=20260624d" defer></script>
+  <script src="/js/managePeople.js?v=20260727a" defer></script>
   <script src="/js/photoLibrary.js?v=20260624d" defer></script>
   <script src="/js/insights.js?v=20260711c" defer></script>
   <script src="/js/whosin.js?v=20260714b" defer></script>
   <script src="/js/audit.js?v=20260710a" defer></script>
   <script src="/js/notifications.js?v=20260713a" defer></script>
   <script src="/js/clockInOut.js?v=20260711a" defer></script>
-  <script src="/js/dashboard.js?v=20260714c" defer></script>
+  <script src="/js/dashboard.js?v=20260727a" defer></script>
   <script src="/js/key.js?v=20260711a" defer></script>
-  <script src="/js/app.js?v=20260708a" defer></script>
+  <script src="/js/app.js?v=20260727a" defer></script>
   <script>
     // PWA: register the (no-cache, passthrough) service worker so the app is installable
     if ('serviceWorker' in navigator) {

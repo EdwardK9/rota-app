@@ -176,11 +176,12 @@ const DashboardView = {
 
   async renderHero(shift, clockToday) {
     // Fetch colleagues working the same shift (clock state passed in from render)
-    let colleagues = [];
+    let colleagues = [], weather = null;
     if (clockToday === undefined) clockToday = this._clockToday || null;
-    try {
-      colleagues = await API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`);
-    } catch (_) {}
+    [colleagues, weather] = await Promise.all([
+      API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []),
+      API.getCommuteWeather(shift.date, shift.start_time, shift.end_time).catch(() => null),
+    ]);
 
     const el = document.getElementById('dash-hero');
     const isToday  = shift.date === _fmtDateDash(new Date());
@@ -240,6 +241,8 @@ const DashboardView = {
           ${shift.is_bank_holiday ? `<span class="dash-meta-pill dash-meta-bh">🏦 Bank Holiday</span>` : ''}
         </div>
 
+        ${this._renderWeatherBadges(weather)}
+
         ${(() => {
           const ce = clockToday?.entry || null;
           const live = !!(ce && ce.clocked_in && !ce.clocked_out);
@@ -277,6 +280,25 @@ const DashboardView = {
 
     const colleaguesEl = el.querySelector('.dash-colleagues-clickable');
     if (colleaguesEl) colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+  },
+
+  // Commute weather badges (V2.0 Phase 2.1) — shown on the hero card when a
+  // home postcode is configured in Settings and the shift is within the
+  // forecast horizon (~15 days).
+  _renderWeatherBadges(weather) {
+    if (!weather || !weather.available) return '';
+    const leg = (icon, label, point) => {
+      if (!point) return '';
+      const alertsHtml = point.alerts && point.alerts.length
+        ? point.alerts.map(a => ` <span class="dash-weather-alert">${a.icon} ${a.text}</span>`).join('')
+        : '';
+      return `<div class="dash-weather-row">
+        <span>${icon} ${label} (${point.time}): ${Math.round(point.temp)}°C ${point.icon}</span>${alertsHtml}
+      </div>`;
+    };
+    const rows = leg('🚗', 'Commute To', weather.commute_to) + leg('🚶', 'Commute Home', weather.commute_home);
+    if (!rows) return '';
+    return `<div class="dash-weather-box">${rows}</div>`;
   },
 
   _thr(dir, kind) {

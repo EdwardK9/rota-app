@@ -60,6 +60,33 @@ const SettingsView = {
           </div>
         </div>
 
+        <!-- Commute & Weather (V2.0 Phase 2.1) -->
+        <div class="settings-section">
+          <div class="card">
+            <div class="card-header"><h2>🌦️ Commute &amp; Weather</h2></div>
+            <div class="card-body">
+              <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+                Set your home and work postcodes to get frost/rain alerts for your commute on the Dashboard.
+                Weather is only available for shifts within the next ~15 days.
+              </p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Home postcode</label>
+                  <input type="text" id="setHomePostcode" placeholder="e.g. SW1A 1AA" style="text-transform:uppercase" />
+                  <div class="form-hint" id="setHomePostcodeStatus"></div>
+                </div>
+                <div class="form-group">
+                  <label>Work postcode</label>
+                  <input type="text" id="setWorkPostcode" placeholder="e.g. EC1A 1BB" style="text-transform:uppercase" />
+                  <div class="form-hint" id="setWorkPostcodeStatus"></div>
+                </div>
+              </div>
+              <button class="btn btn-primary" id="saveCommuteBtn">Save</button>
+              <span id="commuteSaveStatus" style="font-size:13px;color:var(--text-muted);margin-left:10px"></span>
+            </div>
+          </div>
+        </div>
+
         <!-- Clock In/Out Thresholds -->
         <div class="settings-section">
           <div class="card">
@@ -348,6 +375,7 @@ const SettingsView = {
     `;
 
     document.getElementById('saveGeneralBtn').addEventListener('click', () => this.saveGeneral());
+    document.getElementById('saveCommuteBtn').addEventListener('click', () => this.saveCommute());
     document.getElementById('addPayRateBtn').addEventListener('click', () => this.openAddRateModal());
 
     // Backup
@@ -402,6 +430,7 @@ const SettingsView = {
     }
     try {
       this.populateGeneral();
+      this.populateCommute();
       this.populateClockThresholds();
       this.renderPayRates();
       this.renderMilestones();
@@ -816,6 +845,64 @@ const SettingsView = {
     if (jsdEl) jsdEl.value = this.settings.job_start_date || '';
     const dobEl = document.getElementById('setUserDob');
     if (dobEl) dobEl.value = this.settings.user_dob || '';
+  },
+
+  populateCommute() {
+    const homeEl = document.getElementById('setHomePostcode');
+    const workEl = document.getElementById('setWorkPostcode');
+    if (homeEl) homeEl.value = this.settings.commute_home_postcode || '';
+    if (workEl) workEl.value = this.settings.commute_work_postcode || '';
+    const statusFor = (postcode, lat) => postcode
+      ? (lat ? '✓ Location saved' : '⚠ Not resolved yet — click Save')
+      : '';
+    const homeStatus = document.getElementById('setHomePostcodeStatus');
+    if (homeStatus) homeStatus.textContent = statusFor(this.settings.commute_home_postcode, this.settings.commute_home_lat);
+    const workStatus = document.getElementById('setWorkPostcodeStatus');
+    if (workStatus) workStatus.textContent = statusFor(this.settings.commute_work_postcode, this.settings.commute_work_lat);
+  },
+
+  async saveCommute() {
+    const homePostcode = document.getElementById('setHomePostcode').value.trim();
+    const workPostcode = document.getElementById('setWorkPostcode').value.trim();
+    const status = document.getElementById('commuteSaveStatus');
+    const homeStatusEl = document.getElementById('setHomePostcodeStatus');
+    const workStatusEl = document.getElementById('setWorkPostcodeStatus');
+    status.textContent = 'Saving…';
+
+    const data = { commute_home_postcode: homePostcode, commute_work_postcode: workPostcode };
+
+    // Only re-geocode a postcode if it's changed (or has no saved coordinates yet) —
+    // avoids hammering postcodes.io on every save if nothing moved.
+    const needsGeocode = (postcode, savedPostcode, savedLat) =>
+      postcode && (postcode.toUpperCase() !== (savedPostcode || '').toUpperCase() || !savedLat);
+
+    try {
+      if (needsGeocode(homePostcode, this.settings.commute_home_postcode, this.settings.commute_home_lat)) {
+        if (homeStatusEl) homeStatusEl.textContent = 'Looking up…';
+        const { lat, lon } = await API.geocodePostcode(homePostcode);
+        data.commute_home_lat = lat; data.commute_home_lon = lon;
+      } else if (!homePostcode) {
+        data.commute_home_lat = ''; data.commute_home_lon = '';
+      }
+      if (needsGeocode(workPostcode, this.settings.commute_work_postcode, this.settings.commute_work_lat)) {
+        if (workStatusEl) workStatusEl.textContent = 'Looking up…';
+        const { lat, lon } = await API.geocodePostcode(workPostcode);
+        data.commute_work_lat = lat; data.commute_work_lon = lon;
+      } else if (!workPostcode) {
+        data.commute_work_lat = ''; data.commute_work_lon = '';
+      }
+
+      await API.saveSettings(data);
+      this.settings = await API.getSettings();
+      if (window.App) App.settings = this.settings;
+      this.populateCommute();
+      status.textContent = '✓ Saved';
+      showToast('Commute settings saved', 'success');
+    } catch (e) {
+      status.textContent = '';
+      showToast('Could not resolve postcode: ' + e.message, 'error');
+      this.populateCommute();
+    }
   },
 
   populateClockThresholds() {

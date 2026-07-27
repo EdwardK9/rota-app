@@ -8,6 +8,7 @@ const http    = require('http');
 const zlib    = require('zlib');
 const { db, getPayRateForDate, calcHoursWorked } = require('./db');
 const workingWithRouter = require('./working-with');
+const commuteRouter = require('./commute');
 const gcal = require('./google-calendar');
 
 const app = express();
@@ -29,6 +30,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
   },
 }));
 app.use('/api', workingWithRouter);
+app.use('/api', commuteRouter);
 
 // ─────────────────────────────────────────
 // SHIFTS

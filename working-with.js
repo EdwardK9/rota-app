@@ -1381,6 +1381,100 @@ router.get('/working-with/next/:colleagueId', (req, res) => {
 });
 
 // ─────────────────────────────────────────
+// V2.0 Phase 2.2 — Shift Quality & Synergy Score
+// ─────────────────────────────────────────
+
+/** Bucket a 0-100 synergy score into a human label, matching the spec's
+ *  "88% (Dream Team)" style summary. */
+function synergyLabel(score) {
+  if (score == null) return null;
+  if (score >= 85) return 'Dream Team';
+  if (score >= 65) return 'Great Crew';
+  if (score >= 45) return 'Balanced';
+  if (score >= 25) return 'Tough Shift';
+  return 'Rough Shift';
+}
+
+router.get('/working-with/synergy-score/:date', (req, res) => {
+  const date = req.params.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+
+  // Your own shift that day (first one, if there happen to be more than one — e.g. a split shift)
+  const myShift = db.prepare('SELECT * FROM shifts WHERE date = ? ORDER BY start_time ASC').get(date);
+
+  // Full colleague roster for the day (working shifts only — annual leave doesn't count
+  // towards coverage or synergy). Joined with pay-profile/synergy fields from Phase 1.
+  const dayShifts = db.prepare(`
+    SELECT cs.*, c.name, c.tags, c.synergy_rating, c.notes
+    FROM colleague_shifts cs
+    JOIN colleagues c ON c.id = cs.colleague_id
+    WHERE cs.date = ? AND cs.shift_type != 'leave'
+    ORDER BY cs.start_time ASC
+  `).all(date);
+
+  const decorated = dayShifts.map(s => {
+    let tags = [];
+    try { tags = s.tags ? JSON.parse(s.tags) : []; } catch (_) { tags = []; }
+    return { ...s, tags };
+  });
+
+  let team = [];
+  let synergyScore = null;
+
+  if (myShift) {
+    const toMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    let myDurationMins = toMins(myShift.end_time) - toMins(myShift.start_time);
+    if (myDurationMins <= 0) myDurationMins += 24 * 60; // overnight shift
+
+    team = decorated.map(s => {
+      // "all_day" entries (whole-day work, not a specific window) count as fully overlapping
+      const overlapMins = s.shift_type === 'all_day'
+        ? myDurationMins
+        : overlapMinutes(myShift.start_time, myShift.end_time, s.start_time, s.end_time);
+      const overlapPct = myDurationMins > 0 ? Math.round((overlapMins / myDurationMins) * 100) : 0;
+      return {
+        colleague_id: s.colleague_id, name: s.name, tags: s.tags,
+        synergy_rating: s.synergy_rating ?? 0, notes: s.notes,
+        start_time: s.start_time, end_time: s.end_time,
+        overlap_minutes: overlapMins, overlap_pct: overlapPct,
+        counted: overlapPct >= 50,
+      };
+    });
+
+    const counted = team.filter(t => t.counted);
+    if (counted.length > 0) {
+      const sum = counted.reduce((t, c) => t + (c.synergy_rating || 0), 0);
+      synergyScore = Math.round(50 + (sum / (counted.length * 2)) * 50);
+      synergyScore = Math.max(0, Math.min(100, synergyScore));
+    }
+  }
+
+  // Team highlights — simple heuristics over the full day's roster (not just the
+  // >=50%-overlap group, since store-wide coverage gaps matter regardless of overlap).
+  const highlights = [];
+  const efficientCount = decorated.filter(s => s.tags.some(t => /fast|efficient|quick/i.test(t))).length;
+  if (efficientCount >= 2) {
+    highlights.push({ type: 'positive', text: `High-Efficiency Crew: ${efficientCount} fast/efficient colleagues scheduled today.` });
+  }
+  const hasKeyholder = decorated.some(s => s.tags.some(t => /keyholder/i.test(t)));
+  if (decorated.length > 0 && !hasKeyholder) {
+    highlights.push({ type: 'warning', text: 'No keyholder tagged among today\'s scheduled team — check store cover.' });
+  }
+  if (decorated.length === 0) {
+    highlights.push({ type: 'warning', text: 'No colleague shifts recorded for this day yet — import the rota to see the roster.' });
+  }
+
+  res.json({
+    date,
+    your_shift: myShift ? { start_time: myShift.start_time, end_time: myShift.end_time } : null,
+    synergy_score: synergyScore,
+    rating_label: synergyLabel(synergyScore),
+    team,
+    highlights,
+  });
+});
+
+// ─────────────────────────────────────────
 // Team Week View — everyone's shifts for a Mon–Sun week
 // ─────────────────────────────────────────
 
