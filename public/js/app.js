@@ -149,7 +149,7 @@ const App = {
       dashboard: '🏠 Dashboard', shifts: 'Shifts', calendar: 'Calendar', payslips: 'Payslips',
       reports: 'Reports', import: 'Import Data', leave: 'Leave Tracker',
       notes: 'Notes', settings: 'Settings',
-      leaderboard: '🏆 Leaderboard', people: '👥 People', audit: '📋 Audit Log',
+      leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
       notifications: '🔔 Notifications',
       'team-calendar': '🗓️ Team Calendar', 'synergy': '🤝 Synergy Score', 'team-upload': '📸 Team Upload',
       'manage-people': '👤 Manage People',
@@ -179,6 +179,7 @@ const App = {
       case 'notes':         await NotesView.init(); break;
       case 'settings':      await SettingsView.init(); break;
       case 'leaderboard':   await LeaderboardView.init(); break;
+      case 'team-metrics':  await TeamMetricsView.init(); break;
       case 'audit':         await AuditView.init(); break;
       case 'notifications':  await NotificationsView.init(); break;
       case 'people':        await PeopleView.init(); break;

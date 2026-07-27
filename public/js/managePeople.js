@@ -88,7 +88,15 @@ const ManagePeopleView = {
               <option value="salaried">Salaried</option>
             </select>
           </div>
-          <div></div>
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Job tier</label>
+            <select id="mpEditJobTier" class="form-control">
+              <option value="floor_staff">Floor Staff</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="management">Management</option>
+            </select>
+            <div class="form-hint">Used to group the Team Metrics pay distribution chart.</div>
+          </div>
           <div id="mpEditHourlyRateWrap">
             <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Hourly rate (£)</label>
             <input id="mpEditHourlyRate" class="form-control" type="number" min="0" step="0.01" placeholder="e.g. 12.50" />
@@ -273,6 +281,7 @@ const ManagePeopleView = {
     document.getElementById('mpEditLeftDate').value  = c.left_date || '';
 
     document.getElementById('mpEditPayType').value      = c.pay_type || 'hourly';
+    document.getElementById('mpEditJobTier').value      = c.job_tier || 'floor_staff';
     document.getElementById('mpEditHourlyRate').value   = c.hourly_rate ?? '';
     document.getElementById('mpEditSalary').value       = c.annual_salary ?? '';
     document.getElementById('mpEditNominalHours').value = c.nominal_weekly_hours ?? '';
@@ -294,6 +303,7 @@ const ManagePeopleView = {
     const left_date    = document.getElementById('mpEditLeftDate').value || null;
 
     const pay_type = document.getElementById('mpEditPayType').value;
+    const job_tier = document.getElementById('mpEditJobTier').value;
     const hourly_rate = pay_type === 'hourly'
       ? (parseFloat(document.getElementById('mpEditHourlyRate').value) || null) : null;
     const annual_salary = pay_type === 'salaried'
@@ -310,7 +320,7 @@ const ManagePeopleView = {
       await API.updateColleague(id, {
         name, birthday, contract_hours, start_date, left_date,
         pay_type, hourly_rate, annual_salary, nominal_weekly_hours,
-        tags, synergy_rating, notes,
+        tags, synergy_rating, notes, job_tier,
       });
       document.getElementById('mpEditPanel').style.display = 'none';
       await this.load();

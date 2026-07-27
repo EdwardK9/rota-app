@@ -258,6 +258,12 @@ synergyMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* already exists */ }
 });
 
+// -----------------------------------------
+// V2.0 Phase 3 -- Job tier, for the Pay Distribution donut chart
+// One of 'management' | 'supervisor' | 'floor_staff' (default).
+// -----------------------------------------
+try { db.exec("ALTER TABLE colleagues ADD COLUMN job_tier TEXT DEFAULT 'floor_staff'"); } catch (_) { /* already exists */ }
+
 // Migrations -- add new shift / payslip columns (safe to re-run)
 const shiftMigrations = [
   'ALTER TABLE shifts ADD COLUMN is_bank_holiday INTEGER DEFAULT 0',

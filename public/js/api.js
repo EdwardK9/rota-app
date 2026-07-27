@@ -59,6 +59,9 @@ const API = {
   // Synergy score (V2.0 Phase 2.2)
   getSynergyScore:    (date) => API.get(`/api/working-with/synergy-score/${date}`),
 
+  // Team Pay & Analytics (V2.0 Phase 3)
+  getTeamMetrics:     (week) => API.get(`/api/team-metrics?${new URLSearchParams({ week })}`),
+
   bulkCompleteShifts: (ids, completed = true, breakOverride) =>
     API.patch('/api/shifts/bulk-complete', { ids, completed, ...breakOverride }),
 

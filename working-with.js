@@ -291,7 +291,7 @@ router.put('/colleagues/:id', (req, res) => {
   const {
     name, birthday, contract_hours, sort_order, left_date, start_date,
     pay_type, hourly_rate, annual_salary, nominal_weekly_hours,
-    tags, synergy_rating, notes,
+    tags, synergy_rating, notes, job_tier,
   } = req.body;
   const existing = db.prepare('SELECT * FROM colleagues WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -305,12 +305,16 @@ router.put('/colleagues/:id', (req, res) => {
   if (resolvedSynergy !== null && resolvedSynergy !== undefined && (resolvedSynergy < -2 || resolvedSynergy > 2)) {
     return res.status(400).json({ error: 'synergy_rating must be between -2 and 2' });
   }
+  const resolvedJobTier = job_tier !== undefined ? job_tier : (existing.job_tier || 'floor_staff');
+  if (resolvedJobTier && !['management', 'supervisor', 'floor_staff'].includes(resolvedJobTier)) {
+    return res.status(400).json({ error: "job_tier must be 'management', 'supervisor' or 'floor_staff'" });
+  }
 
   db.prepare(`
     UPDATE colleagues SET
       name = ?, birthday = ?, contract_hours = ?, sort_order = ?, left_date = ?, start_date = ?,
       pay_type = ?, hourly_rate = ?, annual_salary = ?, nominal_weekly_hours = ?,
-      tags = ?, synergy_rating = ?, notes = ?
+      tags = ?, synergy_rating = ?, notes = ?, job_tier = ?
     WHERE id = ?
   `).run(
     name ?? existing.name,
@@ -326,6 +330,7 @@ router.put('/colleagues/:id', (req, res) => {
     tags !== undefined ? JSON.stringify(Array.isArray(tags) ? tags : []) : existing.tags,
     resolvedSynergy,
     notes !== undefined ? notes : existing.notes,
+    resolvedJobTier,
     req.params.id
   );
   res.json(decorateColleague(db.prepare('SELECT * FROM colleagues WHERE id = ?').get(req.params.id)));
