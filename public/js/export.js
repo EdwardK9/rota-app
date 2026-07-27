@@ -99,6 +99,39 @@ const ExportView = {
         <button class="btn btn-primary" id="exportBtn" style="min-width:160px;">
           📤 Export ICS
         </button>
+
+        <!-- V2.0 Phase 6: Data Exports -->
+        <div class="card" style="margin-top:28px;padding:16px 20px">
+          <h3 style="margin-bottom:6px;font-size:15px">📊 Team Analytics CSV</h3>
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
+            Flat CSV of every colleague shift in a date range — date, name, times, hours, hourly rate,
+            shift cost, and any fatigue flags. Good for an Excel pivot table.
+          </p>
+          <div class="form-row">
+            <div class="form-group">
+              <label>From</label>
+              <input type="date" id="csvFrom" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label>To</label>
+              <input type="date" id="csvTo" class="form-control" />
+            </div>
+          </div>
+          <button class="btn btn-primary" id="csvDownloadBtn">⬇️ Download CSV</button>
+        </div>
+
+        <div class="card" style="margin-top:16px;padding:16px 20px">
+          <h3 style="margin-bottom:6px;font-size:15px">🗒️ Daily Shift Brief PDF</h3>
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
+            Single-page printable summary for one day: hourly headcount, shift schedule, keyholders and weather.
+          </p>
+          <div class="form-group" style="max-width:200px;margin-bottom:12px">
+            <label>Date</label>
+            <input type="date" id="pdfDate" class="form-control" />
+          </div>
+          <button class="btn btn-primary" id="pdfDownloadBtn">⬇️ Download PDF</button>
+          <span id="pdfStatus" style="font-size:13px;color:var(--text-muted);margin-left:10px"></span>
+        </div>
       </div>
     `;
   },
@@ -129,6 +162,52 @@ const ExportView = {
 
     document.getElementById('exportBtn').addEventListener('click', () => this._doExport());
     this._updateSummary();
+
+    // V2.0 Phase 6 — Data Exports
+    const today = new Date();
+    const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
+    const fmtD = d => d.toISOString().slice(0, 10);
+    document.getElementById('csvFrom').value = fmtD(weekAgo);
+    document.getElementById('csvTo').value = fmtD(today);
+    document.getElementById('pdfDate').value = fmtD(today);
+
+    document.getElementById('csvDownloadBtn').addEventListener('click', () => this._downloadCsv());
+    document.getElementById('pdfDownloadBtn').addEventListener('click', () => this._downloadPdf());
+  },
+
+  _downloadCsv() {
+    const from = document.getElementById('csvFrom').value;
+    const to = document.getElementById('csvTo').value;
+    if (!from || !to) { showToast('Pick both dates first', 'warning'); return; }
+    if (from > to) { showToast('"From" must be before "To"', 'warning'); return; }
+    window.location.href = `/api/v1/export/team-analytics.csv?${new URLSearchParams({ from, to })}`;
+  },
+
+  async _downloadPdf() {
+    const date = document.getElementById('pdfDate').value;
+    if (!date) { showToast('Pick a date first', 'warning'); return; }
+    const status = document.getElementById('pdfStatus');
+    status.textContent = 'Generating…';
+    try {
+      const resp = await fetch(`/api/v1/export/daily-brief.pdf?${new URLSearchParams({ date })}`);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => null);
+        throw new Error(err?.error || `Server returned ${resp.status}`);
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `daily-brief_${date}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      status.textContent = '';
+    } catch (e) {
+      status.textContent = '';
+      showToast('PDF export failed: ' + e.message, 'error');
+    }
   },
 
   _updatePickerVisibility() {

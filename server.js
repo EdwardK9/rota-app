@@ -12,6 +12,7 @@ const commuteRouter = require('./commute');
 const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
 const webhooksRouter = require('./webhooks');
+const exportsV2Router = require('./exportsV2');
 const gcal = require('./google-calendar');
 
 const app = express();
@@ -37,6 +38,7 @@ app.use('/api', commuteRouter);
 app.use('/api', teamMetricsRouter);
 app.use('/api', fatigueAuditRouter);
 app.use('/api', webhooksRouter);
+app.use('/api', exportsV2Router);
 
 // ─────────────────────────────────────────
 // SHIFTS

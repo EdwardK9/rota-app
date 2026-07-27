@@ -146,4 +146,88 @@ router.get('/fatigue-audit', (req, res) => {
   res.json({ week: { from: mondayStr, to: sundayStr }, colleagues: results });
 });
 
+/** Reusable flag lookup for an arbitrary date range, used by the Phase 6 CSV
+ *  export (kept independent of the /fatigue-audit route above so that route's
+ *  already-verified single-week behaviour isn't touched by this).
+ *  Returns { [colleague_id]: { name, flagsByDate: { [date]: string[] } } } */
+function computeFlagsForRange(fromDate, toDate) {
+  const windowFrom = addDays(fromDate, -7);
+  const windowTo = addDays(toDate, 1);
+  const hoursPerDay = parseFloat(getSetting('hours_per_day', '7.4')) || 7.4;
+
+  const colleagues = db.prepare('SELECT * FROM colleagues').all();
+  const allShifts = db.prepare(`
+    SELECT * FROM colleague_shifts WHERE date >= ? AND date <= ? AND shift_type != 'leave' ORDER BY date ASC, start_time ASC
+  `).all(windowFrom, windowTo);
+
+  const result = {};
+  for (const c of colleagues) {
+    const shifts = allShifts.filter(s => s.colleague_id === c.id);
+    const byDate = new Map();
+    for (const s of shifts) { if (!byDate.has(s.date)) byDate.set(s.date, []); byDate.get(s.date).push(s); }
+    const workDates = [...byDate.keys()].sort();
+    const flagsByDate = {};
+    const addFlag = (date, text) => {
+      if (date < fromDate || date > toDate) return;
+      (flagsByDate[date] || (flagsByDate[date] = [])).push(text);
+    };
+
+    // Clopening
+    for (const d of workDates) {
+      const next = addDays(d, 1);
+      if (!byDate.has(next)) continue;
+      const todays = byDate.get(d).filter(s => s.shift_type === 'shift');
+      const nextDays = byDate.get(next).filter(s => s.shift_type === 'shift');
+      if (!todays.length || !nextDays.length) continue;
+      const lastEnd = todays.reduce((l, s) => toMins(s.end_time) > toMins(l.end_time) ? s : l);
+      const firstStart = nextDays.reduce((e, s) => toMins(s.start_time) < toMins(e.start_time) ? s : e);
+      const restMins = (24 * 60 - toMins(lastEnd.end_time)) + toMins(firstStart.start_time);
+      const restHours = Math.round((restMins / 60) * 10) / 10;
+      if (restHours < MIN_REST_HOURS) addFlag(next, `Clopening (${restHours}h rest)`);
+    }
+
+    // Consecutive-day streaks
+    let streakStart = null, prevDate = null;
+    const flushStreak = (endDate) => {
+      if (streakStart == null) return;
+      const len = (new Date(endDate + 'T00:00:00') - new Date(streakStart + 'T00:00:00')) / 86400000 + 1;
+      if (len >= MIN_STREAK_DAYS) {
+        let d = streakStart;
+        while (d <= endDate) { addFlag(d, `${len}-day streak`); d = addDays(d, 1); }
+      }
+    };
+    for (const d of workDates) {
+      if (prevDate && addDays(prevDate, 1) === d) { /* streak continues */ }
+      else { flushStreak(prevDate); streakStart = d; }
+      prevDate = d;
+    }
+    flushStreak(prevDate);
+
+    // Overtime — evaluated per Mon-Sun week overlapping the requested range
+    if (c.pay_type !== 'salaried' && c.contract_hours) {
+      const weeks = new Set();
+      for (const d of workDates) {
+        const anchor = new Date(d + 'T00:00:00');
+        const wdow = (anchor.getDay() + 6) % 7;
+        const wmon = new Date(anchor); wmon.setDate(anchor.getDate() - wdow);
+        weeks.add(fmt(wmon));
+      }
+      for (const monday of weeks) {
+        const sunday = addDays(monday, 6);
+        const weekHours = allShifts
+          .filter(s => s.colleague_id === c.id && s.date >= monday && s.date <= sunday)
+          .reduce((t, s) => t + shiftHours(s, hoursPerDay), 0);
+        if (weekHours > c.contract_hours) {
+          const label = `Overtime (${Math.round(weekHours * 100) / 100}h/${c.contract_hours}h)`;
+          for (const d of workDates) { if (d >= monday && d <= sunday) addFlag(d, label); }
+        }
+      }
+    }
+
+    result[c.id] = { name: c.name, flagsByDate };
+  }
+  return result;
+}
+
 module.exports = router;
+module.exports.computeFlagsForRange = computeFlagsForRange;
