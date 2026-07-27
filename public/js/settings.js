@@ -358,6 +358,58 @@ const SettingsView = {
           </div>
         </div>
 
+<!-- Smart Home Webhooks (V2.0 Phase 5) -->
+
+        <div class="settings-section">
+          <div class="card">
+            <div class="card-header"><h2>🏠 Smart Home Webhooks</h2></div>
+            <div class="card-body">
+              <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+                Posts JSON events to a Home Assistant / Node-RED webhook URL: <code>commute_prep</code> a
+                configurable lead time before your shift starts (with a one-word weather summary from your
+                commute settings), and <code>shift_ended</code> right after you clock out. There's also a
+                polling endpoint at <code>/api/v1/shifts/current-state</code> for pull-based automations.
+              </p>
+
+              <div class="form-group" style="margin-bottom:12px">
+                <label>Webhook URL</label>
+                <input type="text" id="whUrl" placeholder="https://homeassistant.local:8123/api/webhook/xxxxxxxx" />
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Lead time (minutes before shift start)</label>
+                  <input type="number" id="whLeadMins" min="5" max="240" placeholder="60" />
+                </div>
+                <div class="form-group">
+                  <label>Your role <span style="font-weight:400;color:var(--text-muted)">(for the polling endpoint)</span></label>
+                  <input type="text" id="whRole" placeholder="e.g. Floor Supervisor" />
+                </div>
+              </div>
+
+              <label style="display:flex;align-items:center;gap:8px;margin:8px 0 16px;cursor:pointer">
+                <input type="checkbox" id="whEnabled" /> Enabled
+              </label>
+
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-primary" id="whSaveBtn">Save</button>
+                <button class="btn btn-secondary" id="whTestBtn">Send test event</button>
+                <span id="whActionStatus" style="font-size:13px;color:var(--text-muted)"></span>
+              </div>
+
+              <div style="margin-top:18px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                  <strong style="font-size:13px">Recent activity</strong>
+                  <button class="btn btn-ghost btn-sm" id="whLogRefresh" title="Refresh">&#8635;</button>
+                </div>
+                <div id="whLog" style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+                  <p style="padding:12px;color:var(--text-muted);font-size:13px;margin:0">No activity yet.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
 <!-- About -->
 
         <div class="settings-section">
@@ -415,6 +467,11 @@ const SettingsView = {
     document.getElementById('rgTestBtn')?.addEventListener('click', () => this.testRotageek());
     document.getElementById('setRgDisconnectBtn')?.addEventListener('click', () => this.disconnectRotageek());
 
+    // Smart Home Webhooks
+    document.getElementById('whSaveBtn')?.addEventListener('click', () => this.saveWebhook());
+    document.getElementById('whTestBtn')?.addEventListener('click', () => this.testWebhook());
+    document.getElementById('whLogRefresh')?.addEventListener('click', () => this.renderWebhookLog());
+
   },
 
   async load() {
@@ -443,6 +500,8 @@ const SettingsView = {
     this.renderGoogleCalendar();
     this.renderRotageekStatus();
     this.renderDbBackups();
+    this.populateWebhook();
+    this.renderWebhookLog();
     // Show a toast if we just came back from the Google OAuth flow
     const qp = new URLSearchParams(location.search);
     if (qp.get('gcal') === 'connected') { this._toast('Google Calendar connected', 'success'); this._clearGcalQuery(); }
@@ -553,6 +612,77 @@ const SettingsView = {
       this.renderRotageekStatus();
     } catch (e) {
       this._toast('Failed: ' + e.message, 'error');
+    }
+  },
+
+  // ── Smart Home Webhooks (V2.0 Phase 5) ──────────────────────────────────────
+
+  async populateWebhook() {
+    try {
+      const cfg = await API.getWebhookConfig();
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      setVal('whUrl', cfg.url || '');
+      setVal('whLeadMins', cfg.lead_mins || 60);
+      setVal('whRole', cfg.employee_role || '');
+      const en = document.getElementById('whEnabled'); if (en) en.checked = !!cfg.enabled;
+    } catch (_) { /* leave defaults */ }
+  },
+
+  async saveWebhook() {
+    const status = document.getElementById('whActionStatus');
+    const data = {
+      url: document.getElementById('whUrl').value.trim(),
+      enabled: document.getElementById('whEnabled').checked,
+      lead_mins: parseInt(document.getElementById('whLeadMins').value, 10) || 60,
+      employee_role: document.getElementById('whRole').value.trim(),
+    };
+    try {
+      await API.saveWebhookConfig(data);
+      if (status) status.textContent = '';
+      showToast('Webhook settings saved', 'success');
+    } catch (e) {
+      showToast('Save failed: ' + e.message, 'error');
+    }
+  },
+
+  async testWebhook() {
+    const status = document.getElementById('whActionStatus');
+    if (status) status.textContent = 'Sending…';
+    try {
+      await this.saveWebhook.call(this); // make sure the URL just typed is saved before testing
+      await API.testWebhook();
+      if (status) status.textContent = '✓ Test event sent';
+      showToast('Test webhook sent', 'success');
+      this.renderWebhookLog();
+    } catch (e) {
+      if (status) status.textContent = '';
+      showToast('Test failed: ' + e.message, 'error');
+      this.renderWebhookLog();
+    }
+  },
+
+  async renderWebhookLog() {
+    const el = document.getElementById('whLog');
+    if (!el) return;
+    try {
+      const { rows } = await API.getWebhookLog();
+      if (!rows.length) {
+        el.innerHTML = '<p style="padding:12px;color:var(--text-muted);font-size:13px;margin:0">No activity yet.</p>';
+        return;
+      }
+      el.innerHTML = `
+        <table class="data-table" style="width:100%;font-size:12px">
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td style="white-space:nowrap;color:var(--text-muted)">${new Date(r.created_at + 'Z').toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+                <td>${r.event}</td>
+                <td style="color:${r.success ? 'var(--success,#10b981)' : 'var(--danger)'}">${r.success ? '✓ sent' : '✗ ' + esc(r.error || 'failed')}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    } catch (_) {
+      el.innerHTML = '<p style="padding:12px;color:var(--text-muted);font-size:13px;margin:0">Log unavailable.</p>';
     }
   },
 

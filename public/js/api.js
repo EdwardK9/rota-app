@@ -65,6 +65,12 @@ const API = {
   // Clopening & Fatigue Audit (V2.0 Phase 4.1)
   getFatigueAudit:    (week) => API.get(`/api/fatigue-audit?${new URLSearchParams({ week })}`),
 
+  // Homelab & Smart Home Webhooks (V2.0 Phase 5)
+  getWebhookConfig:   ()     => API.get('/api/webhooks/config'),
+  saveWebhookConfig:  (data) => API.post('/api/webhooks/config', data),
+  testWebhook:        ()     => API.post('/api/webhooks/test', {}),
+  getWebhookLog:      ()     => API.get('/api/webhooks/log'),
+
   bulkCompleteShifts: (ids, completed = true, breakOverride) =>
     API.patch('/api/shifts/bulk-complete', { ids, completed, ...breakOverride }),
 

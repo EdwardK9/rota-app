@@ -11,6 +11,7 @@ const workingWithRouter = require('./working-with');
 const commuteRouter = require('./commute');
 const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
+const webhooksRouter = require('./webhooks');
 const gcal = require('./google-calendar');
 
 const app = express();
@@ -35,6 +36,7 @@ app.use('/api', workingWithRouter);
 app.use('/api', commuteRouter);
 app.use('/api', teamMetricsRouter);
 app.use('/api', fatigueAuditRouter);
+app.use('/api', webhooksRouter);
 
 // ─────────────────────────────────────────
 // SHIFTS
@@ -3914,6 +3916,7 @@ startJsonReminderSync();
 startBirthdayReminderSync();
 startArrivalReminderSync();
 startDbBackupSync();
+webhooksRouter.startWebhookScheduler();
 
 // -----------------------------------------
 // CLOCK IN / OUT
@@ -3980,6 +3983,7 @@ app.post('/api/clock/out', (req, res) => {
       clocked_out = excluded.clocked_out,
       note = COALESCE(excluded.note, note)
   `).run(date, time, note);
+  webhooksRouter.fireShiftEndedWebhook({ end_time: time }).catch(() => {});
   res.json(db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(date));
 });
 

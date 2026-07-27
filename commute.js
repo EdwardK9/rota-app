@@ -147,4 +147,13 @@ router.get('/commute/weather', async (req, res) => {
   }
 });
 
+// Exported alongside the router so other modules (e.g. webhooks.js, for the
+// commute-prep payload's weather field) can reuse the same forecast logic
+// without duplicating it.
 module.exports = router;
+module.exports.router = router;
+module.exports.fetchHourlyForecast = fetchHourlyForecast;
+module.exports.nearestHourKey = nearestHourKey;
+module.exports.weatherLabel = weatherLabel;
+module.exports.buildAlerts = buildAlerts;
+module.exports.getSetting = getSetting;
