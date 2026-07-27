@@ -62,6 +62,9 @@ const API = {
   // Team Pay & Analytics (V2.0 Phase 3)
   getTeamMetrics:     (week) => API.get(`/api/team-metrics?${new URLSearchParams({ week })}`),
 
+  // Clopening & Fatigue Audit (V2.0 Phase 4.1)
+  getFatigueAudit:    (week) => API.get(`/api/fatigue-audit?${new URLSearchParams({ week })}`),
+
   bulkCompleteShifts: (ids, completed = true, breakOverride) =>
     API.patch('/api/shifts/bulk-complete', { ids, completed, ...breakOverride }),
 
