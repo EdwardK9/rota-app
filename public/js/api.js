@@ -148,6 +148,14 @@ const API = {
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   },
 
+  // Payslips — Gemini AI photo import (returns field data matching the payslip form, no DB writes)
+  extractPayslipPhoto: (file) => {
+    const fd = new FormData();
+    fd.append('photo', file);
+    return fetch('/api/payslips/import-photo', { method: 'POST', body: fd })
+      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
+  },
+
   // Working-with — Ollama: list installed models
   getOllamaModels: (source) => API.get(`/api/colleagues/ollama-models?source=${source || 'server'}`),
 

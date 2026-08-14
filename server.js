@@ -8,6 +8,7 @@ const http    = require('http');
 const zlib    = require('zlib');
 const { db, getPayRateForDate, calcHoursWorked } = require('./db');
 const workingWithRouter = require('./working-with');
+const { callGeminiVision } = workingWithRouter;
 const commuteRouter = require('./commute');
 const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
@@ -496,6 +497,76 @@ app.post('/api/payslips', (req, res) => {
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Payslip for this month already exists' });
     throw e;
+  }
+});
+
+// Read a photo of a payslip with Gemini and return figures matching the payslip form
+// fields exactly — no DB write. The frontend opens the Add/Edit Payslip modal
+// pre-filled with this so you can review before saving, same pattern as the team
+// schedule screenshot import.
+const PAYSLIP_PROMPT = `You are reading a UK payslip (Screwfix format) from a photo. Extract the following figures exactly as printed — never estimate or guess a figure that isn't visible.
+
+Return ONLY valid JSON, no markdown, no explanation, matching this exact shape (use 0 for any money/hours figure that isn't present on the payslip, use null for text fields that aren't present):
+
+{
+  "month": "YYYY-MM",
+  "payment_date": "YYYY-MM-DD",
+  "basic_pay": 0,
+  "arrears_pay": 0,
+  "additional_hours_qty": 0,
+  "additional_hours_pay": 0,
+  "addt_hours_prev_qty": 0,
+  "addt_hours_prev_amount": 0,
+  "annual_leave_adj_curr": 0,
+  "annual_leave_adj_prev": 0,
+  "bank_hol_curr_qty": 0,
+  "bank_hol_curr_amount": 0,
+  "bank_hol_prev_qty": 0,
+  "bank_hol_prev_amount": 0,
+  "company_sick_pay": 0,
+  "company_sick_pay_is_prev": 0,
+  "sip_contribution": 0,
+  "other_payments": 0,
+  "other_pay_description": null,
+  "total_gross": 0,
+  "total_deductions": 0,
+  "net_payment": 0,
+  "tax_paid": 0,
+  "ni_employee": 0,
+  "ni_employer": 0,
+  "sharesave_amount": 0,
+  "sharesave_description": null,
+  "gross_ytd": 0,
+  "taxable_ytd": 0,
+  "tax_ytd": 0,
+  "ni_able_ytd": 0
+}
+
+FIELD NOTES:
+- "month" is the pay period the payslip covers (YYYY-MM), not the payment date.
+- basic_pay / additional_hours_qty / additional_hours_pay / bank_hol_curr_* / annual_leave_adj_curr are for THIS pay period.
+- arrears_pay / addt_hours_prev_* / annual_leave_adj_prev / bank_hol_prev_* are corrections for a PREVIOUS pay period shown on this payslip — payslips often show these as a separate line, sometimes negative.
+- sip_contribution (Share Incentive Plan) and sharesave_amount are usually deductions — enter as negative if shown that way on the payslip.
+- other_payments / other_pay_description is for any one-off line that doesn't fit the above (e.g. SSP, bonus).
+- ni_employer is only present on some payslip formats — use 0 if not shown.
+
+RULES:
+1. Use exact figures as printed — never round, rephrase, or infer a number that isn't shown.
+2. If a line item isn't present on the payslip at all, use 0 (numbers) or null (text) — do not guess.
+3. Return ONLY the JSON — no surrounding text.`;
+
+const payslipPhotoUpload = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+app.post('/api/payslips/import-photo', payslipPhotoUpload.single('photo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  try {
+    const { parsed, rawText } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png', PAYSLIP_PROMPT);
+    if (!parsed) {
+      return res.status(502).json({ error: 'Gemini returned unexpected output — could not parse JSON', rawText: (rawText || '').slice(0, 3000) });
+    }
+    res.json({ data: parsed });
+  } catch (err) {
+    console.error('Payslip photo import error:', err);
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -4183,6 +4254,64 @@ app.get('/api/clock/analytics', (req, res) => {
       totalExtraMins: extraBeforeTotal + extraAfterTotal,
     },
   });
+});
+
+// -----------------------------------------
+// NFC / QUICK-TAP CLOCK IN-OUT
+// -----------------------------------------
+// A plain GET page (not /api/...) designed to be written to an NFC tag — tapping
+// your phone on the tag opens this URL directly with no app needed. Each tap
+// toggles: not clocked in today -> clock in, clocked in -> clock out, already both
+// set today -> updates the clock-out time (same as "Re-clock Out" in the app).
+// Protected by a token from Settings, since this is an unauthenticated GET with a
+// side effect and phones will happily open it in the background.
+function nfcTapPage(title, body, color = '#2e9e5b') {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1420;color:#e8ecf4;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
+  .card{max-width:340px}
+  h1{font-size:22px;margin:0 0 10px;color:${color}}
+  p{color:#9aa4b8;font-size:14px;line-height:1.5}
+  a{color:#5b9dff}
+</style></head>
+<body><div class="card"><h1>${title}</h1><p>${body}</p><p><a href="/">Open Rota App</a></p></div></body></html>`;
+}
+
+app.get('/clock-tap', (req, res) => {
+  const tokenRow = db.prepare("SELECT value FROM settings WHERE key = 'nfc_clock_token'").get();
+  const configuredToken = tokenRow && tokenRow.value && tokenRow.value.trim();
+  if (!configuredToken) {
+    return res.send(nfcTapPage('Not set up yet', 'No NFC clock-in token is configured. Set one up in Settings → NFC Clock In/Out first.', '#e5a13c'));
+  }
+  if (!req.query.token || req.query.token !== configuredToken) {
+    return res.status(403).send(nfcTapPage('Not authorised', "This link's token doesn't match what's configured in Settings.", '#e5573c'));
+  }
+
+  const today = localDateStr();
+  const time  = localTimeStr();
+  const entry = db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(today);
+
+  let title, body;
+  if (!entry || !entry.clocked_in) {
+    db.prepare(`
+      INSERT INTO clock_entries (date, clocked_in) VALUES (?, ?)
+      ON CONFLICT(date) DO UPDATE SET clocked_in = excluded.clocked_in
+    `).run(today, time);
+    title = '✅ Clocked in';
+    body  = `Recorded at ${time}.`;
+  } else if (!entry.clocked_out) {
+    db.prepare('UPDATE clock_entries SET clocked_out = ? WHERE date = ?').run(time, today);
+    webhooksRouter.fireShiftEndedWebhook({ end_time: time }).catch(() => {});
+    title = '👋 Clocked out';
+    body  = `Recorded at ${time}. Open the app to log your break if you took one.`;
+  } else {
+    db.prepare('UPDATE clock_entries SET clocked_out = ? WHERE date = ?').run(time, today);
+    title = '🔁 Clock-out updated';
+    body  = `Updated to ${time}.`;
+  }
+  res.send(nfcTapPage(title, body));
 });
 
 // -----------------------------------------

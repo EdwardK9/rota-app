@@ -126,6 +126,33 @@ const SettingsView = {
           </div>
         </div>
 
+        <!-- NFC / Quick-Tap Clock In/Out -->
+        <div class="settings-section">
+          <div class="card">
+            <div class="card-header"><h2>🏷️ NFC Clock In/Out</h2></div>
+            <div class="card-body">
+              <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+                Write this URL to an NFC tag (a free app like "NFC Tools" on Android/iOS can do
+                it) and stick it somewhere handy — tapping your phone on it clocks you in, tap
+                again to clock out, no need to open the app. Works as a home-screen bookmark too
+                if you'd rather skip the physical tag.
+              </p>
+              <div id="nfcStatus" style="margin-bottom:12px;font-size:14px"></div>
+              <div class="form-row" style="align-items:flex-end">
+                <div class="form-group" style="flex:1;min-width:260px">
+                  <label>Tag URL</label>
+                  <input type="text" id="nfcTagUrl" readonly style="font-family:monospace;font-size:12px" />
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-secondary" id="nfcCopyBtn">📋 Copy URL</button>
+                <button class="btn btn-ghost" id="nfcGenerateBtn">🔄 Generate new token</button>
+                <span id="nfcActionStatus" style="font-size:13px;color:var(--text-muted)"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Delivery Schedules -->
         <div class="settings-section">
           <div class="card">
@@ -483,6 +510,10 @@ const SettingsView = {
     document.getElementById('recalcShiftsBtn').addEventListener('click', () => this.recalcShifts());
     document.getElementById('saveClockThresholdsBtn').addEventListener('click', () => this.saveClockThresholds());
 
+    // NFC Clock In/Out
+    document.getElementById('nfcGenerateBtn')?.addEventListener('click', () => this.generateNfcToken());
+    document.getElementById('nfcCopyBtn')?.addEventListener('click', () => this.copyNfcUrl());
+
     // Google Calendar
     document.getElementById('gcalRedirect')?.addEventListener('input', () => this._checkRedirect());
     document.getElementById('gcalSaveBtn')?.addEventListener('click', () => this.saveGoogleConfig());
@@ -540,6 +571,7 @@ const SettingsView = {
     this.renderGoogleCalendar();
     this.renderRotageekStatus();
     this.populateGemini();
+    this.populateNfc();
     this.renderDbBackups();
     this.populateWebhook();
     this.renderWebhookLog();
@@ -1280,6 +1312,48 @@ const SettingsView = {
       this.settings = await API.getSettings();
       showToast('Clock thresholds saved', 'success');
     } catch(e) { showToast(e.message, 'error'); }
+  },
+
+  populateNfc() {
+    const token  = this.settings.nfc_clock_token;
+    const status = document.getElementById('nfcStatus');
+    const urlEl  = document.getElementById('nfcTagUrl');
+    if (!status || !urlEl) return;
+    if (token) {
+      status.innerHTML = '<span style="color:var(--success,#2e9e5b)">● Token configured</span>';
+      urlEl.value = `${window.location.origin}/clock-tap?token=${token}`;
+    } else {
+      status.innerHTML = '<span style="color:var(--text-muted)">○ No token yet — click "Generate new token"</span>';
+      urlEl.value = '';
+    }
+  },
+
+  async generateNfcToken() {
+    if (this.settings.nfc_clock_token &&
+        !confirm('This invalidates any tag already written with the current URL — you\'ll need to rewrite it. Continue?')) return;
+    const token = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36))
+      .replace(/-/g, '');
+    const status = document.getElementById('nfcActionStatus');
+    try {
+      await API.saveSettings({ nfc_clock_token: token });
+      this.settings = await API.getSettings();
+      if (window.App) App.settings = this.settings;
+      this.populateNfc();
+      status.textContent = '✓ Saved';
+      showToast('New NFC token generated — update your tag with the new URL', 'success');
+    } catch (e) {
+      showToast('Failed to save: ' + e.message, 'error');
+    }
+  },
+
+  copyNfcUrl() {
+    const urlEl  = document.getElementById('nfcTagUrl');
+    const status = document.getElementById('nfcActionStatus');
+    if (!urlEl.value) { showToast('Generate a token first', 'error'); return; }
+    navigator.clipboard.writeText(urlEl.value).then(() => {
+      status.textContent = '✓ Copied';
+      showToast('URL copied', 'success');
+    });
   },
 
   populateGemini() {

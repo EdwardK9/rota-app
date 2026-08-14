@@ -22,7 +22,9 @@ const PayslipsView = {
             ${getYears().map(y => `<option value="${y}" ${y == this.currentYear ? 'selected':''}>${y}</option>`).join('')}
           </select>
         </div>
-        <div class="toolbar-right">
+        <div class="toolbar-right" style="display:flex;gap:8px">
+          <button class="btn btn-ghost" id="importPayslipPhotoBtn" title="Read a payslip photo with AI and pre-fill the form">📷 Import from Photo</button>
+          <input type="file" id="payslipPhotoInput" accept="image/*" style="display:none" />
           <button class="btn btn-primary" id="addPayslipBtn">+ Add Payslip</button>
         </div>
       </div>
@@ -66,6 +68,36 @@ const PayslipsView = {
     });
 
     document.getElementById('addPayslipBtn').addEventListener('click', () => this.openAddModal());
+
+    document.getElementById('importPayslipPhotoBtn').addEventListener('click', () =>
+      document.getElementById('payslipPhotoInput').click());
+    document.getElementById('payslipPhotoInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) this._importPayslipPhoto(file);
+      e.target.value = '';
+    });
+  },
+
+  // Read a payslip photo with Gemini, then open the Add/Edit modal pre-filled with
+  // whatever it found — figures are never saved automatically, always reviewed first.
+  async _importPayslipPhoto(file) {
+    showToast('Reading payslip with Gemini…', 'info');
+    try {
+      const result = await API.extractPayslipPhoto(file);
+      const data = result.data || {};
+      const month = data.month || getCurrentMonth();
+      const existing = this.payslips.find(p => p.month === month);
+      if (existing) {
+        Modal.open('Edit Payslip (from photo — review before saving)', this.payslipFormHtml({ ...existing, ...data }));
+        this.wirePayslipForm(existing.id);
+      } else {
+        Modal.open('Add Payslip (from photo — review before saving)', this.payslipFormHtml(data));
+        this.wirePayslipForm(null);
+      }
+      showToast('Payslip read — check the figures before saving', 'success');
+    } catch (e) {
+      showToast('Failed to read payslip: ' + e.message, 'error');
+    }
   },
 
   async load() {

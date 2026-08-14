@@ -950,11 +950,11 @@ router.post('/colleagues/import-screenshot', upload.single('screenshot'), async 
 // Gemini AI Screenshot import
 // ─────────────────────────────────────────
 
-// Shared by both routes below: the direct-insert route and the extract-only route
-// that feeds the manual JSON-import preview UI. Throws (with .status) for a missing
-// key or a hard API error; returns parsed:null (with rawText) if Gemini's response
-// wasn't valid JSON, so callers can decide how to surface that softly.
-async function callGeminiVision(imageBuffer, mimeType) {
+// Shared by any route that needs an image read by Gemini (team-schedule screenshots
+// here, and the payslip-photo import in server.js). Throws (with .status) for a
+// missing key or a hard API error; returns parsed:null (with rawText) if Gemini's
+// response wasn't valid JSON, so callers can decide how to surface that softly.
+async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
   const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
   const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
   const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
@@ -972,7 +972,7 @@ async function callGeminiVision(imageBuffer, mimeType) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: OLLAMA_PROMPT }, { inlineData: { mimeType, data: imageB64 } }] }],
+        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageB64 } }] }],
         generationConfig: { temperature: 0 }
       })
     }
@@ -2330,3 +2330,4 @@ router.post('/photo-library/queue-job', (req, res) => {
 });
 
 module.exports = router;
+module.exports.callGeminiVision = callGeminiVision;
