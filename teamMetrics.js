@@ -72,16 +72,21 @@ router.get('/team-metrics', (req, res) => {
   for (const row of rows) {
     const rate = effectiveHourlyRate(row);
     const durationHrs = shiftDurationHours(row, hoursPerDay);
-    if (rate == null) { missingPayProfile.add(row.name); continue; }
+    const hasRate = rate != null;
+    if (!hasRate) missingPayProfile.add(row.name);
 
-    const cost = Math.round(durationHrs * rate * 100) / 100;
-    totalStoreSpend += cost;
-    totalStoreHours += durationHrs;
-    dailySpend[row.date] = Math.round((dailySpend[row.date] + cost) * 100) / 100;
-    const tier = TIER_LABELS[row.job_tier] ? row.job_tier : 'floor_staff';
-    tierSpend[tier] += cost;
+    if (hasRate) {
+      const cost = Math.round(durationHrs * rate * 100) / 100;
+      totalStoreSpend += cost;
+      totalStoreHours += durationHrs;
+      dailySpend[row.date] = Math.round((dailySpend[row.date] + cost) * 100) / 100;
+      const tier = TIER_LABELS[row.job_tier] ? row.job_tier : 'floor_staff';
+      tierSpend[tier] += cost;
+    }
 
-    // Heatmap contribution: which hour buckets does this shift cover?
+    // Heatmap contribution: which hour buckets does this shift cover? Headcount
+    // reflects everyone actually on the floor regardless of pay-profile status —
+    // only the cost side of the heatmap is limited to colleagues with a known rate.
     const coveredHours = row.shift_type === 'all_day'
       ? HOURS
       : HOURS.filter(h => {
@@ -93,7 +98,7 @@ router.get('/team-metrics', (req, res) => {
     coveredHours.forEach(h => {
       const cell = heatmap[row.date][h];
       cell.headcount += 1;
-      cell.cost = Math.round((cell.cost + rate) * 100) / 100;
+      if (hasRate) cell.cost = Math.round((cell.cost + rate) * 100) / 100;
     });
   }
   totalStoreSpend = Math.round(totalStoreSpend * 100) / 100;
@@ -130,7 +135,7 @@ router.get('/team-metrics', (req, res) => {
     pay_distribution: payDistribution,
     heatmap: heatmapArr,
     warnings: missingPayProfile.size
-      ? [`${missingPayProfile.size} colleague(s) missing a pay profile — their shifts aren't counted: ${[...missingPayProfile].join(', ')}`]
+      ? [`${missingPayProfile.size} colleague(s) missing a pay profile — their shifts count towards heatmap headcount but not towards spend/cost totals: ${[...missingPayProfile].join(', ')}`]
       : [],
   });
 });

@@ -5,7 +5,7 @@ ENV TZ=Europe/London
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --production
-COPY server.js db.js working-with.js ./
+COPY *.js ./
 COPY public/ ./public/
 RUN mkdir -p /app/data
 EXPOSE 3000
