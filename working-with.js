@@ -950,6 +950,69 @@ router.post('/colleagues/import-screenshot', upload.single('screenshot'), async 
 // Gemini AI Screenshot import
 // ─────────────────────────────────────────
 
+// Shared by both routes below: the direct-insert route and the extract-only route
+// that feeds the manual JSON-import preview UI. Throws (with .status) for a missing
+// key or a hard API error; returns parsed:null (with rawText) if Gemini's response
+// wasn't valid JSON, so callers can decide how to surface that softly.
+async function callGeminiVision(imageBuffer, mimeType) {
+  const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
+  const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
+  const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
+  const model    = (modelRow && modelRow.value && modelRow.value.trim()) || 'gemini-2.0-flash';
+  if (!apiKey) {
+    const err = new Error('No Gemini API key configured. Add one in Settings → AI Screenshot Import.');
+    err.status = 400;
+    throw err;
+  }
+
+  const imageB64 = imageBuffer.toString('base64');
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: OLLAMA_PROMPT }, { inlineData: { mimeType, data: imageB64 } }] }],
+        generationConfig: { temperature: 0 }
+      })
+    }
+  );
+
+  if (!geminiRes.ok) {
+    const errBody = await geminiRes.json().catch(() => ({}));
+    const err = new Error(errBody?.error?.message || `Gemini API error ${geminiRes.status}`);
+    err.status = 502;
+    throw err;
+  }
+
+  const geminiData = await geminiRes.json();
+  const rawText    = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  // Strip markdown code fences if Gemini wrapped the JSON
+  const jsonStr = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  let parsed = null;
+  try { parsed = JSON.parse(jsonStr); } catch (_) { /* leave parsed null — caller handles */ }
+  return { parsed, rawText };
+}
+
+// Read a screenshot with Gemini and return the raw { date_range, schedule } JSON —
+// no DB writes. Lets the Team Upload UI run an AI-read screenshot through the exact
+// same preview/conflict-resolution flow as a manually pasted JSON.
+router.post('/colleagues/gemini-extract', upload.single('screenshot'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  try {
+    const { parsed, rawText } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
+    if (!parsed) {
+      return res.status(502).json({ error: 'Gemini returned unexpected output — could not parse JSON', rawText: rawText.slice(0, 3000) });
+    }
+    res.json({ data: parsed });
+  } catch (err) {
+    console.error('Gemini extract error:', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -959,46 +1022,9 @@ router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'),
     .filter(c => !c.start_date || c.start_date <= today);
   if (colleagues.length === 0) return res.status(400).json({ error: 'Add colleagues first before importing' });
 
-  // Fetch API key + model from settings
-  const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
-  const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
-  const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
-  const model    = (modelRow && modelRow.value && modelRow.value.trim()) || 'gemini-2.0-flash';
-  if (!apiKey) return res.status(400).json({ error: 'No Gemini API key configured. Add one in Settings → Integrations.' });
-
   try {
-    const mimeType = req.file.mimetype || 'image/png';
-    const imageB64 = req.file.buffer.toString('base64');
-
-    const prompt = OLLAMA_PROMPT;
-
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageB64 } }] }],
-          generationConfig: { temperature: 0 }
-        })
-      }
-    );
-
-    if (!geminiRes.ok) {
-      const errBody = await geminiRes.json().catch(() => ({}));
-      const msg = errBody?.error?.message || `Gemini API error ${geminiRes.status}`;
-      return res.status(502).json({ error: msg });
-    }
-
-    const geminiData = await geminiRes.json();
-    const rawText    = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-    // Strip markdown code fences if Gemini wrapped the JSON
-    const jsonStr = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-
-    let parsed;
-    try { parsed = JSON.parse(jsonStr); }
-    catch(_) {
+    const { parsed, rawText } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
+    if (!parsed) {
       return res.json({ inserted: 0, skipped: 0,
         message: 'Gemini returned unexpected output — could not parse JSON',
         rawJson: rawText.slice(0, 3000) });
@@ -1043,7 +1069,7 @@ router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'),
     res.json({ inserted, skipped: duplicates.length, conflicts, total: shifts.length, shifts: toInsert, rawJson: JSON.stringify(normParsed).slice(0, 3000) });
   } catch(err) {
     console.error('Gemini import error:', err);
-    res.status(500).json({ error: 'Gemini import failed: ' + err.message });
+    res.status(err.status || 500).json({ error: err.status ? err.message : ('Gemini import failed: ' + err.message) });
   }
 });
 

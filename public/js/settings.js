@@ -358,6 +358,43 @@ const SettingsView = {
           </div>
         </div>
 
+<!-- AI Screenshot Import (Gemini) -->
+
+        <div class="settings-section">
+          <div class="card">
+            <div class="card-header"><h2>🤖 AI Screenshot Import</h2></div>
+            <div class="card-body">
+              <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+                Powers the "Auto Import (AI)" tab on the Team Upload page — drop a team schedule
+                screenshot there and it's read automatically instead of you pasting it into an AI
+                chat yourself. Uses Google Gemini's free API.
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get a free API key</a>.
+              </p>
+
+              <div class="form-row" style="align-items:flex-end">
+                <div class="form-group" style="max-width:420px">
+                  <label>Gemini API key</label>
+                  <input type="password" id="setGeminiKey" placeholder="Paste your API key" autocomplete="off" />
+                  <div class="form-hint">Stored on your server only — never sent anywhere except Google's Gemini API.</div>
+                </div>
+                <div class="form-group" style="max-width:220px">
+                  <label>Model</label>
+                  <select id="setGeminiModel">
+                    <option value="gemini-2.0-flash">gemini-2.0-flash (default)</option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-primary" id="saveGeminiKeyBtn">Save</button>
+                <span id="geminiKeySavedStatus" style="font-size:13px;color:var(--text-muted)"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
 <!-- Smart Home Webhooks (V2.0 Phase 5) -->
 
         <div class="settings-section">
@@ -462,6 +499,9 @@ const SettingsView = {
       if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
     });
 
+    // AI Screenshot Import (Gemini)
+    document.getElementById('saveGeminiKeyBtn')?.addEventListener('click', () => this.saveGeminiKey());
+
     // Rotageek API
     document.getElementById('rgSaveBtn')?.addEventListener('click', () => this.saveRotageek());
     document.getElementById('rgTestBtn')?.addEventListener('click', () => this.testRotageek());
@@ -499,6 +539,7 @@ const SettingsView = {
 
     this.renderGoogleCalendar();
     this.renderRotageekStatus();
+    this.populateGemini();
     this.renderDbBackups();
     this.populateWebhook();
     this.renderWebhookLog();
@@ -1239,6 +1280,13 @@ const SettingsView = {
       this.settings = await API.getSettings();
       showToast('Clock thresholds saved', 'success');
     } catch(e) { showToast(e.message, 'error'); }
+  },
+
+  populateGemini() {
+    const modelEl = document.getElementById('setGeminiModel');
+    if (modelEl && this.settings.gemini_model) modelEl.value = this.settings.gemini_model;
+    const keyEl = document.getElementById('setGeminiKey');
+    if (keyEl && this.settings.gemini_api_key) keyEl.placeholder = '••••••••••••••••••• (saved)';
   },
 
   async saveGeminiKey() {

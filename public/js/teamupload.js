@@ -11,6 +11,7 @@ const TeamUploadView = {
     this.render();
     this._wireTabs();
     this._initJsonPanel();
+    this._initAutoAiPanel();
   },
 
   render() {
@@ -20,7 +21,10 @@ const TeamUploadView = {
         <div class="card-header" style="padding-bottom:0">
           <h2 style="margin-bottom:12px">Team Rota Import</h2>
           <div class="import-tabs">
-            <button class="import-tab active" data-mode="prompt" id="tabPrompt">
+            <button class="import-tab active" data-mode="auto-ai" id="tabAutoAi">
+              \u{1F916} Auto Import (AI)
+            </button>
+            <button class="import-tab" data-mode="prompt" id="tabPrompt">
               \u{1F4DD} Get Prompt
             </button>
             <button class="import-tab" data-mode="json-import" id="tabJsonImport">
@@ -31,8 +35,26 @@ const TeamUploadView = {
 
         <div class="card-body">
 
+          <!-- AUTO IMPORT (AI) PANEL -->
+          <div id="panelAutoAi">
+            <p style="color:var(--text-muted);font-size:13.5px;margin-bottom:16px">
+              Drop a team schedule screenshot below and it's read automatically with Gemini —
+              no need to paste it into an AI chat yourself. Needs a Gemini API key set in
+              <a href="#" onclick="App.navigate('settings');return false" style="color:var(--primary-text)">Settings → AI Screenshot Import</a>.
+            </p>
+
+            <div class="drop-zone" id="tuAutoDropZone" style="margin-bottom:14px">
+              <div class="drop-zone-icon">\u{1F4F7}</div>
+              <div class="drop-zone-text">Drop a screenshot here</div>
+              <div class="drop-zone-hint">or click to browse &nbsp;\u{00B7}&nbsp; one image at a time</div>
+              <input type="file" id="tuAutoFileInput" accept="image/*" style="display:none" />
+            </div>
+
+            <div id="tuAutoStatus" style="font-size:13px;color:var(--text-muted);min-height:18px"></div>
+          </div>
+
           <!-- PROMPT PANEL -->
-          <div id="panelPrompt">
+          <div id="panelPrompt" style="display:none">
             <p style="color:var(--text-muted);font-size:13.5px;margin-bottom:16px">
               Take a screenshot of the Rotageek team schedule, then paste it into
               <strong>Claude</strong> or <strong>ChatGPT</strong> along with the prompt below.
@@ -154,6 +176,7 @@ RULES — follow exactly:
     document.querySelectorAll('.import-tab[data-mode]').forEach(btn =>
       btn.classList.toggle('active', btn.dataset.mode === mode)
     );
+    document.getElementById('panelAutoAi').style.display     = mode === 'auto-ai'     ? 'block' : 'none';
     document.getElementById('panelPrompt').style.display     = mode === 'prompt'      ? 'block' : 'none';
     document.getElementById('panelJsonImport').style.display = mode === 'json-import' ? 'block' : 'none';
   },
@@ -186,6 +209,49 @@ RULES — follow exactly:
 
     previewBtn.addEventListener('click', () => this._previewAllJson());
     importBtn.addEventListener('click', () => this._importJson());
+  },
+
+  _initAutoAiPanel() {
+    if (document.getElementById('tuAutoDropZone').__wired) return;
+    document.getElementById('tuAutoDropZone').__wired = true;
+
+    const dropZone  = document.getElementById('tuAutoDropZone');
+    const fileInput = document.getElementById('tuAutoFileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = 'var(--primary)'; });
+    dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.style.borderColor = '';
+      const file = e.dataTransfer.files?.[0];
+      if (file) this._autoImportScreenshot(file);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) this._autoImportScreenshot(fileInput.files[0]);
+      fileInput.value = '';
+    });
+  },
+
+  async _autoImportScreenshot(file) {
+    const status = document.getElementById('tuAutoStatus');
+    status.style.color = 'var(--text-muted)';
+    status.textContent = 'Reading screenshot with Gemini…';
+    try {
+      const result = await API.extractScreenshotGemini(file);
+      status.textContent = '✓ Read successfully — switching to preview…';
+      status.style.color = 'var(--success)';
+
+      // Feed the AI's JSON into the exact same preview/import/conflict-resolution
+      // pipeline as a manually pasted JSON — no separate code path to maintain.
+      this._jsonFiles = [{ file: file.name, data: result.data }];
+      document.getElementById('tuJsonPaste').value = JSON.stringify(result.data, null, 2);
+      this._switchMode('json-import');
+      this._previewAllJson();
+    } catch (e) {
+      status.textContent = '✗ ' + e.message;
+      status.style.color = 'var(--danger)';
+    }
   },
 
   // Parse a CSV exported from the team calendar back into grouped JSON

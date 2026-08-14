@@ -139,6 +139,15 @@ const API = {
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   },
 
+  // Working-with — Gemini AI screenshot read-only extract (returns { date_range, schedule }
+  // JSON, same shape as pasting AI output manually — no DB writes)
+  extractScreenshotGemini: (file) => {
+    const fd = new FormData();
+    fd.append('screenshot', file);
+    return fetch('/api/colleagues/gemini-extract', { method: 'POST', body: fd })
+      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
+  },
+
   // Working-with — Ollama: list installed models
   getOllamaModels: (source) => API.get(`/api/colleagues/ollama-models?source=${source || 'server'}`),
 
