@@ -80,6 +80,7 @@ const API = {
   getWeeklyReport:   (params = {}) => API.get('/api/reports/weekly?' + new URLSearchParams(params)),
   getYearlyReport:   ()             => API.get('/api/reports/yearly'),
   getInsightsReport: (params = {}) => API.get('/api/reports/insights?' + new URLSearchParams(params)),
+  getShiftHeatmap:   (year)         => API.get('/api/insights/heatmap?year=' + year),
 
   // Leave
   getLeave:    (params = {}) => API.get('/api/leave?' + new URLSearchParams(params)),

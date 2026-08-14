@@ -1070,6 +1070,46 @@ app.get('/api/reports/weekly', (req, res) => {
 
 // GET /api/reports/insights?year=YYYY[&colleague_id=N]
 // GET /api/reports/insights?from=YYYY-MM-DD&to=YYYY-MM-DD[&colleague_id=N]  — custom range
+// GET /api/insights/heatmap — per-day worked hours / leave for a year, for the
+// GitHub-contributions-style Shift Heatmap view. Split shifts on the same date have
+// their hours summed into one cell.
+app.get('/api/insights/heatmap', (req, res) => {
+  const year = parseInt(req.query.year, 10) || new Date().getFullYear();
+  const from = `${year}-01-01`, to = `${year}-12-31`;
+
+  const shifts = db.prepare(
+    'SELECT date, hours_paid, hours_worked, completed, is_bank_holiday FROM shifts WHERE date >= ? AND date <= ?'
+  ).all(from, to);
+  const leaves = db.prepare(
+    'SELECT start_date, end_date, leave_type FROM leave_entries WHERE end_date >= ? AND start_date <= ?'
+  ).all(from, to);
+
+  const days = {};
+  for (const s of shifts) {
+    const hours = s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0);
+    const existing = days[s.date];
+    days[s.date] = {
+      type: 'worked',
+      hours: Math.round(((existing?.hours || 0) + (hours || 0)) * 100) / 100,
+      completed: existing ? (existing.completed && !!s.completed) : !!s.completed,
+      is_bank_holiday: !!(existing?.is_bank_holiday || s.is_bank_holiday),
+    };
+  }
+  for (const le of leaves) {
+    const cur = new Date(le.start_date + 'T00:00:00');
+    const end = new Date(le.end_date + 'T00:00:00');
+    while (cur <= end) {
+      const d = localDateStr(cur);
+      if (d >= from && d <= to && !days[d]) {
+        days[d] = { type: 'leave', hours: 0, leave_type: le.leave_type };
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+
+  res.json({ year, days });
+});
+
 app.get('/api/reports/insights', (req, res) => {
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const customFrom = DATE_RE.test(req.query.from || '') ? req.query.from : null;
