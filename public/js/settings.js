@@ -99,8 +99,8 @@ const SettingsView = {
               <div class="form-row">
                 <div class="form-group">
                   <label>Early threshold (minutes)</label>
-                  <input type="number" id="setClockInEarly" min="0" max="60" placeholder="1" />
-                  <div class="form-hint">Clocking in more than this many minutes before your start = Early. Default: 1</div>
+                  <input type="number" id="setClockInEarly" min="0" max="60" placeholder="5" />
+                  <div class="form-hint">Clocking in more than this many minutes before your start = Early. Default: 5</div>
                 </div>
                 <div class="form-group">
                   <label>Late threshold (minutes)</label>
@@ -112,8 +112,8 @@ const SettingsView = {
               <div class="form-row">
                 <div class="form-group">
                   <label>Early threshold (minutes)</label>
-                  <input type="number" id="setClockOutEarly" min="0" max="60" placeholder="1" />
-                  <div class="form-hint">Clocking out more than this many minutes before your end = Early (triggers a reason prompt). Default: 1</div>
+                  <input type="number" id="setClockOutEarly" min="0" max="60" placeholder="5" />
+                  <div class="form-hint">Clocking out more than this many minutes before your end = Early (triggers a reason prompt). Default: 5</div>
                 </div>
                 <div class="form-group">
                   <label>Late threshold (minutes)</label>

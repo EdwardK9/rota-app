@@ -94,6 +94,14 @@ app.patch('/api/shifts/bulk-complete', (req, res) => {
             hours_worked=?, hours_paid=?, calculated_pay=?, updated_at=datetime('now')
         WHERE id=?
       `).run(completed ? 1 : 0, usedBreakTaken, usedBreakMins, hours_worked, hours_paid, calculated_pay, id);
+      logAudit({
+        shift_id: id,
+        action: completed ? 'bulk_completed' : 'bulk_uncompleted',
+        changed_fields: ['completed', 'break_taken', 'break_taken_minutes'],
+        old_values: { completed: existing.completed, break_taken: existing.break_taken, break_taken_minutes: existing.break_taken_minutes },
+        new_values: { completed: completed ? 1 : 0, break_taken: usedBreakTaken, break_taken_minutes: usedBreakMins },
+        source: 'manual',
+      });
       updated++;
     }
   });
@@ -111,9 +119,21 @@ app.patch('/api/shifts/bulk-mileage', (req, res) => {
     return res.status(400).json({ error: 'distance_miles required' });
   }
   const placeholders = ids.map(() => '?').join(',');
+  const newDist = parseFloat(distance_miles);
+  const existingRows = db.prepare(`SELECT id, distance_miles FROM shifts WHERE id IN (${placeholders})`).all(...ids);
   const result = db.prepare(
     `UPDATE shifts SET distance_miles=?, updated_at=datetime('now') WHERE id IN (${placeholders})`
-  ).run(parseFloat(distance_miles), ...ids);
+  ).run(newDist, ...ids);
+  for (const row of existingRows) {
+    logAudit({
+      shift_id: row.id,
+      action: 'bulk_mileage_updated',
+      changed_fields: ['distance_miles'],
+      old_values: { distance_miles: row.distance_miles },
+      new_values: { distance_miles: newDist },
+      source: 'manual',
+    });
+  }
   res.json({ updated: result.changes });
 });
 
@@ -331,6 +351,14 @@ app.patch('/api/shifts/:id/complete', (req, res) => {
   `).run(completed ? 1 : 0, bt, actualBreak, hours_worked, hours_paid, calculated_pay, req.params.id);
 
   const completedShift = db.prepare('SELECT * FROM shifts WHERE id = ?').get(req.params.id);
+  logAudit({
+    shift_id: completedShift.id,
+    action: completed ? 'completed' : 'uncompleted',
+    changed_fields: ['completed', 'break_taken', 'break_taken_minutes'],
+    old_values: { completed: existing.completed, break_taken: existing.break_taken, break_taken_minutes: existing.break_taken_minutes },
+    new_values: { completed: completed ? 1 : 0, break_taken: bt, break_taken_minutes: actualBreak },
+    source: 'manual',
+  });
   gcal.safeUpsert(completedShift);
   res.json(completedShift);
 });
@@ -1184,8 +1212,12 @@ app.get('/api/reports/insights', (req, res) => {
     : (() => {
     const yearStart = rangeFrom;
     const yearEnd   = rangeTo;
+    // All leave types (annual, sick, unpaid, day_off, other) count as an explicit,
+    // tracked absence — not filtering to 'annual' only was inflating "longest time off"
+    // for anyone who'd taken sick/unpaid/other leave, since those days were treated as
+    // a genuine gap instead of excluded leave.
     const leaves = db.prepare(`SELECT start_date, end_date FROM leave_entries
-      WHERE leave_type = 'annual' AND end_date >= ? AND start_date <= ?`)
+      WHERE end_date >= ? AND start_date <= ?`)
       .all(yearStart, yearEnd);
     const dates = new Set();
     for (const le of leaves) {
@@ -1275,8 +1307,12 @@ app.get('/api/reports/insights', (req, res) => {
   const weeklyHours = (() => {
     if (forColleague) {
       // Colleague: hours from start/end times (no hours_worked column on colleague_shifts)
-      const colleague = db.prepare('SELECT contract_hours FROM colleagues WHERE id = ?').get(colleagueId);
-      const contractedHours = (colleague && colleague.contract_hours) ? colleague.contract_hours : null;
+      const colleague = db.prepare('SELECT contract_hours, pay_type FROM colleagues WHERE id = ?').get(colleagueId);
+      // Salaried staff (managers etc.) don't accrue overtime against a weekly hours
+      // target the way hourly staff do — a leftover contract_hours value (e.g. from
+      // before they were switched to salaried) shouldn't produce an overtime figure.
+      const contractedHours = (colleague && colleague.contract_hours && colleague.pay_type !== 'salaried')
+        ? colleague.contract_hours : null;
 
       const rows = db.prepare(`
         SELECT date, start_time, end_time FROM colleague_shifts
@@ -3933,14 +3969,37 @@ function localTimeStr() {
   const d = new Date();
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
+function _timeToMins(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+// On split-shift days (more than one shift scheduled the same date), matching a clock
+// event against whichever shift is "first" by start_time picks the wrong shift for the
+// second half of the day, producing a bogus large diff. Instead pick the shift whose
+// given field (start_time or end_time) is closest to the actual clock time.
+function _nearestShiftByField(shiftsForDate, field, targetTime) {
+  if (!shiftsForDate || !shiftsForDate.length || !targetTime) return null;
+  const targetMins = _timeToMins(targetTime);
+  return shiftsForDate.reduce((best, s) =>
+    Math.abs(_timeToMins(s[field]) - targetMins) < Math.abs(_timeToMins(best[field]) - targetMins) ? s : best
+  );
+}
 
 // GET /api/clock/today
 app.get('/api/clock/today', (req, res) => {
   const today = localDateStr();
   const entry = db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(today) || null;
-  const shift = db.prepare(
-    "SELECT id, start_time, end_time, break_scheduled_minutes FROM shifts WHERE date = ? ORDER BY start_time ASC LIMIT 1"
-  ).get(today) || null;
+  const dayShifts = db.prepare(
+    "SELECT id, start_time, end_time, break_scheduled_minutes FROM shifts WHERE date = ? ORDER BY start_time ASC"
+  ).all(today);
+  const nowMins = _timeToMins(localTimeStr());
+  const shift = dayShifts.length
+    ? dayShifts.reduce((best, s) => {
+        const dist     = Math.min(Math.abs(_timeToMins(s.start_time) - nowMins), Math.abs(_timeToMins(s.end_time) - nowMins));
+        const bestDist = Math.min(Math.abs(_timeToMins(best.start_time) - nowMins), Math.abs(_timeToMins(best.end_time) - nowMins));
+        return dist < bestDist ? s : best;
+      })
+    : null;
   res.json({ today, entry, shift });
 });
 
@@ -3949,15 +4008,25 @@ app.get('/api/clock/history', (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit  || '30', 10), 200);
   const offset = parseInt(req.query.offset || '0', 10);
   const rows = db.prepare(`
-    SELECT ce.*, s.start_time AS sched_start, s.end_time AS sched_end
-    FROM clock_entries ce
-    LEFT JOIN shifts s ON s.id = (
-      SELECT id FROM shifts WHERE date = ce.date ORDER BY start_time ASC LIMIT 1
-    )
-    ORDER BY ce.date DESC
-    LIMIT ? OFFSET ?
+    SELECT * FROM clock_entries ORDER BY date DESC LIMIT ? OFFSET ?
   `).all(limit, offset);
-  res.json({ entries: rows });
+
+  const dates = [...new Set(rows.map(r => r.date))];
+  const shiftsByDate = {};
+  if (dates.length) {
+    const placeholders = dates.map(() => '?').join(',');
+    const allShifts = db.prepare(
+      `SELECT date, start_time, end_time FROM shifts WHERE date IN (${placeholders}) ORDER BY start_time ASC`
+    ).all(...dates);
+    for (const s of allShifts) (shiftsByDate[s.date] ||= []).push(s);
+  }
+  const entries = rows.map(r => {
+    const dayShifts = shiftsByDate[r.date] || [];
+    const inShift  = _nearestShiftByField(dayShifts, 'start_time', r.clocked_in)  || dayShifts[0] || null;
+    const outShift = _nearestShiftByField(dayShifts, 'end_time',   r.clocked_out) || dayShifts[0] || null;
+    return { ...r, sched_start: inShift?.start_time || null, sched_end: outShift?.end_time || null };
+  });
+  res.json({ entries });
 });
 
 // POST /api/clock/in
@@ -4017,15 +4086,31 @@ app.delete('/api/clock/:id', (req, res) => {
 
 // GET /api/clock/analytics
 app.get('/api/clock/analytics', (req, res) => {
-  const rows = db.prepare(`
-    SELECT ce.*, s.start_time AS sched_start, s.end_time AS sched_end
-    FROM clock_entries ce
-    LEFT JOIN shifts s ON s.id = (
-      SELECT id FROM shifts WHERE date = ce.date ORDER BY start_time ASC LIMIT 1
-    )
-    WHERE ce.clocked_in IS NOT NULL AND ce.clocked_out IS NOT NULL
-    ORDER BY ce.date ASC
+  const entries = db.prepare(`
+    SELECT * FROM clock_entries
+    WHERE clocked_in IS NOT NULL AND clocked_out IS NOT NULL
+    ORDER BY date ASC
   `).all();
+
+  const dates = [...new Set(entries.map(e => e.date))];
+  const shiftsByDate = {};
+  if (dates.length) {
+    const placeholders = dates.map(() => '?').join(',');
+    const allShifts = db.prepare(
+      `SELECT date, start_time, end_time FROM shifts WHERE date IN (${placeholders})`
+    ).all(...dates);
+    for (const s of allShifts) (shiftsByDate[s.date] ||= []).push(s);
+  }
+  // Match clock-in against whichever shift's start_time it's closest to, and clock-out
+  // against whichever shift's end_time it's closest to — independently, since a split
+  // shift day means the "first" shift by start_time isn't necessarily the right one for
+  // an evening clock-out. Fixes both false early/late flags and inflated extra-time totals.
+  const rows = entries.map(e => {
+    const dayShifts = shiftsByDate[e.date] || [];
+    const inShift  = _nearestShiftByField(dayShifts, 'start_time', e.clocked_in);
+    const outShift = _nearestShiftByField(dayShifts, 'end_time',   e.clocked_out);
+    return { ...e, sched_start: inShift?.start_time || null, sched_end: outShift?.end_time || null };
+  });
 
   // Clock-in:  Early = >5 min before start | On Time = 0–5 min before | Late = any minute after
   // Clock-out: Early = any minute before end | On Time = 0–5 min after | Late = >5 min after
