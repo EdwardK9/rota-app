@@ -413,7 +413,7 @@ OUTPUT — return ONLY valid JSON, no markdown, no explanation:
     {
       "date": "<day heading as shown, e.g. Mon 23>",
       "shifts": [
-        { "name": "Full Name As Written", "time": "HH:MM - HH:MM", "type": "label as shown" }
+        { "name": "Full Name As Written", "time": "HH:MM - HH:MM", "type": "label as shown", "store": "location text if shown, else omit" }
       ]
     }
   ]
@@ -430,7 +430,8 @@ RULES — follow exactly:
 8. "Annual Leave" / "Absence": use type "leave", omit the time field
 9. "All day" entries: use type "all_day", omit the time field
 10. The "schedule" array must contain EXACTLY the 7 days (Monday through Sunday) named in "date_range" — never more, never fewer. If the image shows an extra day belonging to the following week (e.g. a second/next Monday appearing after Sunday), do NOT include it in "schedule"
-11. Return ONLY the JSON — no surrounding text`;
+11. Some entries show a small line below the time, often next to a pin/map-marker icon, naming a different store or branch (e.g. "Southampton - Bitterne") — this means that shift is at a DIFFERENT location than the rest of the schedule. If you see this, copy it verbatim into a "store" field on that shift. If there is no such line, OMIT the "store" field entirely for that shift — do NOT invent one
+12. Return ONLY the JSON — no surrounding text`;
 
 // ─────────────────────────────────────────
 // Ollama image slicing helper
@@ -730,7 +731,8 @@ async function runJobWorker() {
               start_time: shiftType === 'shift' ? (s.start_time || '00:00') : '00:00',
               end_time:   shiftType === 'shift' ? (s.end_time   || '00:00') : '00:00',
               shift_type: shiftType,
-              import_source: file.source
+              import_source: file.source,
+              store: s.store || null
             });
           }
 
@@ -741,11 +743,11 @@ async function runJobWorker() {
 
           const { toInsert, conflicts, duplicates } = detectConflicts(parsedRows);
           const insertStmt = db.prepare(
-            `INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_source) VALUES (?, ?, ?, ?, ?, ?)`
+            `INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_source, store) VALUES (?, ?, ?, ?, ?, ?, ?)`
           );
           let inserted = 0;
           db.transaction(() => {
-            for (const s of toInsert) { insertStmt.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.import_source || null); inserted++; }
+            for (const s of toInsert) { insertStmt.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.import_source || null, s.store || null); inserted++; }
           })();
 
           // Store normalised flat output so the job card UI can display shifts consistently
@@ -1048,19 +1050,19 @@ router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'),
       const shiftType = s.type || 'shift';
       const startTime = shiftType === 'shift' ? (s.start_time || '00:00') : '00:00';
       const endTime   = shiftType === 'shift' ? (s.end_time   || '00:00') : '00:00';
-      parsedRows.push({ colleague_id: matched.id, name: matched.name, date: s.date, start_time: startTime, end_time: endTime, shift_type: shiftType });
+      parsedRows.push({ colleague_id: matched.id, name: matched.name, date: s.date, start_time: startTime, end_time: endTime, shift_type: shiftType, store: s.store || null });
     }
 
     // Detect conflicts vs new inserts
     const { toInsert, conflicts, duplicates } = detectConflicts(parsedRows);
     const insert = db.prepare(`
-      INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, store)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     let inserted = 0;
     const doInsert = db.transaction(() => {
       for (const s of toInsert) {
-        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type);
+        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.store || null);
         inserted++;
       }
     });
@@ -1285,7 +1287,9 @@ router.get('/working-with/leaderboard', (req, res) => {
   const myShifts = db.prepare('SELECT date, start_time, end_time FROM shifts WHERE completed = 1 OR date <= ? ORDER BY date').all(today);
 
   const colleagues = db.prepare('SELECT * FROM colleagues').all();
-  const colShifts  = db.prepare('SELECT * FROM colleague_shifts').all();
+  // Shifts at a different store don't belong to this store's stats — they'd inflate
+  // "shifts together" for a day the colleague was never actually here.
+  const colShifts  = db.prepare("SELECT * FROM colleague_shifts WHERE store IS NULL OR store = ''").all();
 
   // Build per-colleague stats — both "worked with me" (overlap with my shifts) and
   // store-wide totals (every rostered shift of theirs, regardless of whether I was on
@@ -1350,7 +1354,7 @@ router.get('/working-with/people', (req, res) => {
   const importDate = localDateStr();
   const colleagues = allColleagues.filter(c => (!c.left_date || c.left_date >= importDate) && (!c.start_date || c.start_date <= importDate));
   const colShifts  = db.prepare(
-    "SELECT * FROM colleague_shifts WHERE date >= ? ORDER BY date ASC"
+    "SELECT * FROM colleague_shifts WHERE date >= ? AND (store IS NULL OR store = '') ORDER BY date ASC"
   ).all(today);
 
   // For each of my shifts, find who's on with me and the overlap
@@ -1383,7 +1387,7 @@ router.get('/working-with/next/:colleagueId', (req, res) => {
   if (!colleague) return res.status(404).json({ error: 'Not found' });
 
   const myShifts  = db.prepare("SELECT * FROM shifts WHERE date >= ? ORDER BY date ASC").all(today);
-  const colShifts = db.prepare("SELECT * FROM colleague_shifts WHERE colleague_id = ? AND date >= ? ORDER BY date ASC")
+  const colShifts = db.prepare("SELECT * FROM colleague_shifts WHERE colleague_id = ? AND date >= ? AND (store IS NULL OR store = '') ORDER BY date ASC")
     .all(req.params.colleagueId, today);
 
   const shared = [];
@@ -1439,8 +1443,18 @@ router.get('/working-with/synergy-score/:date', (req, res) => {
     SELECT cs.*, c.name, c.tags, c.synergy_rating, c.notes
     FROM colleague_shifts cs
     JOIN colleagues c ON c.id = cs.colleague_id
-    WHERE cs.date = ? AND cs.shift_type != 'leave'
+    WHERE cs.date = ? AND cs.shift_type != 'leave' AND (cs.store IS NULL OR cs.store = '')
     ORDER BY cs.start_time ASC
+  `).all(date);
+
+  // Colleagues rostered elsewhere today — not part of this store's roster/coverage,
+  // but worth surfacing so it's clear why they're missing from the team above.
+  const elsewhereToday = db.prepare(`
+    SELECT c.name, cs.store, cs.start_time, cs.end_time
+    FROM colleague_shifts cs
+    JOIN colleagues c ON c.id = cs.colleague_id
+    WHERE cs.date = ? AND cs.shift_type != 'leave' AND cs.store IS NOT NULL AND cs.store != ''
+    ORDER BY c.sort_order ASC, c.name ASC
   `).all(date);
 
   const decorated = dayShifts.map(s => {
@@ -1493,6 +1507,9 @@ router.get('/working-with/synergy-score/:date', (req, res) => {
   }
   if (decorated.length === 0) {
     highlights.push({ type: 'warning', text: 'No colleague shifts recorded for this day yet — import the rota to see the roster.' });
+  }
+  for (const e of elsewhereToday) {
+    highlights.push({ type: 'info', text: `${e.name} is working at ${e.store} today — not counted for this store.` });
   }
 
   res.json({
@@ -1650,20 +1667,21 @@ router.post('/colleague-shifts/bulk-delete', (req, res) => {
 });
 
 router.post('/colleague-shifts', (req, res) => {
-  const { colleague_id, date, shift_type, start_time, end_time } = req.body;
+  const { colleague_id, date, shift_type, start_time, end_time, store } = req.body;
   if (!colleague_id || !date) return res.status(400).json({ error: 'colleague_id and date are required' });
   const validTypes = ['shift', 'leave', 'all_day'];
   const type = validTypes.includes(shift_type) ? shift_type : 'shift';
   // For leave/all_day, use '00:00' placeholder (schema has NOT NULL)
   const sTime = type === 'shift' ? (start_time || '09:00') : '00:00';
   const eTime = type === 'shift' ? (end_time   || '17:00') : '00:00';
+  const storeVal = (store || '').trim() || null;
   try {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO colleague_shifts (colleague_id, date, shift_type, start_time, end_time)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO colleague_shifts (colleague_id, date, shift_type, start_time, end_time, store)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    const info = stmt.run(colleague_id, date, type, sTime, eTime);
-    res.json({ id: info.lastInsertRowid, colleague_id, date, shift_type: type, start_time: sTime, end_time: eTime });
+    const info = stmt.run(colleague_id, date, type, sTime, eTime, storeVal);
+    res.json({ id: info.lastInsertRowid, colleague_id, date, shift_type: type, start_time: sTime, end_time: eTime, store: storeVal });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1677,17 +1695,18 @@ router.post('/colleague-shifts', (req, res) => {
 router.put('/colleague-shifts/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'Invalid id' });
-  const { shift_type, start_time, end_time } = req.body;
+  const { shift_type, start_time, end_time, store } = req.body;
   const validTypes = ['shift', 'leave', 'all_day'];
   const type = validTypes.includes(shift_type) ? shift_type : 'shift';
   const sTime = type === 'shift' ? (start_time || '09:00') : '00:00';
   const eTime = type === 'shift' ? (end_time   || '17:00') : '00:00';
+  const storeVal = (store || '').trim() || null;
   try {
     const info = db.prepare(
-      'UPDATE colleague_shifts SET shift_type=?, start_time=?, end_time=? WHERE id=?'
-    ).run(type, sTime, eTime, id);
+      'UPDATE colleague_shifts SET shift_type=?, start_time=?, end_time=?, store=? WHERE id=?'
+    ).run(type, sTime, eTime, storeVal, id);
     if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, id, shift_type: type, start_time: sTime, end_time: eTime });
+    res.json({ ok: true, id, shift_type: type, start_time: sTime, end_time: eTime, store: storeVal });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1817,12 +1836,14 @@ function normaliseAIOutput(parsed) {
       if (!s.name) continue;
       const typeLower = (s.type || '').toLowerCase();
 
+      const store = (s.store || '').trim() || null;
+
       if (typeLower === 'leave') {
-        shifts.push({ name: s.name, date: isoDate, type: 'leave' });
+        shifts.push({ name: s.name, date: isoDate, type: 'leave', store });
         continue;
       }
       if (typeLower === 'all_day') {
-        shifts.push({ name: s.name, date: isoDate, type: 'all_day' });
+        shifts.push({ name: s.name, date: isoDate, type: 'all_day', store });
         continue;
       }
 
@@ -1834,6 +1855,7 @@ function normaliseAIOutput(parsed) {
         date:       isoDate,
         start_time: tm[1].padStart(5, '0'),
         end_time:   tm[2].padStart(5, '0'),
+        store,
       });
     }
   }
@@ -1875,12 +1897,12 @@ router.post('/colleagues/import-json', (req, res) => {
 
   const insertShift = db.prepare(`
     INSERT OR IGNORE INTO colleague_shifts
-      (colleague_id, date, start_time, end_time, shift_type, import_source)
-    VALUES (?, ?, ?, ?, ?, ?)
+      (colleague_id, date, start_time, end_time, shift_type, import_source, store)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   const updateShift = db.prepare(`
     UPDATE colleague_shifts
-    SET end_time=?, shift_type=?, import_source=?
+    SET end_time=?, shift_type=?, import_source=?, store=?
     WHERE colleague_id=? AND date=? AND start_time=?
   `);
   const checkExisting = db.prepare(
@@ -1933,6 +1955,10 @@ router.post('/colleagues/import-json', (req, res) => {
           end_time   = tm[2].padStart(5, '0');
         }
 
+        // A different-store shift is signalled by a "store" field on the incoming
+        // shift (populated by the AI when it spots a location line under the time).
+        const store = (shift.store || '').trim() || null;
+
         // Fuzzy-match against known colleagues
         const col = fuzzyMatch(rawName, colleagues);
         if (!col) { unknownNames.add(rawName); skipped++; continue; }
@@ -1942,10 +1968,10 @@ router.post('/colleagues/import-json', (req, res) => {
 
         if (overrideSet.has(key)) {
           // User chose to overwrite this conflict
-          const r = updateShift.run(end_time, shift_type, 'json', col.id, dayDate, start_time);
+          const r = updateShift.run(end_time, shift_type, 'json', store, col.id, dayDate, start_time);
           if (r.changes > 0) updated++; else skipped++;
         } else {
-          const r = insertShift.run(col.id, dayDate, start_time, end_time, shift_type, 'json');
+          const r = insertShift.run(col.id, dayDate, start_time, end_time, shift_type, 'json', store);
           if (r.changes > 0) {
             inserted++;
           } else {

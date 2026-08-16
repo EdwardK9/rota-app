@@ -1,5 +1,11 @@
 /* ─── Team Calendar View ───────────────────────────────────────────────────── */
 
+// Escapes a string for safe embedding inside a single-quoted JS string literal
+// within an onclick="..." HTML attribute (used for free-text like store names).
+function _jsStr(str) {
+  return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
 const TeamCalendarView = {
   activeTab: 'week',          // 'week' | 'person'
   _currentWeek: null,         // YYYY-MM-DD (any date in the week — we send Monday)
@@ -186,6 +192,12 @@ const TeamCalendarView = {
                 <input type="time" id="tcAddEnd" class="form-control" value="17:00" />
               </div>
             </div>
+            <div>
+              <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:3px">
+                📍 Store (leave blank if it's this store)
+              </label>
+              <input type="text" id="tcAddStore" class="form-control" placeholder="e.g. Southampton - Bitterne" />
+            </div>
           </div>
           <div style="display:flex;gap:8px;margin-top:18px">
             <button class="btn btn-primary" id="tcAddSaveBtn" style="flex:1">Save</button>
@@ -237,6 +249,7 @@ const TeamCalendarView = {
     document.getElementById('tcAddTimesRow').style.display = 'flex';
     document.getElementById('tcAddStart').value = '09:00';
     document.getElementById('tcAddEnd').value   = '17:00';
+    document.getElementById('tcAddStore').value = '';
     const modal = document.getElementById('tcAddModal');
     modal.style.display = 'flex';
   },
@@ -251,10 +264,11 @@ const TeamCalendarView = {
     const shift_type   = document.getElementById('tcAddType').value;
     const start_time   = document.getElementById('tcAddStart').value || null;
     const end_time     = document.getElementById('tcAddEnd').value   || null;
+    const store        = document.getElementById('tcAddStore').value.trim() || null;
     if (!colleague_id || !date) return showToast('Select a person and date', 'error');
     if (shift_type === 'shift' && (!start_time || !end_time)) return showToast('Enter start and end times', 'error');
     try {
-      await API.addColleagueShift({ colleague_id, date, shift_type, start_time, end_time });
+      await API.addColleagueShift({ colleague_id, date, shift_type, start_time, end_time, store });
       this._closeAddModal();
       showToast('Shift added');
       await this.loadActiveTab();
@@ -499,7 +513,8 @@ const TeamCalendarView = {
     const allShiftsByDay = {};
     for (const d of days) allShiftsByDay[d] = [];
     for (const s of myShifts)  { if (allShiftsByDay[s.date]) allShiftsByDay[s.date].push(s); }
-    for (const s of colShifts) { if (allShiftsByDay[s.date]) allShiftsByDay[s.date].push(s); }
+    // Shifts at a different store don't cover this store — exclude from the gap scan.
+    for (const s of colShifts) { if (allShiftsByDay[s.date] && !s.store) allShiftsByDay[s.date].push(s); }
     const coverageByDay = {};
     for (const d of days) coverageByDay[d] = this._computeDayCoverage(d, allShiftsByDay[d]);
 
@@ -543,7 +558,7 @@ const TeamCalendarView = {
               font-size:10px;line-height:1;cursor:pointer;padding:0"
               title="Delete">×</button>`;
           const editBtn = row.isMe ? '' :
-            `<button onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type||'shift'}')"
+            `<button onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type||'shift'}','${_jsStr(s.store||'')}')"
               style="position:absolute;top:2px;right:20px;background:rgba(0,0,0,0.25);
               border:none;color:#fff;border-radius:50%;width:16px;height:16px;
               font-size:10px;line-height:1;cursor:pointer;padding:0"
@@ -558,10 +573,15 @@ const TeamCalendarView = {
               padding:5px 7px;margin-bottom:3px;font-size:11px;line-height:1.3;font-weight:600">
               🏪 All Day${delBtn}</div>`;
           }
+          const storeLine = s.store
+            ? `<div style="opacity:0.9;font-size:10px;margin-top:2px">📍 ${esc(s.store)}</div>` : '';
           return `<div style="position:relative;background:${row.colour};color:#fff;border-radius:6px;
-            padding:5px 7px;margin-bottom:3px;font-size:11px;line-height:1.3">
+            padding:5px 7px;margin-bottom:3px;font-size:11px;line-height:1.3;
+            ${s.store ? 'opacity:0.62;border:1px dashed rgba(255,255,255,0.7)' : ''}"
+            ${s.store ? `title="At a different store — not counted for this store's working-with/coverage"` : ''}>
             <div style="font-weight:700;padding-right:36px">${s.start_time} – ${s.end_time}</div>
             <div style="opacity:0.85">${this._fmtDuration(s.start_time, s.end_time)}</div>
+            ${storeLine}
             ${editBtn}${delBtn}</div>`;
         }).join('');
         return `<td style="border:1px solid var(--border);padding:5px;vertical-align:top">${blocks}${addBtn}</td>`;
@@ -713,17 +733,21 @@ const TeamCalendarView = {
           if (s.shift_type === 'leave')        label = '🌴 Annual Leave';
           else if (s.shift_type === 'all_day') label = '🏪 All Day';
           else label = `<strong>${s.start_time}–${s.end_time}</strong> <span style="opacity:.7;font-size:11px">${this._fmtDuration(s.start_time, s.end_time)}</span>`;
+          const storeBadge = s.store
+            ? `<span style="font-size:11px;color:#b45309;background:rgba(245,158,11,0.12);border-radius:8px;padding:1px 7px;white-space:nowrap"
+                title="At a different store — not counted for this store's working-with/coverage">📍 ${esc(s.store)}</span>` : '';
           const editDel = row.isMe ? '' :
             `<span style="margin-left:auto;display:inline-flex;gap:6px;flex-shrink:0">
-               <button onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type||'shift'}')"
+               <button onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type||'shift'}','${_jsStr(s.store||'')}')"
                  style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);font-size:13px;padding:2px 8px;cursor:pointer">✎</button>
                <button onclick="TeamCalendarView._deleteShift(${s.id})"
                  style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--danger);font-size:13px;padding:2px 8px;cursor:pointer">×</button>
              </span>`;
-          return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border)">
+          return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border);${s.store ? 'opacity:0.75' : ''}">
                     <span style="width:10px;height:10px;border-radius:50%;background:${row.colour};flex-shrink:0"></span>
                     <span style="font-weight:${row.isMe?700:500};font-size:13px">${row.label.replace(' ★','')}${row.isMe?' ★':''}</span>
                     <span style="font-size:13px">${label}</span>
+                    ${storeBadge}
                     ${editDel}
                   </div>`;
         }).join('');
@@ -948,9 +972,13 @@ const TeamCalendarView = {
             delCell(s._leaveIds ? s._leaveIds[0] : s.id, s._leaveIds) +
             '</tr>';
         }
-        return '<tr style="border-bottom:1px solid var(--border)">' +
+        const storeBadge = s.store
+          ? ' <span style="font-size:11px;color:#b45309;background:rgba(245,158,11,0.12);border-radius:8px;padding:1px 7px;white-space:nowrap"' +
+            ' title="At a different store — not counted for this store\'s working-with/coverage">📍 ' + esc(s.store) + '</span>'
+          : '';
+        return '<tr style="border-bottom:1px solid var(--border)' + (s.store ? ';opacity:0.75' : '') + '">' +
           '<td style="padding:8px 12px;white-space:nowrap">' + fmtDate(s.date) + '</td>' +
-          '<td style="padding:8px 12px;color:var(--text-muted);font-size:13px">' + s.start_time + ' - ' + s.end_time + '</td>' +
+          '<td style="padding:8px 12px;color:var(--text-muted);font-size:13px">' + s.start_time + ' - ' + s.end_time + storeBadge + '</td>' +
           '<td style="padding:8px 12px;font-weight:500;text-align:right">' + calcH(s) + '</td>' +
           delCell(s.id) +
           '</tr>';
@@ -974,7 +1002,7 @@ const TeamCalendarView = {
     }).join('');
   },
 
-  _openEditShiftModal(id, startTime, endTime, shiftType) {
+  _openEditShiftModal(id, startTime, endTime, shiftType, store) {
     const typeOpts = ['shift','leave','all_day'].map(t =>
       `<option value="${t}" ${shiftType===t?'selected':''}>${t==='shift'?'Shift':t==='leave'?'Annual Leave':'All Day'}</option>`
     ).join('');
@@ -994,6 +1022,17 @@ const TeamCalendarView = {
             <input type="time" id="tcEditEnd" class="form-control" value="${endTime}" />
           </div>
         </div>
+        <div>
+          <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:3px">
+            📍 Store (leave blank if it's this store)
+          </label>
+          <input type="text" id="tcEditStore" class="form-control" value="${esc(store || '')}"
+            placeholder="e.g. Southampton - Bitterne" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:3px">
+            Set this if they're working at a different store that day — it'll be excluded from
+            "working with" and coverage here, and shown separately in the calendar.
+          </div>
+        </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:18px">
         <button class="btn btn-primary" id="tcEditSaveBtn" style="flex:1">Save</button>
@@ -1009,10 +1048,11 @@ const TeamCalendarView = {
       const shift_type = document.getElementById('tcEditType').value;
       const start_time = document.getElementById('tcEditStart').value || null;
       const end_time   = document.getElementById('tcEditEnd').value   || null;
+      const storeVal   = document.getElementById('tcEditStore').value.trim() || null;
       if (shift_type === 'shift' && (!start_time || !end_time))
         return showToast('Enter start and end times', 'error');
       try {
-        await API.updateColleagueShift(id, { shift_type, start_time, end_time });
+        await API.updateColleagueShift(id, { shift_type, start_time, end_time, store: storeVal });
         Modal.close();
         showToast('Shift updated');
         await this.loadActiveTab();

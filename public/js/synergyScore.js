@@ -130,8 +130,8 @@ const SynergyView = {
         <div style="display:flex;flex-direction:column;gap:8px">
           ${highlights.map(h => `
             <div style="display:flex;gap:8px;align-items:flex-start;font-size:13.5px;
-              color:${h.type === 'warning' ? '#b45309' : 'var(--success, #10b981)'}">
-              <span>${h.type === 'warning' ? '⚠️' : '✅'}</span>
+              color:${h.type === 'warning' ? '#b45309' : h.type === 'info' ? 'var(--text-muted)' : 'var(--success, #10b981)'}">
+              <span>${h.type === 'warning' ? '⚠️' : h.type === 'info' ? '📍' : '✅'}</span>
               <span>${esc(h.text)}</span>
             </div>`).join('')}
         </div>

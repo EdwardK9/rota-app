@@ -2456,7 +2456,7 @@ app.get('/api/working-with/:date', (req, res) => {
       SELECT c.id, c.name, cs.start_time, cs.end_time, cs.shift_type
       FROM colleague_shifts cs
       JOIN colleagues c ON c.id = cs.colleague_id
-      WHERE cs.date = ?
+      WHERE cs.date = ? AND (cs.store IS NULL OR cs.store = '')
       ORDER BY c.sort_order ASC, c.name ASC
     `).all(date);
 
@@ -2484,7 +2484,7 @@ app.get('/api/working-with/:date', (req, res) => {
     SELECT c.id, c.name, cs.start_time, cs.end_time, cs.shift_type
     FROM colleague_shifts cs
     JOIN colleagues c ON c.id = cs.colleague_id
-    WHERE cs.date = ?
+    WHERE cs.date = ? AND (cs.store IS NULL OR cs.store = '')
     GROUP BY c.id
     ORDER BY c.sort_order ASC, c.name ASC
   `).all(date);

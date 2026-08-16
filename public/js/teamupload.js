@@ -136,7 +136,7 @@ OUTPUT — return ONLY valid JSON, no markdown, no explanation:
     {
       "date": "<day heading as shown, e.g. Mon 23>",
       "shifts": [
-        { "name": "Full Name As Written", "time": "HH:MM - HH:MM", "type": "label as shown" }
+        { "name": "Full Name As Written", "time": "HH:MM - HH:MM", "type": "label as shown", "store": "location text if shown, else omit" }
       ]
     }
   ]
@@ -153,7 +153,8 @@ RULES — follow exactly:
 8. "Annual Leave" / "Absence": use type "leave", omit the time field
 9. "All day" entries: use type "all_day", omit the time field
 10. The "schedule" array must contain EXACTLY the 7 days (Monday through Sunday) named in "date_range" — never more, never fewer. If the image shows an extra day belonging to the following week (e.g. a second/next Monday appearing after Sunday), do NOT include it in "schedule"
-11. Return ONLY the JSON — no surrounding text`;
+11. Some entries show a small line below the time, often next to a pin/map-marker icon, naming a different store or branch (e.g. "Southampton - Bitterne") — this means that shift is at a DIFFERENT location than the rest of the schedule. If you see this, copy it verbatim into a "store" field on that shift. If there is no such line, OMIT the "store" field entirely for that shift — do NOT invent one
+12. Return ONLY the JSON — no surrounding text`;
 
     document.getElementById('promptText').value = PROMPT;
     document.getElementById('copyPromptBtn').addEventListener('click', () => {
@@ -472,7 +473,7 @@ RULES — follow exactly:
 
         if (!resolvedDate) {
           totalWarnings++;
-          rows += `<tr><td colspan="4" style="padding:3px 8px;color:var(--warning);font-size:12px">
+          rows += `<tr><td colspan="5" style="padding:3px 8px;color:var(--warning);font-size:12px">
             ⚠️ Could not resolve date for "${esc(day.date)}" — ${(day.shifts||[]).length} shifts skipped
           </td></tr>`;
           continue;
@@ -500,11 +501,17 @@ RULES — follow exactly:
             typeBadge   = shift.type ? `<span style="font-size:10px;color:var(--text-muted)">${esc(shift.type)}</span>` : '';
           }
 
+          const storeBadge = shift.store
+            ? `<span style="font-size:10px;background:rgba(245,158,11,0.15);color:#b45309;border-radius:10px;padding:1px 7px;white-space:nowrap">📍 ${esc(shift.store)}</span>`
+            : '';
+          if (shift.store) rowStyle = 'background:rgba(245,158,11,0.06);';
+
           rows += `<tr style="${rowStyle}">
             <td style="padding:3px 8px;color:var(--text-muted);font-size:11px">${resolvedDate}</td>
             <td style="padding:3px 8px;font-weight:500">${esc(shift.name || '')}</td>
             <td style="padding:3px 8px">${esc(timeDisplay)}</td>
             <td style="padding:3px 8px">${typeBadge}</td>
+            <td style="padding:3px 8px">${storeBadge}</td>
           </tr>`;
         }
       }
@@ -516,6 +523,7 @@ RULES — follow exactly:
         <th style="padding:4px 8px;text-align:left;color:var(--text-muted)">Name</th>
         <th style="padding:4px 8px;text-align:left;color:var(--text-muted)">Time</th>
         <th style="padding:4px 8px;text-align:left;color:var(--text-muted)">Type</th>
+        <th style="padding:4px 8px;text-align:left;color:var(--text-muted)">Store</th>
       </tr></thead>
       <tbody>${rows}</tbody>`;
 

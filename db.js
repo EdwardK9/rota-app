@@ -206,6 +206,10 @@ ocrJobMigrations.forEach(sql => {
 const colShiftMigrations = [
   "ALTER TABLE colleague_shifts ADD COLUMN shift_type TEXT DEFAULT 'shift'",
   "ALTER TABLE colleague_shifts ADD COLUMN import_source TEXT",
+  // store: NULL/empty = colleague's home store (yours). Any other value means this
+  // shift is at a different store, so it's excluded from "working with" / coverage
+  // and shown distinctly in the team calendar.
+  "ALTER TABLE colleague_shifts ADD COLUMN store TEXT",
 ];
 
 // Colleagues migrations -- start_date
