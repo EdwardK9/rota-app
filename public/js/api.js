@@ -171,6 +171,9 @@ const API = {
   // Working-with — LM Studio: list loaded models
   getLmStudioModels: () => API.get('/api/colleagues/lmstudio-models'),
 
+  // Working-with — Gemini: list models available to the saved API key
+  getGeminiModels: () => API.get('/api/colleagues/gemini-models'),
+
   // OCR job queue — list all jobs (enriched with files, no blobs)
   listOllamaJobs: () => API.get('/api/ocr-jobs'),
 

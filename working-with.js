@@ -1113,6 +1113,37 @@ router.get('/colleagues/lmstudio-models', async (req, res) => {
   }
 });
 
+// Live model list from Google, rather than a hardcoded dropdown that inevitably goes
+// stale whenever Google retires/renames a model (as gemini-2.5-flash was). Filtered to
+// models that support generateContent and can take image input, since that's what the
+// screenshot-import prompt needs.
+router.get('/colleagues/gemini-models', async (req, res) => {
+  const keyRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
+  const apiKey = keyRow && keyRow.value && keyRow.value.trim();
+  if (!apiKey) return res.status(400).json({ error: 'No Gemini API key configured yet' });
+
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (!r.ok) {
+      const errBody = await r.json().catch(() => ({}));
+      return res.status(502).json({ error: errBody?.error?.message || `Gemini API returned ${r.status}` });
+    }
+    const data = await r.json();
+    const models = (data.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => (m.name || '').replace(/^models\//, ''))
+      .filter(Boolean)
+      // Vision screenshot import needs an image-capable model — embedding/text-only
+      // models support generateContent too but aren't useful here, so drop obvious
+      // non-multimodal names.
+      .filter(name => !/embedding|aqa/i.test(name))
+      .sort();
+    res.json({ models });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────────────────────
 // Ollama model pull (streams progress back as SSE)
 // ─────────────────────────────────────────

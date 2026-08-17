@@ -405,12 +405,20 @@ const SettingsView = {
                   <div class="form-hint">Stored on your server only — never sent anywhere except Google's Gemini API.</div>
                 </div>
                 <div class="form-group" style="max-width:220px">
-                  <label>Model</label>
+                  <label>
+                    Model
+                    <button type="button" class="btn btn-ghost btn-sm" id="geminiModelRefresh"
+                      title="Refresh model list from Google" style="padding:0 4px;font-size:12px">&#8635;</button>
+                  </label>
                   <select id="setGeminiModel">
-                    <option value="gemini-2.0-flash">gemini-2.0-flash (default)</option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                    <option value="gemini-3.6-flash">gemini-3.6-flash (default)</option>
+                    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash (retired for new keys)</option>
                     <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                   </select>
+                  <div class="form-hint" id="geminiModelRefreshStatus">
+                    List above is a fallback — hit &#8635; to pull the live list for your key.
+                  </div>
                 </div>
               </div>
 
@@ -532,6 +540,7 @@ const SettingsView = {
 
     // AI Screenshot Import (Gemini)
     document.getElementById('saveGeminiKeyBtn')?.addEventListener('click', () => this.saveGeminiKey());
+    document.getElementById('geminiModelRefresh')?.addEventListener('click', () => this._refreshGeminiModels());
 
     // Rotageek API
     document.getElementById('rgSaveBtn')?.addEventListener('click', () => this.saveRotageek());
@@ -1361,6 +1370,33 @@ const SettingsView = {
     if (modelEl && this.settings.gemini_model) modelEl.value = this.settings.gemini_model;
     const keyEl = document.getElementById('setGeminiKey');
     if (keyEl && this.settings.gemini_api_key) keyEl.placeholder = '••••••••••••••••••• (saved)';
+    // Best-effort background refresh — a key's already saved, so pull the live list
+    // straight away rather than making the user hit the refresh button first.
+    if (this.settings.gemini_api_key) this._refreshGeminiModels();
+  },
+
+  // Pulls the live model list from Google for the saved key, replacing the static
+  // fallback options. Static list only stays accurate until Google next retires or
+  // renames a model (as happened to gemini-2.5-flash) — this keeps it current.
+  async _refreshGeminiModels() {
+    const status  = document.getElementById('geminiModelRefreshStatus');
+    const modelEl = document.getElementById('setGeminiModel');
+    if (!modelEl) return;
+    const current = modelEl.value;
+    if (status) status.textContent = 'Loading models…';
+    try {
+      const { models } = await API.getGeminiModels();
+      if (!models || !models.length) {
+        if (status) status.textContent = 'No models returned — save an API key first.';
+        return;
+      }
+      modelEl.innerHTML = models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+      // Keep the previous selection if it's still valid, otherwise fall back to the first
+      modelEl.value = models.includes(current) ? current : models[0];
+      if (status) status.textContent = `✓ ${models.length} model${models.length !== 1 ? 's' : ''} available to your key`;
+    } catch (e) {
+      if (status) status.textContent = 'Could not load models: ' + e.message;
+    }
   },
 
   async saveGeminiKey() {
@@ -1378,6 +1414,7 @@ const SettingsView = {
       status.textContent = '✓ Saved';
       showToast('Gemini settings saved', 'success');
       if (window.App) App.settings = await API.getSettings();
+      if (key) this._refreshGeminiModels(); // a new key may unlock a different model set
     } catch(e) {
       status.textContent = '';
       showToast('Failed to save: ' + e.message, 'error');
