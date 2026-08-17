@@ -20,6 +20,14 @@ const App = {
       document.querySelector('#darkModeToggle .dark-mode-icon').textContent = '☀️';
     }
 
+    // Version readout — shows which deploy is actually running (non-blocking)
+    API.get('/api/version').then(v => {
+      const el = document.getElementById('sidebarVersion');
+      if (!el) return;
+      el.textContent = 'v' + v.version + (v.commit ? ' · ' + v.commit : '');
+      el.title = 'Server started ' + new Date(v.startedAt).toLocaleString('en-GB');
+    }).catch(() => {});
+
     // Load settings first (needed by other views)
     try {
       this.settings = await API.getSettings();

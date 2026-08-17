@@ -1,11 +1,14 @@
 // Pin timezone to UK so all shift/date/reminder maths is correct regardless of container TZ
 process.env.TZ = 'Europe/London';
 const express = require('express');
+const compression = require('compression');
 const path = require('path');
 const fs   = require('fs');
 const https   = require('https');
 const http    = require('http');
 const zlib    = require('zlib');
+const { execSync } = require('child_process');
+const packageJson = require('./package.json');
 const { db, getPayRateForDate, calcHoursWorked } = require('./db');
 const workingWithRouter = require('./working-with');
 const { callGeminiVision } = workingWithRouter;
@@ -20,6 +23,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', true);   // correct protocol/host behind Cloudflare proxy
+// Gzip everything (JS/CSS/JSON) — the JS bundle alone is ~800KB uncompressed,
+// which is fine on localhost but noticeably slow over a real network connection.
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 // Static assets: JS/CSS includes are versioned with ?v= tokens in index.html, so they
 // can be cached hard; index.html itself must always revalidate or deploys look stale.
@@ -40,6 +46,19 @@ app.use('/api', teamMetricsRouter);
 app.use('/api', fatigueAuditRouter);
 app.use('/api', webhooksRouter);
 app.use('/api', exportsV2Router);
+
+// Version readout — lets the running app be identified at a glance (sidebar footer),
+// so it's obvious whether the latest push has actually deployed.
+let _gitCommit = null;
+try {
+  _gitCommit = execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+    .toString().trim();
+} catch (_) { /* not a git checkout, or git unavailable — commit stays null */ }
+const SERVER_STARTED_AT = new Date().toISOString();
+
+app.get('/api/version', (req, res) => {
+  res.json({ version: packageJson.version, commit: _gitCommit, startedAt: SERVER_STARTED_AT });
+});
 
 // ─────────────────────────────────────────
 // SHIFTS

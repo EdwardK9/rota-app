@@ -46,9 +46,19 @@ function nearestHourKey(d) {
   return `${rounded.getFullYear()}-${pad(rounded.getMonth() + 1)}-${pad(rounded.getDate())}T${pad(rounded.getHours())}:00`;
 }
 
+// Forecasts don't change minute to minute, but the dashboard re-requests the same
+// home/work/date combo on every load — cache each response for a while so repeat
+// loads don't pay for a live round trip to Open-Meteo.
+const FORECAST_CACHE_TTL_MS = 20 * 60 * 1000;
+const _forecastCache = new Map(); // "lat,lon,date" -> { expires, map }
+
 /** Fetch hourly forecast (temp, precip probability, weather code) for a lat/lon
  *  on the given date. Returns a map of "YYYY-MM-DDTHH:00" -> {temp, precipProb, code}. */
 async function fetchHourlyForecast(lat, lon, dateStr) {
+  const cacheKey = `${lat},${lon},${dateStr}`;
+  const cached = _forecastCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.map;
+
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}` +
     `&hourly=temperature_2m,precipitation_probability,weather_code&timezone=Europe%2FLondon&start_date=${dateStr}&end_date=${dateStr}`;
   const resp = await fetch(url);
@@ -63,6 +73,7 @@ async function fetchHourlyForecast(lat, lon, dateStr) {
       code: data.hourly.weather_code[i],
     };
   });
+  _forecastCache.set(cacheKey, { expires: Date.now() + FORECAST_CACHE_TTL_MS, map });
   return map;
 }
 
