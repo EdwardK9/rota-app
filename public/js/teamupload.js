@@ -38,16 +38,17 @@ const TeamUploadView = {
           <!-- AUTO IMPORT (AI) PANEL -->
           <div id="panelAutoAi">
             <p style="color:var(--text-muted);font-size:13.5px;margin-bottom:16px">
-              Drop a team schedule screenshot below and it's read automatically with Gemini —
-              no need to paste it into an AI chat yourself. Needs a Gemini API key set in
+              Drop one or more team schedule screenshots below and each is read automatically
+              with Gemini — no need to paste them into an AI chat yourself. Needs a Gemini API
+              key set in
               <a href="#" onclick="App.navigate('settings');return false" style="color:var(--primary-text)">Settings → AI Screenshot Import</a>.
             </p>
 
             <div class="drop-zone" id="tuAutoDropZone" style="margin-bottom:14px">
               <div class="drop-zone-icon">\u{1F4F7}</div>
-              <div class="drop-zone-text">Drop a screenshot here</div>
-              <div class="drop-zone-hint">or click to browse &nbsp;\u{00B7}&nbsp; one image at a time</div>
-              <input type="file" id="tuAutoFileInput" accept="image/*" style="display:none" />
+              <div class="drop-zone-text">Drop screenshots here</div>
+              <div class="drop-zone-hint">or click to browse &nbsp;\u{00B7}&nbsp; multiple images accepted (one week per screenshot)</div>
+              <input type="file" id="tuAutoFileInput" accept="image/*" multiple style="display:none" />
             </div>
 
             <div id="tuAutoStatus" style="font-size:13px;color:var(--text-muted);min-height:18px"></div>
@@ -225,34 +226,52 @@ RULES — follow exactly:
     dropZone.addEventListener('drop', e => {
       e.preventDefault();
       dropZone.style.borderColor = '';
-      const file = e.dataTransfer.files?.[0];
-      if (file) this._autoImportScreenshot(file);
+      const files = [...(e.dataTransfer.files || [])];
+      if (files.length) this._autoImportScreenshots(files);
     });
     fileInput.addEventListener('change', () => {
-      if (fileInput.files[0]) this._autoImportScreenshot(fileInput.files[0]);
+      if (fileInput.files.length) this._autoImportScreenshots([...fileInput.files]);
       fileInput.value = '';
     });
   },
 
-  async _autoImportScreenshot(file) {
+  // Read one or more screenshots with Gemini, one at a time (so status can show
+  // progress), then feed all of them into the exact same preview/import/
+  // conflict-resolution pipeline used for manually pasted JSON — no separate
+  // code path to maintain, and it already supports multiple weeks at once.
+  async _autoImportScreenshots(files) {
     const status = document.getElementById('tuAutoStatus');
-    status.style.color = 'var(--text-muted)';
-    status.textContent = 'Reading screenshot with Gemini…';
-    try {
-      const result = await API.extractScreenshotGemini(file);
-      status.textContent = '✓ Read successfully — switching to preview…';
-      status.style.color = 'var(--success)';
+    const results = [];
+    const errors = [];
 
-      // Feed the AI's JSON into the exact same preview/import/conflict-resolution
-      // pipeline as a manually pasted JSON — no separate code path to maintain.
-      this._jsonFiles = [{ file: file.name, data: result.data }];
-      document.getElementById('tuJsonPaste').value = JSON.stringify(result.data, null, 2);
-      this._switchMode('json-import');
-      this._previewAllJson();
-    } catch (e) {
-      status.textContent = '✗ ' + e.message;
-      status.style.color = 'var(--danger)';
+    for (let i = 0; i < files.length; i++) {
+      status.style.color = 'var(--text-muted)';
+      status.textContent = files.length > 1
+        ? `Reading screenshot ${i + 1} of ${files.length} with Gemini…`
+        : 'Reading screenshot with Gemini…';
+      try {
+        const result = await API.extractScreenshotGemini(files[i]);
+        results.push({ file: files[i].name, data: result.data });
+      } catch (e) {
+        errors.push(`${files[i].name}: ${e.message}`);
+      }
     }
+
+    if (!results.length) {
+      status.textContent = '✗ ' + (errors[0] || 'Failed to read screenshot(s)');
+      status.style.color = 'var(--danger)';
+      return;
+    }
+
+    status.textContent = errors.length
+      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')}) — switching to preview…`
+      : '✓ Read successfully — switching to preview…';
+    status.style.color = errors.length ? 'var(--warning)' : 'var(--success)';
+
+    this._jsonFiles = results;
+    document.getElementById('tuJsonPaste').value = JSON.stringify(results[0].data, null, 2);
+    this._switchMode('json-import');
+    this._previewAllJson();
   },
 
   // Parse a CSV exported from the team calendar back into grouped JSON
