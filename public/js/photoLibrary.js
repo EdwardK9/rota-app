@@ -59,6 +59,10 @@ const PhotoLibrary = {
             <button class="btn btn-ghost btn-sm" id="plClearSelectionBtn">✕ Clear</button>
           </div>
 
+          <div style="margin-bottom:10px">
+            <button class="btn btn-ghost btn-sm" id="plSelectAllBtn">☑ Select All</button>
+          </div>
+
           <!-- Photo grid -->
           <div id="plPhotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px"></div>
           <p id="plNoFiles" style="display:none;color:var(--text-muted);margin-top:16px">
@@ -82,6 +86,7 @@ const PhotoLibrary = {
     document.getElementById('plDeleteSelectedBtn').addEventListener('click', () => this.deleteSelected());
     document.getElementById('plDownloadSelectedBtn').addEventListener('click', () => this.downloadSelected());
     document.getElementById('plAiRenameSelectedBtn').addEventListener('click', () => this.aiRenameSelected());
+    document.getElementById('plSelectAllBtn').addEventListener('click', () => this.toggleSelectAll());
     document.getElementById('plQueueServerBtn').addEventListener('click', () => this.queueSelected('server'));
     document.getElementById('plQueueRemoteBtn').addEventListener('click', () => this.queueSelected('remote'));
 
@@ -266,6 +271,12 @@ const PhotoLibrary = {
     this.renderPhotoGrid();
   },
 
+  toggleSelectAll() {
+    const allSelected = this.currentFiles.length > 0 && this.selectedIds.size === this.currentFiles.length;
+    this.selectedIds = allSelected ? new Set() : new Set(this.currentFiles.map(f => f.id));
+    this.renderPhotoGrid();
+  },
+
   updateSelectionBar() {
     const bar = document.getElementById('plSelectionBar');
     const count = document.getElementById('plSelectionCount');
@@ -274,6 +285,11 @@ const PhotoLibrary = {
       count.textContent = `${this.selectedIds.size} selected`;
     } else {
       bar.style.display = 'none';
+    }
+    const selectAllBtn = document.getElementById('plSelectAllBtn');
+    if (selectAllBtn) {
+      const allSelected = this.currentFiles.length > 0 && this.selectedIds.size === this.currentFiles.length;
+      selectAllBtn.textContent = allSelected ? '☐ Deselect All' : '☑ Select All';
     }
   },
 
