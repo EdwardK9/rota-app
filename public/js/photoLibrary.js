@@ -59,6 +59,16 @@ const PhotoLibrary = {
             <button class="btn btn-ghost btn-sm" id="plClearSelectionBtn">✕ Clear</button>
           </div>
 
+          <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+            <input type="text" id="plSearchInput" placeholder="🔍 Search filename or week (e.g. 17.08)" style="max-width:280px" />
+            <select id="plFilterMode" style="max-width:190px">
+              <option value="all">All photos</option>
+              <option value="renamed">🏷️ Renamed only</option>
+              <option value="unrenamed">⚠️ Not renamed</option>
+            </select>
+            <span id="plFilterCount" style="font-size:12px;color:var(--text-muted)"></span>
+          </div>
+
           <div style="margin-bottom:10px">
             <button class="btn btn-ghost btn-sm" id="plSelectAllBtn">☑ Select All</button>
           </div>
@@ -87,6 +97,8 @@ const PhotoLibrary = {
     document.getElementById('plDownloadSelectedBtn').addEventListener('click', () => this.downloadSelected());
     document.getElementById('plAiRenameSelectedBtn').addEventListener('click', () => this.aiRenameSelected());
     document.getElementById('plSelectAllBtn').addEventListener('click', () => this.toggleSelectAll());
+    document.getElementById('plSearchInput').addEventListener('input', () => this.renderPhotoGrid());
+    document.getElementById('plFilterMode').addEventListener('change', () => this.renderPhotoGrid());
     document.getElementById('plQueueServerBtn').addEventListener('click', () => this.queueSelected('server'));
     document.getElementById('plQueueRemoteBtn').addEventListener('click', () => this.queueSelected('remote'));
 
@@ -191,6 +203,8 @@ const PhotoLibrary = {
     document.getElementById('plFileView').style.display = 'block';
     document.getElementById('plFolderTitle').textContent = folder.name;
     document.getElementById('plNewFolderBtn').style.display = 'none';
+    document.getElementById('plSearchInput').value = '';
+    document.getElementById('plFilterMode').value = 'all';
     await this.loadFiles();
   },
 
@@ -214,15 +228,42 @@ const PhotoLibrary = {
     }
   },
 
+  // Files currently matching the search box + filter dropdown — used for both
+  // rendering and "Select All", so selecting all only picks what's actually shown.
+  _visibleFiles() {
+    const query  = (document.getElementById('plSearchInput')?.value || '').trim().toLowerCase();
+    const filter = document.getElementById('plFilterMode')?.value || 'all';
+    return this.currentFiles.filter(f => {
+      if (query && !f.filename.toLowerCase().includes(query)) return false;
+      if (filter === 'renamed' && !f.week_start_date) return false;
+      if (filter === 'unrenamed' && f.week_start_date) return false;
+      return true;
+    });
+  },
+
   renderPhotoGrid() {
     const grid = document.getElementById('plPhotoGrid');
     const empty = document.getElementById('plNoFiles');
-    if (!this.currentFiles.length) {
+    const countEl = document.getElementById('plFilterCount');
+    const visible = this._visibleFiles();
+
+    if (countEl) {
+      countEl.textContent = this.currentFiles.length
+        ? (visible.length === this.currentFiles.length
+            ? `${this.currentFiles.length} photo${this.currentFiles.length !== 1 ? 's' : ''}`
+            : `${visible.length} of ${this.currentFiles.length} shown`)
+        : '';
+    }
+
+    if (!visible.length) {
       grid.innerHTML = '';
       empty.style.display = 'block';
+      empty.textContent = this.currentFiles.length
+        ? 'No photos match your search/filter.'
+        : 'No photos in this folder yet — drop some above.';
     } else {
       empty.style.display = 'none';
-      grid.innerHTML = this.currentFiles.map(f => {
+      grid.innerHTML = visible.map(f => {
         const sel = this.selectedIds.has(f.id);
         return `
           <div class="pl-photo-card" data-file-id="${f.id}" style="
@@ -272,8 +313,9 @@ const PhotoLibrary = {
   },
 
   toggleSelectAll() {
-    const allSelected = this.currentFiles.length > 0 && this.selectedIds.size === this.currentFiles.length;
-    this.selectedIds = allSelected ? new Set() : new Set(this.currentFiles.map(f => f.id));
+    const visible = this._visibleFiles();
+    const allSelected = visible.length > 0 && visible.every(f => this.selectedIds.has(f.id));
+    this.selectedIds = allSelected ? new Set() : new Set(visible.map(f => f.id));
     this.renderPhotoGrid();
   },
 
@@ -288,7 +330,8 @@ const PhotoLibrary = {
     }
     const selectAllBtn = document.getElementById('plSelectAllBtn');
     if (selectAllBtn) {
-      const allSelected = this.currentFiles.length > 0 && this.selectedIds.size === this.currentFiles.length;
+      const visible = this._visibleFiles();
+      const allSelected = visible.length > 0 && visible.every(f => this.selectedIds.has(f.id));
       selectAllBtn.textContent = allSelected ? '☐ Deselect All' : '☑ Select All';
     }
   },
