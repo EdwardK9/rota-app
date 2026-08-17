@@ -122,31 +122,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_colleague_shifts_colleague ON colleague_shifts(colleague_id);
 `);
 
-// OCR background job queue
-db.exec(`
-  CREATE TABLE IF NOT EXISTS ocr_jobs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    source      TEXT    NOT NULL,
-    status      TEXT    NOT NULL DEFAULT 'queued',
-    total       INTEGER NOT NULL DEFAULT 0,
-    done        INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    completed_at TEXT
-  );
-  CREATE TABLE IF NOT EXISTS ocr_job_files (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id        INTEGER NOT NULL REFERENCES ocr_jobs(id) ON DELETE CASCADE,
-    filename      TEXT    NOT NULL,
-    mime_type     TEXT    NOT NULL DEFAULT 'image/png',
-    image_blob    BLOB    NOT NULL,
-    status        TEXT    NOT NULL DEFAULT 'queued',
-    inserted      INTEGER,
-    skipped       INTEGER,
-    conflicts_json TEXT,
-    raw_json      TEXT,
-    error         TEXT
-  );
-`);
+// The Ollama/LM Studio local-OCR job queue was removed (Gemini covers AI screenshot
+// import instead) — these tables held full-resolution screenshot blobs that were
+// never cleared after a job finished, and had grown to ~234MB. Drop them once and
+// reclaim the space with a one-time VACUUM; this only ever runs once, since the
+// tables won't exist on the next startup.
+const hadOcrTables = db.prepare(
+  "SELECT name FROM sqlite_master WHERE type='table' AND name='ocr_jobs'"
+).get();
+if (hadOcrTables) {
+  db.exec('DROP TABLE IF EXISTS ocr_job_files');
+  db.exec('DROP TABLE IF EXISTS ocr_jobs');
+  try { db.exec('VACUUM'); } catch (_) { /* best-effort */ }
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS photo_folders (
@@ -193,19 +181,6 @@ db.exec(`
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
-
-// On startup, reset any jobs that were mid-flight when the server last stopped
-db.exec(`UPDATE ocr_job_files SET status = 'queued' WHERE status = 'processing'`);
-db.exec(`UPDATE ocr_jobs SET status = 'queued' WHERE status = 'processing'`);
-
-// OCR job migrations
-const ocrJobMigrations = [
-  'ALTER TABLE ocr_jobs ADD COLUMN date_override TEXT',
-  'ALTER TABLE ocr_job_files ADD COLUMN warning TEXT',
-];
-ocrJobMigrations.forEach(sql => {
-  try { db.exec(sql); } catch (_) { /* already exists */ }
-});
 
 // Colleague-shifts migrations
 const colShiftMigrations = [

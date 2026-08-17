@@ -1,6 +1,6 @@
 {
   "name": "screwfix-rota-app",
-  "version": "2.1.9",
+  "version": "3.0.0",
   "description": "Shift and pay tracker for Screwfix",
   "main": "server.js",
   "scripts": {
@@ -12,10 +12,8 @@
     "compression": "^1.8.1",
     "express": "^4.18.2",
     "googleapis": "^140.0.1",
-    "jimp": "^0.22.12",
     "multer": "^2.1.1",
-    "pdfkit": "^0.15.0",
-    "tesseract.js": "^7.0.0"
+    "pdfkit": "^0.15.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"

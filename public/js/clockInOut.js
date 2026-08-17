@@ -13,6 +13,11 @@ const ClockInOutView = {
     this.startTicker();
   },
 
+  destroy() {
+    if (this._ticker) clearInterval(this._ticker);
+    this._ticker = null;
+  },
+
   render() {
     document.getElementById('view-clock').innerHTML = `
       <div style="max-width:720px">

@@ -29,15 +29,10 @@ const API = {
 
   // Shifts
   getShifts:     (params = {}) => API.get('/api/shifts?' + new URLSearchParams(params)),
-  getShift:      (id)          => API.get(`/api/shifts/${id}`),
-  createShift:   (data)        => API.post('/api/shifts', data),
-  updateShift:   (id, data)    => API.put(`/api/shifts/${id}`, data),
   completeShift: (id, data)    => API.patch(`/api/shifts/${id}/complete`, data),
-  deleteShift:   (id)          => API.delete(`/api/shifts/${id}`),
 
   // Payslips
   getPayslips:   (params = {}) => API.get('/api/payslips?' + new URLSearchParams(params)),
-  getPayslip:    (id)          => API.get(`/api/payslips/${id}`),
   createPayslip: (data)        => API.post('/api/payslips', data),
   updatePayslip: (id, data)    => API.put(`/api/payslips/${id}`, data),
   deletePayslip: (id)          => API.delete(`/api/payslips/${id}`),
@@ -133,14 +128,6 @@ const API = {
   getTeamCalendar:  (params={})    => API.get('/api/working-with/team-calendar?' + new URLSearchParams(params)),
   getTeamWeek:      (week, source) => API.get('/api/working-with/team-week?' + new URLSearchParams({ ...(week ? { week } : {}), ...(source && source !== 'all' ? { importSource: source } : {}) })),
 
-  // Working-with — screenshot import (multipart, not JSON)
-  importScreenshot: (file) => {
-    const fd = new FormData();
-    fd.append('screenshot', file);
-    return fetch('/api/colleagues/import-screenshot', { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
-
   // Working-with — Gemini AI screenshot import (multipart, not JSON)
   importScreenshotGemini: (file) => {
     const fd = new FormData();
@@ -166,40 +153,8 @@ const API = {
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   },
 
-  // Working-with — Ollama: list installed models
-  getOllamaModels: (source) => API.get(`/api/colleagues/ollama-models?source=${source || 'server'}`),
-
-  // Working-with — LM Studio: list loaded models
-  getLmStudioModels: () => API.get('/api/colleagues/lmstudio-models'),
-
   // Working-with — Gemini: list models available to the saved API key
   getGeminiModels: () => API.get('/api/colleagues/gemini-models'),
-
-  // OCR job queue — list all jobs (enriched with files, no blobs)
-  listOllamaJobs: () => API.get('/api/ocr-jobs'),
-
-  // OCR job queue (background Ollama processing)
-  submitOllamaJob: (files, source, dateOverride) => {
-    const fd = new FormData();
-    for (const f of files) fd.append('screenshots', f);
-    fd.append('source', source || 'server');
-    if (dateOverride) fd.append('date_override', dateOverride);
-    return fetch('/api/ocr-jobs', { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
-  getOllamaJob:          (jobId) => API.get(`/api/ocr-jobs/${jobId}`),
-  deleteOllamaJob:       (jobId) => API.delete(`/api/ocr-jobs/${jobId}`),
-  cancelOllamaJob:       (jobId) => API.patch(`/api/ocr-jobs/${jobId}/cancel`, {}),
-  clearOllamaJobConflicts: (jobId) => API.patch(`/api/ocr-jobs/${jobId}/clear-conflicts`),
-
-  // Working-with — Ollama local/remote AI screenshot import
-  importScreenshotOllama: (file, source) => {
-    const fd = new FormData();
-    fd.append('screenshot', file);
-    fd.append('source', source || 'server');
-    return fetch('/api/colleagues/import-screenshot-ollama', { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
 
   // Working-with — manual colleague-shift CRUD
   addColleagueShift:    (data)     => API.post('/api/colleague-shifts', data),
@@ -212,15 +167,10 @@ const API = {
   deleteColleagueShiftsByMonth: (colleagueId, month) => API.delete(`/api/colleague-shifts/by-colleague/${colleagueId}/month/${month}`),
   deleteAllShiftsByMonth:       (month)               => API.delete(`/api/colleague-shifts/by-month/${month}`),
   deleteAllColleagueShiftsEver:   ()                    => API.delete('/api/colleague-shifts/all'),
-  resolveConflicts:               (data)                => API.post('/api/colleague-shifts/resolve-conflicts', data),
 
   // Shift working-with overlay (manual picker in shift form)
   getWorkingWith:      (date, start_time, end_time) =>
     API.get('/api/working-with/' + date + '?' + new URLSearchParams({ start_time, end_time })),
-  saveShiftColleagues: (data) => API.post('/api/shift-colleagues', data),
-
-  // Team Rota import (name-based bulk import into colleague_shifts)
-  teamShiftsImport: (shifts, overwrite = false) => API.post('/api/team-shifts/import', { shifts, overwrite }),
 
   // Rotageek API proxy
   rotageekAuth:        (data)         => API.post('/api/rotageek/auth', data),
@@ -229,7 +179,6 @@ const API = {
   rotageekStatus:      ()             => API.get('/api/rotageek/status'),
   rotageekFetch:       (path, params) => API.post('/api/rotageek/fetch', { path, params }),
   rotageekImport:      (data)         => API.post('/api/rotageek/import-schedule', data),
-  rotageekProbeTeam:   (data)         => API.post('/api/rotageek/probe-team', data),
   rotageekGraphqlSync: (data)         => API.post('/api/rotageek/graphql-sync', data),
   rotageekDiffAll:     (data)         => API.post('/api/rotageek/diff-all', data || {}),
   rotageekSyncAll:     (data)         => API.post('/api/rotageek/sync-all', data || {}),
@@ -246,20 +195,4 @@ const API = {
   getPhotoFiles:        (folderId)      => API.get(`/api/photo-library/folders/${folderId}/files`),
   deletePhotoFile:      (id)            => API.delete(`/api/photo-library/files/${id}`),
   aiRenamePhotoFile:    (id)            => API.post(`/api/photo-library/files/${id}/ai-rename`, {}),
-  uploadPhotoFile:      (folderId, file) => {
-    const fd = new FormData();
-    fd.append('photo', file);
-    return fetch(`/api/photo-library/folders/${folderId}/files`, { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
-  getPhotoFileUrl:      (id)            => `/api/photo-library/files/${id}/data`,
-
-  submitOllamaJobAsync: (files, source, dateOverride) => {
-    const fd = new FormData();
-    for (const f of files) fd.append('screenshots', f);
-    if (source)       fd.append('source', source);
-    if (dateOverride) fd.append('dateOverride', dateOverride);
-    return fetch('/api/ocr-jobs', { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
 };

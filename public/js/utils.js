@@ -29,13 +29,6 @@ function fmtDate(dateStr) {
   return `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
 }
 
-function fmtDateLong(dateStr) {
-  if (!dateStr) return '—';
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const day = new Date(y, m - 1, d).getDay();
-  return `${DAYS[day]}, ${d} ${MONTHS[m-1]} ${y}`;
-}
-
 function fmtDayShort(dateStr) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -213,11 +206,6 @@ const BankHols = {
     } catch (_) {
       return new Set();
     }
-  },
-
-  async isHoliday(dateStr) {
-    const hols = await this.load();
-    return hols.has(dateStr);
   },
 
   // Returns a Set of bank holiday date strings for a given YYYY-MM month

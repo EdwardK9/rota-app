@@ -51,8 +51,6 @@ const PhotoLibrary = {
           <div id="plSelectionBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;
                background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px">
             <span id="plSelectionCount" style="font-weight:600;color:var(--text)"></span>
-            <button class="btn btn-primary btn-sm" id="plQueueServerBtn">🤖 Queue — Ollama (Server)</button>
-            <button class="btn btn-ghost btn-sm" id="plQueueRemoteBtn">💻 Queue — My PC</button>
             <button class="btn btn-ghost btn-sm" id="plDownloadSelectedBtn">⬇ Download</button>
             <button class="btn btn-ghost btn-sm" id="plAiRenameSelectedBtn">🏷️ AI Rename</button>
             <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger)" id="plDeleteSelectedBtn">Delete selected</button>
@@ -99,8 +97,6 @@ const PhotoLibrary = {
     document.getElementById('plSelectAllBtn').addEventListener('click', () => this.toggleSelectAll());
     document.getElementById('plSearchInput').addEventListener('input', () => this.renderPhotoGrid());
     document.getElementById('plFilterMode').addEventListener('change', () => this.renderPhotoGrid());
-    document.getElementById('plQueueServerBtn').addEventListener('click', () => this.queueSelected('server'));
-    document.getElementById('plQueueRemoteBtn').addEventListener('click', () => this.queueSelected('remote'));
 
     const dropZone = document.getElementById('plDropZone');
     const fileInput = document.getElementById('plFileInput');
@@ -423,21 +419,5 @@ const PhotoLibrary = {
     );
     if (failures.length) console.warn('AI rename failures:', failures);
     if (reload) await this.loadFiles();
-  },
-
-  async queueSelected(source) {
-    if (!this.selectedIds.size) return;
-    try {
-      const { jobId } = await API.post('/api/photo-library/queue-job', {
-        fileIds: [...this.selectedIds],
-        source
-      });
-      showToast(`${this.selectedIds.size} photo${this.selectedIds.size !== 1 ? 's' : ''} queued (Job #${jobId})`, 'success');
-      this.clearSelection();
-      // Switch to Team Upload view so they can watch progress
-      if (window.App) App.switchView('team-upload');
-    } catch(e) {
-      showToast('Failed to queue: ' + e.message, 'error');
-    }
   },
 };

@@ -14,6 +14,13 @@ const WhosInView = {
     this._refreshInterval = setInterval(() => this._load(), 60_000);
   },
 
+  destroy() {
+    clearInterval(this._refreshInterval);
+    clearInterval(this._clockInterval);
+    this._refreshInterval = null;
+    this._clockInterval = null;
+  },
+
   _render() {
     document.getElementById('view-whos-in').innerHTML = `
       <style>

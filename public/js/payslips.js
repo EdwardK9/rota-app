@@ -511,63 +511,6 @@ const PayslipsView = {
     });
   },
 
-  openAddTaxRefundModal() {
-    // Guess current UK tax year
-    const now = new Date();
-    const y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-    const defaultYear = `${y}-${String(y + 1).slice(-2)}`;
-
-    Modal.open('Add Tax Refund', `
-      <div class="form-group">
-        <label>Tax Year *</label>
-        <input type="text" id="trYear" class="form-control" value="${defaultYear}" placeholder="e.g. 2024-25" />
-        <div class="form-hint">UK tax year format, e.g. 2024-25</div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Amount (£) *</label>
-          <input type="number" id="psTrAmount" class="form-control" step="0.01" min="0" placeholder="0.00" />
-        </div>
-        <div class="form-group">
-          <label>Date received</label>
-          <input type="date" id="psTrDate" class="form-control" />
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Notes</label>
-        <input type="text" id="psTrNotes" class="form-control" placeholder="e.g. HMRC P800 refund" />
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
-        <button class="btn btn-primary" id="trSaveBtn">Save</button>
-      </div>`);
-
-    document.getElementById('trSaveBtn').addEventListener('click', async () => {
-      const tax_year = document.getElementById('trYear').value.trim();
-      const amount   = parseFloat(document.getElementById('psTrAmount').value);
-      const date     = document.getElementById('psTrDate').value || null;
-      const notes    = document.getElementById('psTrNotes').value.trim() || null;
-      if (!tax_year || isNaN(amount) || amount <= 0) {
-        showToast('Tax year and a positive amount are required', 'error'); return;
-      }
-      try {
-        await API.post('/api/tax-refunds', { tax_year, amount, date, notes });
-        Modal.close();
-        showToast('Tax refund saved ✓', 'success');
-        await this.load();
-      } catch(e) { showToast(e.message, 'error'); }
-    });
-  },
-
-  async deleteTaxRefund(id) {
-    if (!confirm('Delete this refund entry?')) return;
-    try {
-      await API.delete(`/api/tax-refunds/${id}`);
-      showToast('Deleted', 'success');
-      await this.load();
-    } catch(e) { showToast(e.message, 'error'); }
-  },
-
   openAddModal(prefillMonth) {
     const month = prefillMonth || getCurrentMonth();
     // If a payslip already exists for this month, go straight to edit

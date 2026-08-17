@@ -3037,87 +3037,6 @@ app.post('/api/rotageek/fetch', async (req, res) => {
   } catch(e) { res.status(502).json({ error: 'Fetch failed: ' + e.message }); }
 });
 
-// POST /api/rotageek/probe-team — try many endpoints/queries to discover team shifts
-app.post('/api/rotageek/probe-team', async (req, res) => {
-  const cookie    = rgSetting('cookie');
-  const csrf      = rgSetting('csrf_token');
-  const token     = rgSetting('token');
-  const auth_mode = rgSetting('auth_mode') || 'token';
-  const base_url  = rgSetting('base_url') || 'https://screwfix.rotageek.com';
-
-  if (!cookie && !token)
-    return res.status(401).json({ error: 'No session stored. Save your cookie and token first.' });
-
-  const { from, to } = req.body;
-
-  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
-  if (auth_mode === 'session' && cookie) {
-    headers['Cookie'] = cookie;
-    if (csrf) headers['requestverificationtoken'] = csrf;
-    headers['X-Requested-With'] = 'XMLHttpRequest';
-  } else if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  // GraphQL queries to try — covering common Rotageek schema patterns.
-  // We fire them all and let the client parse whatever responds with data.
-  const gqlEndpoints = ['/api/graphql-userschedules', '/api/graphql-schedules', '/api/graphql'];
-  const gqlQueries = [
-    // No user filter — might return all team shifts
-    '{ schedules { id date startTime endTime user { id firstName lastName } breaks { duration unpaid } role { name } } }',
-    '{ locationSchedules { date user { firstName lastName } startTime endTime breaks { duration unpaid } role { name } } }',
-    '{ teamSchedules { date user { firstName lastName } startTime endTime } }',
-    '{ rota { date entries { user { firstName lastName } startTime endTime role { name } } } }',
-    '{ shifts { date startTime endTime user { firstName lastName } role { name } breaks { duration unpaid } } }',
-    '{ location { id name employees { firstName lastName shifts(from:"' + (from||'') + '",to:"' + (to||'') + '"){ date startTime endTime } } } }',
-    // Variable-based variants
-    from && to ? `query($from:String,$to:String){ schedules(from:$from,to:$to){ date user{firstName lastName}startTime endTime breaks{duration unpaid}role{name} } }` : null,
-    from && to ? `query($from:String,$to:String){ locationSchedules(from:$from,to:$to){ date user{firstName lastName}startTime endTime } }` : null,
-  ].filter(Boolean);
-
-  // REST endpoints to probe
-  const qs = from && to ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : '';
-  const restEndpoints = [
-    '/api/v1/rotas', '/api/v1/schedules', '/api/v1/shifts',
-    '/api/v1/location/shifts', '/api/v1/employees/shifts', '/api/v1/rota',
-  ];
-
-  const results = {};
-
-  // Fire GraphQL probes
-  for (let qi = 0; qi < gqlQueries.length; qi++) {
-    const q = gqlQueries[qi];
-    for (const ep of gqlEndpoints) {
-      const id = `gql_${qi}_${ep.replace(/\//g,'_')}`;
-      try {
-        const vars = from && to ? { from, to } : {};
-        const r = await fetch(`${base_url}${ep}`, {
-          method: 'POST', headers,
-          body: JSON.stringify({ query: q.startsWith('query') ? q : `query ${q}`, variables: vars }),
-        });
-        const data = await r.json().catch(() => null);
-        // Only include if not an error/empty response
-        if (data && !data.errors && r.ok) results[id] = { status: r.status, query: q.slice(0,80), data };
-        else if (!results[`gql_err_${ep}`]) results[`gql_err_ep_${qi}`] = { status: r.status, error: data?.errors?.[0]?.message || 'no data' };
-      } catch(e) { /* skip */ }
-    }
-  }
-
-  // Fire REST probes
-  for (const ep of restEndpoints) {
-    const id = `rest${ep.replace(/\//g,'_')}`;
-    try {
-      const r = await fetch(`${base_url}${ep}${qs}`, { method: 'GET', headers });
-      if (r.ok) {
-        const data = await r.json().catch(async () => ({ raw: (await r.text().catch(() => '')).slice(0,500) }));
-        results[id] = { status: r.status, data };
-      }
-    } catch(e) { /* skip */ }
-  }
-
-  res.json({ probed: Object.keys(results).length, results });
-});
-
 // POST /api/rotageek/import-schedule — import parsed shifts from Rotageek response
 app.post('/api/rotageek/import-schedule', (req, res) => {
   const { shifts: rgShifts = [] } = req.body;
@@ -3897,29 +3816,6 @@ app.post('/api/rotageek/test-json-reminder', async (req, res) => {
 app.post('/api/rotageek/autosync', async (req, res) => {
   const result = await runRotageekSync({ source: 'manual_sync' });
   res.status(result.error ? 502 : 200).json(result);
-});
-
-// -----------------------------------------
-// SCREENSHOT IMPORT (Rotageek OCR)
-// -----------------------------------------
-
-const multer  = require('multer');
-const upload  = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-
-// POST /api/import/screenshot -- OCR a Rotageek rota screenshot and return parsed shifts
-app.post('/api/import/screenshot', upload.single('image'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
-  try {
-    const { createWorker } = require('tesseract.js');
-    const worker = await createWorker('eng');
-    const { data: { text } } = await worker.recognize(req.file.buffer);
-    await worker.terminate();
-    const shifts = parseRotageekScreenshot(text);
-    res.json({ shifts, raw_text: text });
-  } catch (err) {
-    console.error('Screenshot OCR error:', err);
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // -----------------------------------------

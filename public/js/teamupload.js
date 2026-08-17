@@ -498,8 +498,6 @@ RULES — follow exactly:
     return text.slice(start, end + 1);
   },
 
-  _previewJson() { this._previewAllJson(); },
-
   // ── Client-side date helpers (mirror the server logic for preview) ──────────
 
   _resolveWeekDates(dateRange) {

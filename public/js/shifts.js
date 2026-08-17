@@ -675,13 +675,6 @@ const ShiftsView = {
         <label>Notes (optional)</label>
         <textarea id="completeNotes" rows="2">${esc(shift.notes || '')}</textarea>
       </div>
-      <div class="form-group">
-        <label style="display:flex;align-items:center;gap:6px;">
-          📸 Upload rota screenshot <span style="font-size:12px;color:var(--text-muted)">(optional — queues for AI import)</span>
-        </label>
-        <input type="file" id="completeScreenshot" accept="image/*" style="margin-top:4px;" />
-        <div id="completeScreenshotStatus" style="font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
-      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
         <button class="btn btn-success" id="confirmCompleteBtn">✓ Mark Complete</button>
@@ -697,12 +690,6 @@ const ShiftsView = {
       });
     });
 
-    // Show selected filename
-    document.getElementById('completeScreenshot').addEventListener('change', e => {
-      const status = document.getElementById('completeScreenshotStatus');
-      status.textContent = e.target.files[0] ? `Selected: ${e.target.files[0].name}` : '';
-    });
-
     document.getElementById('confirmCompleteBtn').addEventListener('click', async () => {
       const break_taken = hasBreak
         ? document.querySelector('input[name="break_taken"]:checked').value
@@ -712,23 +699,11 @@ const ShiftsView = {
         : break_taken === 'none'    ? 0
         : shift.break_scheduled_minutes;
       const notes = document.getElementById('completeNotes').value.trim() || null;
-      const screenshotFile = document.getElementById('completeScreenshot').files[0] || null;
 
       try {
         await API.completeShift(shift.id, { completed: true, break_taken, break_taken_minutes, notes });
         Modal.close();
-
-        if (screenshotFile) {
-          try {
-            await API.submitOllamaJob([screenshotFile], 'server', shift.date);
-            showToast('Shift completed & screenshot queued for import 🎉', 'success');
-          } catch(uploadErr) {
-            showToast('Shift completed ✓ — screenshot upload failed: ' + uploadErr.message, 'warning');
-          }
-        } else {
-          showToast('Shift completed! 🎉', 'success');
-        }
-
+        showToast('Shift completed! 🎉', 'success');
         await this.loadShifts();
       } catch(e) { showToast(e.message, 'error'); }
     });

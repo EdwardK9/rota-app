@@ -1227,12 +1227,7 @@ const ImportView = {
       } else {
         banner.innerHTML = `<div class="card card-body" style="border-left:4px solid var(--success);padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ✅ <strong>Connected</strong> — ${esc(s.base_url || '')} &nbsp;·&nbsp; ${modeLabel}${expiryHtml}
-          &nbsp; <button class="btn btn-ghost btn-sm" id="rgUpdateTokenBtn" style="margin-left:8px">↻ Update token</button>
         </div>`;
-        document.getElementById('rgUpdateTokenBtn')?.addEventListener('click', () => {
-          document.getElementById('rgTokenInput')?.scrollIntoView({ behavior: 'smooth' });
-          document.getElementById('rgTokenInput')?.focus();
-        });
       }
       // Session auth → show auto-sync; token auth → show fetch
       if (autoSyncSec) autoSyncSec.style.display = isSession ? 'block' : 'none';
@@ -1261,44 +1256,6 @@ const ImportView = {
       if (autoSyncSec) autoSyncSec.style.display = 'none';
       if (fetchSec)    fetchSec.style.display    = 'none';
       if (login)       login.style.display       = 'block';
-    }
-  },
-
-  async rgConnect() {
-    const username = document.getElementById('rgUsername').value.trim();
-    const password = document.getElementById('rgPassword').value;
-    const base_url = document.getElementById('rgBaseUrlInput').value.trim();
-    const status   = document.getElementById('rgLoginStatus');
-    const btn      = document.getElementById('rgLoginBtn');
-    if (!username || !password) { showToast('Username and password required', 'error'); return; }
-    btn.disabled = true; status.textContent = 'Trying login…';
-    try {
-      await API.rotageekAuth({ username, password, base_url: base_url || undefined });
-      status.textContent = '✓ Connected';
-      await this.checkRotageekStatus();
-      showToast('Connected to Rotageek', 'success');
-    } catch(e) {
-      status.textContent = '';
-      showToast('Login failed — try Option 2: paste a token from your browser', 'error');
-      document.getElementById('rgTokenInput')?.focus();
-    } finally {
-      btn.disabled = false;
-    }
-  },
-
-  async rgSaveToken() {
-    const token    = document.getElementById('rgTokenInput').value.trim();
-    const base_url = document.getElementById('rgTokenBaseUrl').value.trim();
-    const status   = document.getElementById('rgTokenStatus');
-    if (!token) { showToast('Token required', 'error'); return; }
-    try {
-      await API.rotageekSaveToken({ token, base_url: base_url || undefined });
-      status.textContent = '✓ Saved';
-      await this.checkRotageekStatus();
-      showToast('Token saved', 'success');
-    } catch(e) {
-      status.textContent = '';
-      showToast('Failed: ' + e.message, 'error');
     }
   },
 

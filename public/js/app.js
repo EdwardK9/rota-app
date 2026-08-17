@@ -53,7 +53,6 @@ const App = {
         const s = JSON.parse(localStorage.getItem('navGroups') || '{}');
         s[key] = open;
         localStorage.setItem('navGroups', JSON.stringify(s));
-        _syncGroupBadges();
       });
     });
 
@@ -126,6 +125,12 @@ const App = {
   },
 
   async navigate(view) {
+    // Stop the outgoing view's timers/polls before switching — without this they
+    // keep running in the background for the rest of the session (accumulating one
+    // more set of intervals every time that view is revisited).
+    const outgoingView = { dashboard: DashboardView, 'whos-in': WhosInView, clock: ClockInOutView }[this.currentView];
+    outgoingView?.destroy?.();
+
     // Hide all views
     document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
 
@@ -145,7 +150,6 @@ const App = {
         localStorage.setItem('navGroups', JSON.stringify(s));
       }
     });
-    if (typeof _syncGroupBadges === 'function') _syncGroupBadges();
 
     // Show target view
     const viewEl = document.getElementById(`view-${view}`);
@@ -229,49 +233,7 @@ const App = {
   },
 };
 
-// ─── Ollama queue badge ─────────────────────────────────────────────────────
-
-let _ollamaActiveCount = 0;
-function _syncGroupBadges() {
-  const groupBadge = document.getElementById('ollamaQueueBadgeGroup');
-  if (!groupBadge) return;
-  const teamGroup = groupBadge.closest('.nav-group');
-  const collapsed = teamGroup && !teamGroup.classList.contains('open');
-  if (_ollamaActiveCount > 0 && collapsed) {
-    groupBadge.textContent = _ollamaActiveCount;
-    groupBadge.style.display = 'inline-flex';
-  } else {
-    groupBadge.style.display = 'none';
-  }
-}
-
-function updateOllamaBadge(activeCount) {
-  _ollamaActiveCount = activeCount;
-  const badge = document.getElementById('ollamaQueueBadge');
-  if (badge) {
-    if (activeCount > 0) {
-      badge.textContent = activeCount;
-      badge.style.display = 'inline-flex';
-    } else {
-      badge.style.display = 'none';
-    }
-  }
-  _syncGroupBadges();
-}
-
-// Background poller — keeps badge accurate even when not on the Team Upload page
-async function _pollOllamaQueueBadge() {
-  try {
-    const { jobs } = await API.listOllamaJobs();
-    const active = jobs.filter(j => j.status === 'queued' || j.status === 'processing').length;
-    updateOllamaBadge(active);
-  } catch(_) {}
-}
-
 // Start the app when the DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   App.start();
-  // Poll the badge every 8 seconds regardless of which view is open
-  _pollOllamaQueueBadge();
-  setInterval(_pollOllamaQueueBadge, 8000);
 });

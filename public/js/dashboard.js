@@ -11,6 +11,11 @@ const DashboardView = {
     this._refreshTimer = setInterval(() => this.updateCountdown(), 1000);
   },
 
+  destroy() {
+    clearInterval(this._refreshTimer);
+    this._refreshTimer = null;
+  },
+
   // Rollover cutoff for the "Next In" card: once the store's effectively done for the
   // day, treat the roster as showing FROM tomorrow rather than today. 19:30 weekdays,
   // 18:30 Saturday, 16:30 Sunday. Independent of the physical store-closing time used
