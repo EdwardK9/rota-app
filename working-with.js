@@ -1097,7 +1097,22 @@ router.post('/colleagues/gemini-extract', upload.single('screenshot'), async (re
     if (!parsed) {
       return res.status(502).json({ error: 'Gemini returned unexpected output — could not parse JSON', rawText: rawText.slice(0, 3000) });
     }
-    res.json({ data: parsed, model_used: modelUsed });
+
+    // Best-effort: keep a copy of the screenshot in the Photo Library, named with the
+    // week it covers so past rotas stay browsable/downloadable. Never let a save
+    // failure break the actual import.
+    let savedAs = null;
+    try {
+      const folderId = getOrCreatePhotoFolder('Team Rota Screenshots');
+      const range = weekRangeForFilename(parsed.date_range);
+      const baseName = range ? range.label : req.file.originalname.replace(/\.[^.]+$/, '');
+      savePhotoToFolder(folderId, req.file.buffer, req.file.mimetype || 'image/jpeg', baseName, range?.weekStart);
+      savedAs = range ? range.label : baseName;
+    } catch (saveErr) {
+      console.error('Photo Library auto-save failed (non-fatal):', saveErr.message);
+    }
+
+    res.json({ data: parsed, model_used: modelUsed, saved_as: savedAs });
   } catch (err) {
     console.error('Gemini extract error:', err);
     res.status(err.status || 500).json({ error: err.message });
@@ -2345,40 +2360,6 @@ router.get('/whos-in', (req, res) => {
   });
 });
 
-router.get('/working-with/compare-sources', (req, res) => {
-  const { from, to } = req.query;
-  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
-
-  const colleagues = db.prepare('SELECT id, name FROM colleagues ORDER BY sort_order ASC, name ASC').all();
-
-  const shifts = db.prepare(
-    'SELECT cs.*, c.name as colleague_name FROM colleague_shifts cs JOIN colleagues c ON c.id = cs.colleague_id WHERE cs.date >= ? AND cs.date <= ? ORDER BY cs.date, c.name'
-  ).all(from, to);
-
-  const sources = [...new Set(shifts.map(s => s.import_source || 'manual'))].sort();
-
-  const map = {};
-  for (const s of shifts) {
-    const key = `${s.colleague_id}__${s.date}`;
-    if (!map[key]) map[key] = { colleague_id: s.colleague_id, name: s.colleague_name, date: s.date, bySource: {} };
-    const src = s.import_source || 'manual';
-    if (!map[key].bySource[src]) map[key].bySource[src] = [];
-    map[key].bySource[src].push({ start_time: s.start_time, end_time: s.end_time, shift_type: s.shift_type, id: s.id });
-  }
-
-  const rows = Object.values(map).map(row => {
-    const entries = Object.values(row.bySource);
-    const allSame = entries.every(arr =>
-      arr[0].start_time === entries[0][0].start_time &&
-      arr[0].end_time   === entries[0][0].end_time &&
-      arr[0].shift_type === entries[0][0].shift_type
-    );
-    return { ...row, disagrees: !allSame && entries.length > 1 };
-  });
-
-  res.json({ sources, rows, from, to });
-});
-
 // ─────────────────────────────────────────
 // Photo Library - filesystem storage
 // Photos saved under DATA_DIR/photo-library/<folder-id>/<filename> — uses the
@@ -2446,16 +2427,62 @@ router.delete('/photo-library/folders/:id', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /photo-library/folders/:id/files
+// GET /photo-library/folders/:id/files — weeks with a detected date sort chronologically
+// (newest week first) since a DD.MM.YYYY filename doesn't sort correctly as text;
+// anything without a detected week falls to the bottom, sorted by upload time.
 router.get('/photo-library/folders/:id/files', (req, res) => {
   const folderId = parseInt(req.params.id, 10);
   try {
-    const files = db.prepare(
-      'SELECT id, filename, mime_type, uploaded_at FROM photo_files WHERE folder_id=? ORDER BY uploaded_at DESC'
-    ).all(folderId);
+    const files = db.prepare(`
+      SELECT id, filename, mime_type, uploaded_at, week_start_date FROM photo_files
+      WHERE folder_id=?
+      ORDER BY (week_start_date IS NULL) ASC, week_start_date DESC, uploaded_at DESC
+    `).all(folderId);
     res.json({ files });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// Turn a Gemini date_range string ("Aug 17 - Aug 23, 2026") into a Monday date + a
+// DD.MM.YYYY - DD.MM.YYYY display name, or null if it can't be parsed.
+function weekRangeForFilename(dateRange) {
+  const weekDates = resolveWeekDates(dateRange);
+  if (!weekDates) return null;
+  const toDDMMYYYY = iso => {
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}`;
+  };
+  return { weekStart: weekDates[0], label: `${toDDMMYYYY(weekDates[0])} - ${toDDMMYYYY(weekDates[6])}` };
+}
+
+function getOrCreatePhotoFolder(name) {
+  const existing = db.prepare('SELECT id FROM photo_folders WHERE name = ?').get(name);
+  if (existing) return existing.id;
+  const id = db.prepare('INSERT INTO photo_folders (name) VALUES (?)').run(name).lastInsertRowid;
+  const dir = fsPath.join(PHOTO_BASE, String(id));
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return id;
+}
+
+// Saves a buffer into a folder with the given base name (no extension), disambiguating
+// with " (2)", " (3)"... if that name is already taken in the folder. Returns the file id.
+function savePhotoToFolder(folderId, buffer, mimeType, baseName, weekStart) {
+  const dir = fsPath.join(PHOTO_BASE, String(folderId));
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const ext = mimeType === 'image/png' ? '.png' : mimeType === 'image/webp' ? '.webp' : '.jpg';
+  const existingNames = new Set(
+    db.prepare('SELECT filename FROM photo_files WHERE folder_id = ?').all(folderId).map(r => r.filename)
+  );
+  let filename = baseName + ext;
+  let n = 2;
+  while (existingNames.has(filename)) { filename = `${baseName} (${n})${ext}`; n++; }
+  const diskName = Date.now() + '_' + filename.replace(/[^a-zA-Z0-9._\- ]/g, '_');
+  const filePath = fsPath.join(dir, diskName);
+  fs.writeFileSync(filePath, buffer);
+  const info = db.prepare(
+    'INSERT INTO photo_files (folder_id, filename, mime_type, file_path, week_start_date) VALUES (?,?,?,?,?)'
+  ).run(folderId, filename, mimeType, filePath, weekStart || null);
+  return info.lastInsertRowid;
+}
 
 // POST /photo-library/folders/:id/files — multi-file upload (field: "photos")
 router.post('/photo-library/folders/:id/files', photoUpload.array('photos', 50), (req, res) => {
@@ -2468,15 +2495,17 @@ router.post('/photo-library/folders/:id/files', photoUpload.array('photos', 50),
     const insert = db.prepare(
       'INSERT INTO photo_files (folder_id, filename, mime_type, file_path) VALUES (?,?,?,?)'
     );
+    const fileIds = [];
     db.transaction(() => {
       for (const f of files) {
         const safeName = Date.now() + '_' + f.originalname.replace(/[^a-zA-Z0-9._\- ]/g, '_');
         const filePath = fsPath.join(dir, safeName);
         fs.writeFileSync(filePath, f.buffer);
-        insert.run(folderId, f.originalname, f.mimetype, filePath);
+        const info = insert.run(folderId, f.originalname, f.mimetype, filePath);
+        fileIds.push(info.lastInsertRowid);
       }
     })();
-    res.json({ inserted: files.length });
+    res.json({ inserted: files.length, fileIds });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2491,6 +2520,36 @@ router.get('/photo-library/files/:id/image', (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${f.filename}"`);
     fs.createReadStream(f.file_path).pipe(res);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /photo-library/files/:id/ai-rename — read the week range off an already-
+// uploaded screenshot with Gemini and rename it accordingly. Only touches the
+// display filename + week_start_date (sort key) — the file on disk is untouched.
+router.post('/photo-library/files/:id/ai-rename', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const f = db.prepare('SELECT * FROM photo_files WHERE id=?').get(id);
+    if (!f || !f.file_path || !fs.existsSync(f.file_path)) return res.status(404).json({ error: 'Not found' });
+
+    const buffer = fs.readFileSync(f.file_path);
+    const { parsed } = await callGeminiVision(buffer, f.mime_type || 'image/jpeg');
+    const range = parsed ? weekRangeForFilename(parsed.date_range) : null;
+    if (!range) return res.status(422).json({ error: 'Could not read a week range from this image' });
+
+    const ext = fsPath.extname(f.filename) || '.jpg';
+    const existingNames = new Set(
+      db.prepare('SELECT filename FROM photo_files WHERE folder_id = ? AND id != ?').all(f.folder_id, id).map(r => r.filename)
+    );
+    let filename = range.label + ext;
+    let n = 2;
+    while (existingNames.has(filename)) { filename = `${range.label} (${n})${ext}`; n++; }
+
+    db.prepare('UPDATE photo_files SET filename=?, week_start_date=? WHERE id=?').run(filename, range.weekStart, id);
+    res.json({ id, filename, week_start_date: range.weekStart });
+  } catch (err) {
+    console.error('Photo AI-rename error:', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 // DELETE /photo-library/files/:id

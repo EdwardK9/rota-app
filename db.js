@@ -166,6 +166,11 @@ db.exec(`
 // Migrate old blob-based table if it exists -- drop image_blob, add file_path
 try { db.exec('ALTER TABLE photo_files ADD COLUMN file_path TEXT NOT NULL DEFAULT ""'); } catch(_) {}
 try { db.exec('ALTER TABLE photo_files DROP COLUMN image_blob'); } catch(_) {}
+// week_start_date: ISO date (Monday) of the rota week this screenshot covers, when
+// known — set automatically for AI-imported/AI-renamed screenshots, NULL for anything
+// else. Lets the folder be sorted chronologically by week rather than upload time,
+// since a DD.MM.YYYY filename doesn't sort correctly as plain text.
+try { db.exec('ALTER TABLE photo_files ADD COLUMN week_start_date TEXT'); } catch(_) {}
 
 // Clock in/out
 db.exec(`

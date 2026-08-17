@@ -35,12 +35,16 @@ const PhotoLibrary = {
           </div>
 
           <!-- Upload drop zone -->
-          <div class="drop-zone" id="plDropZone" style="margin-bottom:16px">
+          <div class="drop-zone" id="plDropZone" style="margin-bottom:8px">
             <div class="drop-zone-icon">📷</div>
             <div class="drop-zone-text">Drop screenshots here or click to upload</div>
             <div class="drop-zone-hint">PNG, JPG — multiple files supported</div>
             <input type="file" id="plFileInput" accept="image/*" multiple style="display:none" />
           </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted);margin-bottom:16px;cursor:pointer">
+            <input type="checkbox" id="plAutoRenameOnUpload" />
+            🏷️ Auto-rename with AI on upload — reads the week from each screenshot, no shifts are imported
+          </label>
 
           <!-- Selection toolbar (hidden until selection) -->
           <div id="plSelectionBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;
@@ -49,6 +53,7 @@ const PhotoLibrary = {
             <button class="btn btn-primary btn-sm" id="plQueueServerBtn">🤖 Queue — Ollama (Server)</button>
             <button class="btn btn-ghost btn-sm" id="plQueueRemoteBtn">💻 Queue — My PC</button>
             <button class="btn btn-ghost btn-sm" id="plDownloadSelectedBtn">⬇ Download</button>
+            <button class="btn btn-ghost btn-sm" id="plAiRenameSelectedBtn">🏷️ AI Rename</button>
             <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger)" id="plDeleteSelectedBtn">Delete selected</button>
             <button class="btn btn-ghost btn-sm" id="plClearSelectionBtn">✕ Clear</button>
           </div>
@@ -75,6 +80,7 @@ const PhotoLibrary = {
     document.getElementById('plClearSelectionBtn').addEventListener('click', () => this.clearSelection());
     document.getElementById('plDeleteSelectedBtn').addEventListener('click', () => this.deleteSelected());
     document.getElementById('plDownloadSelectedBtn').addEventListener('click', () => this.downloadSelected());
+    document.getElementById('plAiRenameSelectedBtn').addEventListener('click', () => this.aiRenameSelected());
     document.getElementById('plQueueServerBtn').addEventListener('click', () => this.queueSelected('server'));
     document.getElementById('plQueueRemoteBtn').addEventListener('click', () => this.queueSelected('remote'));
 
@@ -272,6 +278,7 @@ const PhotoLibrary = {
 
   async uploadFiles(fileList) {
     if (!fileList || !fileList.length || !this.currentFolder) return;
+    const autoRename = document.getElementById('plAutoRenameOnUpload')?.checked;
     const formData = new FormData();
     for (const f of fileList) formData.append('photos', f);
     try {
@@ -279,12 +286,16 @@ const PhotoLibrary = {
         method: 'POST', body: formData
       });
       if (!res.ok) throw new Error(await res.text());
-      const { inserted } = await res.json();
+      const { inserted, fileIds } = await res.json();
       showToast(`${inserted} photo${inserted !== 1 ? 's' : ''} uploaded`, 'success');
       document.getElementById('plFileInput').value = '';
       await this.loadFiles();
       // Update folder list count in background
       this.loadFolders();
+
+      if (autoRename && fileIds?.length) {
+        await this._aiRenameFileIds(fileIds, { reload: true });
+      }
     } catch(e) {
       showToast('Upload failed: ' + e.message, 'error');
     }
@@ -318,6 +329,40 @@ const PhotoLibrary = {
         document.body.removeChild(a);
       }, i * 200); // stagger to avoid browser blocking
     });
+  },
+
+  // Reads the week range off each selected screenshot with Gemini and renames it —
+  // one at a time so a failure on one photo doesn't stop the rest.
+  async aiRenameSelected() {
+    if (!this.selectedIds.size) return;
+    await this._aiRenameFileIds([...this.selectedIds], { reload: false });
+    this.clearSelection();
+    await this.loadFiles();
+  },
+
+  // Shared by aiRenameSelected() and the "auto-rename on upload" checkbox — no
+  // shifts are imported here, this only reads the date range to rename the file.
+  async _aiRenameFileIds(ids, { reload }) {
+    let renamed = 0;
+    const failures = [];
+    showToast(`Reading ${ids.length} photo${ids.length !== 1 ? 's' : ''} with AI…`, 'info');
+    for (const id of ids) {
+      try {
+        await API.aiRenamePhotoFile(id);
+        renamed++;
+      } catch (e) {
+        const file = this.currentFiles.find(f => f.id === id);
+        failures.push((file ? file.filename : id) + ': ' + e.message);
+      }
+    }
+    showToast(
+      failures.length
+        ? `Renamed ${renamed} of ${ids.length} — ${failures.length} failed`
+        : `Renamed ${renamed} photo${renamed !== 1 ? 's' : ''}`,
+      failures.length && !renamed ? 'error' : 'success'
+    );
+    if (failures.length) console.warn('AI rename failures:', failures);
+    if (reload) await this.loadFiles();
   },
 
   async queueSelected(source) {

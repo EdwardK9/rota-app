@@ -314,6 +314,7 @@ RULES — follow exactly:
     const results = [];
     const errors = [];
     const fallbackModels = new Set();
+    const savedAs = [];
     const configuredModel = App.settings?.gemini_model;
 
     for (let i = 0; i < files.length; i++) {
@@ -327,6 +328,7 @@ RULES — follow exactly:
         if (result.model_used && configuredModel && result.model_used !== configuredModel) {
           fallbackModels.add(result.model_used);
         }
+        if (result.saved_as) savedAs.push(result.saved_as);
       } catch (e) {
         errors.push(`${files[i].name}: ${e.message}`);
       }
@@ -341,9 +343,12 @@ RULES — follow exactly:
     const fallbackNote = fallbackModels.size
       ? ` (your configured model was overloaded — used ${[...fallbackModels].join(', ')} instead)`
       : '';
+    const savedNote = savedAs.length
+      ? ` · 📁 saved to Photo Library as "${savedAs.join('", "')}"`
+      : '';
     status.textContent = errors.length
-      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')})${fallbackNote} — switching to preview…`
-      : `✓ Read successfully${fallbackNote} — switching to preview…`;
+      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')})${fallbackNote}${savedNote} — switching to preview…`
+      : `✓ Read successfully${fallbackNote}${savedNote} — switching to preview…`;
     status.style.color = errors.length ? 'var(--warning)' : 'var(--success)';
 
     this._jsonFiles = results;

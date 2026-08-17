@@ -162,7 +162,7 @@ const App = {
       'team-calendar': '🗓️ Team Calendar', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
       'shift-heatmap': '🔥 Shift Heatmap', 'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
       'streaks': '🏅 Streaks & Badges', 'wrapped': '🎁 Rota Wrapped',
-      'manage-people': '👤 Manage People', compare: '🔀 Compare Sources',
+      'manage-people': '👤 Manage People',
       'photo-library': '📷 Photo Library',
       'insights': '🔍 Insights',
       'whos-in': '🏪 Who\'s In Store',
@@ -203,7 +203,6 @@ const App = {
       case 'weather':        await WeatherView.init(); break;
       case 'team-upload':    TeamUploadView.init(); break;
       case 'manage-people':  await ManagePeopleView.init(); break;
-      case 'compare':        await CompareView.init(); break;
       case 'photo-library':  PhotoLibrary.render(); break;
       case 'insights':       await InsightsView.init(); break;
       case 'whos-in':       await WhosInView.init(); break;

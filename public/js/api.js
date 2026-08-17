@@ -132,7 +132,6 @@ const API = {
   getNextWith:      (id, limit=5)  => API.get(`/api/working-with/next/${id}?limit=${limit}`),
   getTeamCalendar:  (params={})    => API.get('/api/working-with/team-calendar?' + new URLSearchParams(params)),
   getTeamWeek:      (week, source) => API.get('/api/working-with/team-week?' + new URLSearchParams({ ...(week ? { week } : {}), ...(source && source !== 'all' ? { importSource: source } : {}) })),
-  compareSources:   (from, to)     => API.get(`/api/working-with/compare-sources?from=${from}&to=${to}`),
 
   // Working-with — screenshot import (multipart, not JSON)
   importScreenshot: (file) => {
@@ -246,6 +245,7 @@ const API = {
   deletePhotoFolder:    (id)            => API.delete(`/api/photo-library/folders/${id}`),
   getPhotoFiles:        (folderId)      => API.get(`/api/photo-library/folders/${folderId}/files`),
   deletePhotoFile:      (id)            => API.delete(`/api/photo-library/files/${id}`),
+  aiRenamePhotoFile:    (id)            => API.post(`/api/photo-library/files/${id}/ai-rename`, {}),
   uploadPhotoFile:      (folderId, file) => {
     const fd = new FormData();
     fd.append('photo', file);
