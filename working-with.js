@@ -1975,9 +1975,13 @@ router.post('/colleagues/import-json', (req, res) => {
       || tl === 'holiday';
   };
 
-  // Overrides: set of "colleague_id|date|start_time" keys that should be force-updated
-  const overrideSet = new Set(
-    (overrides || []).map(o => `${o.colleague_id}|${o.date}|${o.start_time}`)
+  // Overrides: decisions made on a previous conflict-resolution pass, keyed by the
+  // INCOMING shift's colleague+date+start_time. action='replace' deletes one specific
+  // existing row (replace_id) before inserting the incoming shift; action='add' just
+  // inserts the incoming shift alongside whatever's already there (e.g. a genuine
+  // split shift) without touching existing rows.
+  const overrideMap = new Map(
+    (overrides || []).map(o => [`${o.colleague_id}|${o.date}|${o.start_time}`, o])
   );
 
   const insertShift = db.prepare(`
@@ -1985,18 +1989,11 @@ router.post('/colleagues/import-json', (req, res) => {
       (colleague_id, date, start_time, end_time, shift_type, import_source, store, import_batch_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const updateShift = db.prepare(`
-    UPDATE colleague_shifts
-    SET end_time=?, shift_type=?, import_source=?, store=?
-    WHERE colleague_id=? AND date=? AND start_time=?
-  `);
-  const checkExisting = db.prepare(
-    'SELECT end_time, shift_type FROM colleague_shifts WHERE colleague_id=? AND date=? AND start_time=?'
+  const deleteShiftById = db.prepare('DELETE FROM colleague_shifts WHERE id = ?');
+  const existingForDayStmt = db.prepare(
+    'SELECT id, start_time, end_time, shift_type FROM colleague_shifts WHERE colleague_id=? AND date=?'
   );
 
-  // Note: only fresh inserts are tagged with a batch id — overridden conflicts (an
-  // UPDATE to a row that already existed before this import) are deliberately left
-  // untagged, since undoing the batch should never delete data that predates it.
   const batchId = createImportBatch('json', schedule_data.date_range || 'Team schedule JSON import');
   let inserted = 0, updated = 0, skipped = 0;
   const unknownNames = new Set();
@@ -2053,32 +2050,44 @@ router.post('/colleagues/import-json', (req, res) => {
         if (!col) { unknownNames.add(rawName); skipped++; continue; }
         if (col.left_date && col.left_date < dayDate) { skipped++; continue; }
 
-        const key = `${col.id}|${dayDate}|${start_time}`;
+        const overrideKey = `${col.id}|${dayDate}|${start_time}`;
+        const override    = overrideMap.get(overrideKey);
 
-        if (overrideSet.has(key)) {
-          // User chose to overwrite this conflict
-          const r = updateShift.run(end_time, shift_type, 'json', store, col.id, dayDate, start_time);
-          if (r.changes > 0) updated++; else skipped++;
-        } else {
+        const existingForDay = existingForDayStmt.all(col.id, dayDate);
+        const exactMatch = existingForDay.find(e =>
+          e.start_time === start_time && e.end_time === end_time && e.shift_type === shift_type
+        );
+
+        if (exactMatch) {
+          skipped++; // true duplicate — identical data, nothing to do
+        } else if (!existingForDay.length || (override && override.action === 'add')) {
+          // No existing shift that day at all, or the user explicitly chose to keep
+          // both (e.g. a genuine split shift) — just insert.
           const r = insertShift.run(col.id, dayDate, start_time, end_time, shift_type, 'json', store, batchId);
-          if (r.changes > 0) {
-            inserted++;
+          if (r.changes > 0) inserted++; else skipped++;
+        } else if (override && override.action === 'replace') {
+          // User chose to overwrite one specific existing shift with the incoming one
+          if (override.replace_id) deleteShiftById.run(override.replace_id);
+          const r = insertShift.run(col.id, dayDate, start_time, end_time, shift_type, 'json', store, batchId);
+          if (r.changes > 0) { inserted++; updated++; } else skipped++;
+        } else {
+          // Colleague already has at least one different shift that day and no
+          // decision has been made yet — mirror detectConflicts()'s vague-vs-real
+          // handling, then flag a real conflict for the user to resolve.
+          const incomingIsVague     = shift_type === 'all_day' || shift_type === 'leave';
+          const existingHasRealShift = existingForDay.some(e => e.shift_type === 'shift' && e.start_time !== '00:00');
+          const existingIsAllVague   = existingForDay.every(e => e.shift_type === 'all_day' || e.shift_type === 'leave');
+          if (incomingIsVague && (existingHasRealShift || existingIsAllVague)) {
+            skipped++; // date mis-attribution, or already covered by leave/all_day — not worth a prompt
           } else {
-            // Row already exists — check whether data actually differs
-            const existing = checkExisting.get(col.id, dayDate, start_time);
-            if (existing && (existing.end_time !== end_time || existing.shift_type !== shift_type)) {
-              // Real conflict: same key, different times/type — let user decide
-              conflicts.push({
-                colleague_id: col.id,
-                name:         col.name,
-                date:         dayDate,
-                start_time,
-                existing: { end_time: existing.end_time, shift_type: existing.shift_type },
-                incoming: { end_time,                    shift_type }
-              });
-            } else {
-              skipped++; // true duplicate — identical data, nothing to do
-            }
+            conflicts.push({
+              colleague_id: col.id,
+              name:         col.name,
+              date:         dayDate,
+              incoming: { start_time, end_time, shift_type },
+              existing: existingForDay.map(e => ({ id: e.id, start_time: e.start_time, end_time: e.end_time, shift_type: e.shift_type })),
+            });
+            skipped++;
           }
         }
       }

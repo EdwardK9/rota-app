@@ -690,7 +690,10 @@ RULES — follow exactly:
       extraHtml += `</div>`;
     }
 
-    // Show conflict resolution panel if there are conflicts
+    // Show conflict resolution panel if there are conflicts — the colleague already
+    // has at least one shift that day that doesn't exactly match the incoming one.
+    // Each row gets its own choice: skip (default, safest), replace one specific
+    // existing shift with the incoming one, or keep both (a genuine split shift).
     if (allConflicts.length) {
       const fmtTime = (st, et, type) => {
         if (type === 'leave')   return '🌴 Leave';
@@ -700,36 +703,39 @@ RULES — follow exactly:
       extraHtml += `
         <div id="tuJsonConflicts" style="margin-top:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:12px">
           <div style="padding:8px 12px;background:rgba(245,158,11,0.1);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
-            <span style="font-weight:600">⚡ ${allConflicts.length} conflict${allConflicts.length !== 1 ? 's' : ''} — existing shifts differ from incoming data</span>
-            <span style="color:var(--text-muted);font-size:11px">Check the ones you want to overwrite</span>
+            <span style="font-weight:600">⚡ ${allConflicts.length} conflict${allConflicts.length !== 1 ? 's' : ''} — this person already has a shift that day</span>
+            <span style="color:var(--text-muted);font-size:11px">Choose what to do with each, then Apply</span>
           </div>
           <table style="width:100%;border-collapse:collapse">
             <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
-              <th style="padding:5px 8px;text-align:left;font-weight:500">Use incoming</th>
               <th style="padding:5px 8px;text-align:left;font-weight:500">Person</th>
               <th style="padding:5px 8px;text-align:left;font-weight:500">Date</th>
               <th style="padding:5px 8px;text-align:left;font-weight:500">Existing</th>
               <th style="padding:5px 8px;text-align:left;font-weight:500">Incoming</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:500">Action</th>
             </tr></thead>
             <tbody>
               ${allConflicts.map((c, idx) => `
                 <tr style="border-bottom:1px solid var(--border)" data-conflict-idx="${idx}">
-                  <td style="padding:5px 8px;text-align:center">
-                    <input type="checkbox" class="conflict-cb" data-idx="${idx}"
-                      data-colleague-id="${c.colleague_id}" data-date="${c.date}"
-                      data-start-time="${c.start_time}" data-file-idx="${c.fileIdx}">
-                  </td>
                   <td style="padding:5px 8px;font-weight:500">${esc(c.name)}</td>
                   <td style="padding:5px 8px;color:var(--text-muted)">${c.date}</td>
-                  <td style="padding:5px 8px;color:var(--text-muted)">${esc(fmtTime(c.start_time, c.existing.end_time, c.existing.shift_type))}</td>
-                  <td style="padding:5px 8px;color:var(--success)">${esc(fmtTime(c.start_time, c.incoming.end_time, c.incoming.shift_type))}</td>
+                  <td style="padding:5px 8px;color:var(--text-muted)">${c.existing.map(e => esc(fmtTime(e.start_time, e.end_time, e.shift_type))).join('<br>')}</td>
+                  <td style="padding:5px 8px;color:var(--success)">${esc(fmtTime(c.incoming.start_time, c.incoming.end_time, c.incoming.shift_type))}</td>
+                  <td style="padding:5px 8px">
+                    <select class="conflict-action form-control" style="font-size:12px;padding:3px 6px"
+                      data-idx="${idx}" data-colleague-id="${c.colleague_id}" data-date="${c.date}"
+                      data-start-time="${c.incoming.start_time}" data-file-idx="${c.fileIdx}">
+                      <option value="skip" selected>Skip — keep existing as-is</option>
+                      ${c.existing.map(e => `<option value="replace:${e.id}">Replace ${esc(fmtTime(e.start_time, e.end_time, e.shift_type))} with incoming</option>`).join('')}
+                      <option value="add">Keep both — add as extra shift</option>
+                    </select>
+                  </td>
                 </tr>`).join('')}
             </tbody>
           </table>
           <div style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-top:1px solid var(--border)">
-            <button id="tuConflictSelectAll" class="btn btn-sm btn-ghost" style="font-size:11px">Select all</button>
-            <button id="tuConflictApplyBtn" class="btn btn-sm btn-primary" disabled>Apply overrides</button>
-            <span id="tuConflictCount" style="font-size:11px;color:var(--text-muted)">0 selected</span>
+            <button id="tuConflictApplyBtn" class="btn btn-sm btn-primary">Apply</button>
+            <span id="tuConflictCount" style="font-size:11px;color:var(--text-muted)"></span>
           </div>
         </div>`;
     }
@@ -746,38 +752,39 @@ RULES — follow exactly:
 
       // Wire up conflict panel controls
       if (allConflicts.length) {
-        const applyBtn    = div.querySelector('#tuConflictApplyBtn');
-        const selectAll   = div.querySelector('#tuConflictSelectAll');
-        const countLabel  = div.querySelector('#tuConflictCount');
+        const applyBtn   = div.querySelector('#tuConflictApplyBtn');
+        const countLabel = div.querySelector('#tuConflictCount');
 
         const updateCount = () => {
-          const n = div.querySelectorAll('.conflict-cb:checked').length;
-          countLabel.textContent = n + ' selected';
-          applyBtn.disabled = n === 0;
+          const n = [...div.querySelectorAll('.conflict-action')].filter(s => s.value !== 'skip').length;
+          countLabel.textContent = n ? `${n} decided` : '';
         };
-
-        div.querySelectorAll('.conflict-cb').forEach(cb => cb.addEventListener('change', updateCount));
-
-        selectAll.addEventListener('click', () => {
-          const cbs = div.querySelectorAll('.conflict-cb');
-          const allChecked = [...cbs].every(cb => cb.checked);
-          cbs.forEach(cb => { cb.checked = !allChecked; });
-          selectAll.textContent = allChecked ? 'Select all' : 'Deselect all';
-          updateCount();
-        });
+        div.querySelectorAll('.conflict-action').forEach(sel => sel.addEventListener('change', updateCount));
+        updateCount();
 
         applyBtn.addEventListener('click', async () => {
-          // Build per-file override arrays
+          // Build per-file override arrays from whatever's not left on "skip"
           const byFile = [];
-          div.querySelectorAll('.conflict-cb:checked').forEach(cb => {
-            const fi = parseInt(cb.dataset.fileIdx);
+          let n = 0;
+          div.querySelectorAll('.conflict-action').forEach(sel => {
+            if (sel.value === 'skip') return;
+            const fi = parseInt(sel.dataset.fileIdx);
             if (!byFile[fi]) byFile[fi] = [];
-            byFile[fi].push({
-              colleague_id: parseInt(cb.dataset.colleagueId),
-              date:         cb.dataset.date,
-              start_time:   cb.dataset.startTime
-            });
+            const entry = {
+              colleague_id: parseInt(sel.dataset.colleagueId),
+              date:         sel.dataset.date,
+              start_time:   sel.dataset.startTime,
+            };
+            if (sel.value === 'add') {
+              entry.action = 'add';
+            } else {
+              entry.action = 'replace';
+              entry.replace_id = parseInt(sel.value.split(':')[1], 10);
+            }
+            byFile[fi].push(entry);
+            n++;
           });
+          if (!n) { showToast('Nothing to apply — every conflict is still set to Skip', 'info'); return; }
           div.remove(); // clear panel before re-import
           await this._importJson(byFile);
         });
