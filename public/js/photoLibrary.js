@@ -41,9 +41,10 @@ const PhotoLibrary = {
             <div class="drop-zone-hint">PNG, JPG — multiple files supported</div>
             <input type="file" id="plFileInput" accept="image/*" multiple style="display:none" />
           </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted);margin-bottom:16px;cursor:pointer">
+          <label class="toggle-label" style="font-weight:400;margin-bottom:16px">
             <input type="checkbox" id="plAutoRenameOnUpload" />
-            🏷️ Auto-rename with AI on upload — reads the week from each screenshot, no shifts are imported
+            <span>🏷️ Auto-rename with AI on upload</span>
+            <span class="toggle-hint">Reads the week from each screenshot, no shifts are imported</span>
           </label>
 
           <!-- Selection toolbar (hidden until selection) -->
