@@ -12,6 +12,65 @@ const TeamUploadView = {
     this._wireTabs();
     this._initJsonPanel();
     this._initAutoAiPanel();
+    this._loadImportBatches();
+  },
+
+  async _loadImportBatches() {
+    const el = document.getElementById('tuBatchList');
+    if (!el) return;
+    try {
+      const { batches } = await API.getImportBatches(8);
+      if (!batches.length) {
+        el.innerHTML = '<span>No imports yet.</span>';
+        return;
+      }
+      const sourceLabel = { ocr: 'Screenshot OCR', gemini: 'Gemini', 'ollama-server': 'Ollama (server)',
+        'ollama-remote': 'Ollama (remote)', lmstudio: 'LM Studio', json: 'JSON paste/AI extract', 'bulk-api': 'Bulk API' };
+      el.innerHTML = `
+        <div class="table-wrapper">
+          <table style="width:100%;font-size:13px;border-collapse:collapse">
+            <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
+              <th style="padding:5px 8px;text-align:left;font-weight:500">When</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:500">Source</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:500">Detail</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:500">Shifts</th>
+              <th style="padding:5px 8px"></th>
+            </tr></thead>
+            <tbody>
+              ${batches.map(b => `
+                <tr style="border-bottom:1px solid var(--border)">
+                  <td style="padding:5px 8px;white-space:nowrap">${esc(b.created_at)}</td>
+                  <td style="padding:5px 8px">${esc(sourceLabel[b.source] || b.source)}</td>
+                  <td style="padding:5px 8px;color:var(--text-muted)">${esc(b.note || '')}</td>
+                  <td style="padding:5px 8px">${b.remaining_count}${b.remaining_count !== b.inserted_count ? ` / ${b.inserted_count}` : ''}</td>
+                  <td style="padding:5px 8px;text-align:right">
+                    ${b.undone_at
+                      ? '<span style="color:var(--text-muted)">Undone</span>'
+                      : b.remaining_count === 0
+                      ? '<span style="color:var(--text-muted)">Nothing left</span>'
+                      : `<button class="btn btn-sm btn-ghost" style="color:var(--danger)" data-undo-batch="${b.id}">Undo</button>`}
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      el.querySelectorAll('[data-undo-batch]').forEach(btn =>
+        btn.addEventListener('click', () => this._undoImportBatch(parseInt(btn.dataset.undoBatch, 10)))
+      );
+    } catch (e) {
+      el.innerHTML = `<span style="color:var(--danger)">Failed to load: ${esc(e.message)}</span>`;
+    }
+  },
+
+  async _undoImportBatch(batchId) {
+    if (!confirm('Undo this import? This removes only the shifts it added — nothing else.')) return;
+    try {
+      const result = await API.undoImportBatch(batchId);
+      showToast(`Undone — ${result.deleted} shift${result.deleted !== 1 ? 's' : ''} removed`, 'success');
+      this._loadImportBatches();
+    } catch (e) {
+      showToast('Failed to undo: ' + e.message, 'error');
+    }
   },
 
   render() {
@@ -111,6 +170,17 @@ const TeamUploadView = {
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="card" style="max-width:760px;margin:0 auto 20px">
+        <div class="card-header"><h2>Recent Imports</h2></div>
+        <div class="card-body">
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+            Each import can be undone as a whole — this only removes the shifts that
+            specific import actually added, nothing else.
+          </p>
+          <div id="tuBatchList" style="font-size:13px;color:var(--text-muted)">Loading…</div>
         </div>
       </div>
     `;
@@ -719,5 +789,6 @@ RULES — follow exactly:
       (totalInserted + totalUpdated) > 0 ? 'success' : 'info'
     );
     importBtn.disabled = false;
+    this._loadImportBatches();
   }
 };

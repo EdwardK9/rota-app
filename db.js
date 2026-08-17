@@ -210,7 +210,24 @@ const colShiftMigrations = [
   // shift is at a different store, so it's excluded from "working with" / coverage
   // and shown distinctly in the team calendar.
   "ALTER TABLE colleague_shifts ADD COLUMN store TEXT",
+  // import_batch_id: which import run inserted this row (NULL for rows added before
+  // batch tracking existed, or added by hand). Lets a whole import be undone as a unit.
+  "ALTER TABLE colleague_shifts ADD COLUMN import_batch_id INTEGER",
 ];
+
+// Import batches — one row per team-shift import run (screenshot OCR/Gemini/Ollama,
+// JSON paste, bulk API import), so a bad import can be undone as a single action
+// instead of hunting through individual rows.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS import_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    note TEXT,
+    inserted_count INTEGER DEFAULT 0,
+    undone_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
 
 // Colleagues migrations -- start_date
 const colleagueStartDateMigration = ["ALTER TABLE colleagues ADD COLUMN start_date TEXT"];

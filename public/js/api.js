@@ -126,6 +126,8 @@ const API = {
   // Working-with — data
   getLeaderboard:   ()             => API.get('/api/working-with/leaderboard'),
   importColleagueJson: (data, overrides=[]) => API.post('/api/colleagues/import-json', { schedule_data: data, overrides }),
+  getImportBatches: (limit = 10) => API.get('/api/colleagues/import-batches?limit=' + limit),
+  undoImportBatch:  (batchId)    => API.delete(`/api/colleagues/import-batches/${batchId}`),
   getPeople:        ()             => API.get('/api/working-with/people'),
   getNextWith:      (id, limit=5)  => API.get(`/api/working-with/next/${id}?limit=${limit}`),
   getTeamCalendar:  (params={})    => API.get('/api/working-with/team-calendar?' + new URLSearchParams(params)),

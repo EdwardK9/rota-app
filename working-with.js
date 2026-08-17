@@ -361,6 +361,19 @@ router.delete('/colleagues/:id', (req, res) => {
 // ─────────────────────────────────────────
 
 
+// Import-batch tracking — every colleague-shift import call opens a batch, tags each
+// row it inserts with the batch id, then records the final inserted count. Lets the
+// whole import be undone as one action (deletes only rows still in that batch — if a
+// row was later hand-edited or duplicated by another import, it won't have this id
+// any more so undo only ever removes what that specific run actually added).
+function createImportBatch(source, note) {
+  const info = db.prepare('INSERT INTO import_batches (source, note) VALUES (?, ?)').run(source, note || null);
+  return info.lastInsertRowid;
+}
+function finalizeImportBatch(batchId, insertedCount) {
+  db.prepare('UPDATE import_batches SET inserted_count = ? WHERE id = ?').run(insertedCount, batchId);
+}
+
 /** Split a list of parsed shift rows into toInsert / conflicts / duplicates.
  *  A conflict = same colleague + date exists but with different times.
  *  A duplicate = exact match already in DB (silently skip). */
@@ -742,13 +755,15 @@ async function runJobWorker() {
             : null;
 
           const { toInsert, conflicts, duplicates } = detectConflicts(parsedRows);
+          const batchId = createImportBatch(file.source || 'ocr-job', `Team Upload job — ${toInsert.length} shift(s)`);
           const insertStmt = db.prepare(
-            `INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_source, store) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            `INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_source, store, import_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
           );
           let inserted = 0;
           db.transaction(() => {
-            for (const s of toInsert) { insertStmt.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.import_source || null, s.store || null); inserted++; }
+            for (const s of toInsert) { insertStmt.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.import_source || null, s.store || null, batchId); inserted++; }
           })();
+          finalizeImportBatch(batchId, inserted);
 
           // Store normalised flat output so the job card UI can display shifts consistently
           rawJson = JSON.stringify(normParsed).slice(0, 3000);
@@ -928,20 +943,22 @@ router.post('/colleagues/import-screenshot', upload.single('screenshot'), async 
 
     // Detect conflicts vs new inserts
     const { toInsert, conflicts, duplicates } = detectConflicts(parsed);
+    const batchId = createImportBatch('ocr', `Screenshot OCR — ${toInsert.length} shift(s)`);
     const insert = db.prepare(`
-      INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_batch_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     let inserted = 0;
     const doInsert = db.transaction(() => {
       for (const s of toInsert) {
-        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type || 'shift');
+        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type || 'shift', batchId);
         inserted++;
       }
     });
     doInsert();
+    finalizeImportBatch(batchId, inserted);
 
-    res.json({ inserted, skipped: duplicates.length, conflicts, total: parsed.length, shifts: toInsert, rawText: text.slice(0, 3000) });
+    res.json({ inserted, skipped: duplicates.length, conflicts, total: parsed.length, shifts: toInsert, rawText: text.slice(0, 3000), batchId });
   } catch (err) {
     console.error('OCR error:', err);
     res.status(500).json({ error: 'OCR failed: ' + err.message });
@@ -1055,20 +1072,22 @@ router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'),
 
     // Detect conflicts vs new inserts
     const { toInsert, conflicts, duplicates } = detectConflicts(parsedRows);
+    const batchId = createImportBatch('gemini', `Gemini screenshot — ${toInsert.length} shift(s)`);
     const insert = db.prepare(`
-      INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, store)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, store, import_batch_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     let inserted = 0;
     const doInsert = db.transaction(() => {
       for (const s of toInsert) {
-        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.store || null);
+        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.store || null, batchId);
         inserted++;
       }
     });
     doInsert();
+    finalizeImportBatch(batchId, inserted);
 
-    res.json({ inserted, skipped: duplicates.length, conflicts, total: shifts.length, shifts: toInsert, rawJson: JSON.stringify(normParsed).slice(0, 3000) });
+    res.json({ inserted, skipped: duplicates.length, conflicts, total: shifts.length, shifts: toInsert, rawJson: JSON.stringify(normParsed).slice(0, 3000), batchId });
   } catch(err) {
     console.error('Gemini import error:', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : ('Gemini import failed: ' + err.message) });
@@ -1283,21 +1302,23 @@ router.post('/colleagues/import-screenshot-ollama', upload.single('screenshot'),
     }
 
     const { toInsert, conflicts, duplicates } = detectConflicts(parsedRows);
+    const ollamaSource = source === 'remote' ? 'ollama-remote' : 'ollama-server';
+    const batchId = createImportBatch(ollamaSource, `Ollama screenshot — ${toInsert.length} shift(s)`);
     const insert = db.prepare(
-      `INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_source) VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_source, import_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     let inserted = 0;
-    const ollamaSource = source === 'remote' ? 'ollama-remote' : 'ollama-server';
     const doInsert = db.transaction(() => {
       for (const s of toInsert) {
-        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, ollamaSource);
+        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, ollamaSource, batchId);
         inserted++;
       }
     });
     doInsert();
+    finalizeImportBatch(batchId, inserted);
 
     res.json({ inserted, skipped: duplicates.length, conflicts, total: shifts.length,
-      shifts: toInsert, rawJson: jsonStr.slice(0, 3000) });
+      shifts: toInsert, rawJson: jsonStr.slice(0, 3000), batchId });
   } catch (err) {
     console.error('Ollama import error:', err);
     const isConnRefused = err.code === 'ECONNREFUSED' ||
@@ -1743,6 +1764,39 @@ router.put('/colleague-shifts/:id', (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────
+// Import batches — list recent team-shift imports and undo one as a unit
+// ─────────────────────────────────────────
+
+router.get('/colleagues/import-batches', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
+  const batches = db.prepare(`
+    SELECT id, source, note, inserted_count, undone_at, created_at,
+      (SELECT COUNT(*) FROM colleague_shifts WHERE import_batch_id = import_batches.id) AS remaining_count
+    FROM import_batches
+    WHERE inserted_count > 0
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(limit);
+  res.json({ batches });
+});
+
+router.delete('/colleagues/import-batches/:id', (req, res) => {
+  const batchId = parseInt(req.params.id, 10);
+  if (!batchId) return res.status(400).json({ error: 'Invalid batch id' });
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batchId);
+  if (!batch) return res.status(404).json({ error: 'Import batch not found' });
+  if (batch.undone_at) return res.status(409).json({ error: 'This import was already undone' });
+
+  const undo = db.transaction(() => {
+    const info = db.prepare('DELETE FROM colleague_shifts WHERE import_batch_id = ?').run(batchId);
+    db.prepare("UPDATE import_batches SET undone_at = datetime('now') WHERE id = ?").run(batchId);
+    return info.changes;
+  });
+  const deleted = undo();
+  res.json({ deleted, batchId });
+});
+
 router.delete('/colleague-shifts/by-month/:month', (req, res) => {
   const month = req.params.month; // YYYY-MM
   if (!month) return res.status(400).json({ error: 'month required' });
@@ -1928,8 +1982,8 @@ router.post('/colleagues/import-json', (req, res) => {
 
   const insertShift = db.prepare(`
     INSERT OR IGNORE INTO colleague_shifts
-      (colleague_id, date, start_time, end_time, shift_type, import_source, store)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+      (colleague_id, date, start_time, end_time, shift_type, import_source, store, import_batch_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const updateShift = db.prepare(`
     UPDATE colleague_shifts
@@ -1940,6 +1994,10 @@ router.post('/colleagues/import-json', (req, res) => {
     'SELECT end_time, shift_type FROM colleague_shifts WHERE colleague_id=? AND date=? AND start_time=?'
   );
 
+  // Note: only fresh inserts are tagged with a batch id — overridden conflicts (an
+  // UPDATE to a row that already existed before this import) are deliberately left
+  // untagged, since undoing the batch should never delete data that predates it.
+  const batchId = createImportBatch('json', schedule_data.date_range || 'Team schedule JSON import');
   let inserted = 0, updated = 0, skipped = 0;
   const unknownNames = new Set();
   const warnings = [];
@@ -2002,7 +2060,7 @@ router.post('/colleagues/import-json', (req, res) => {
           const r = updateShift.run(end_time, shift_type, 'json', store, col.id, dayDate, start_time);
           if (r.changes > 0) updated++; else skipped++;
         } else {
-          const r = insertShift.run(col.id, dayDate, start_time, end_time, shift_type, 'json', store);
+          const r = insertShift.run(col.id, dayDate, start_time, end_time, shift_type, 'json', store, batchId);
           if (r.changes > 0) {
             inserted++;
           } else {
@@ -2027,7 +2085,8 @@ router.post('/colleagues/import-json', (req, res) => {
     }
   })();
 
-  res.json({ inserted, updated, skipped, conflicts, warnings, unknownNames: [...unknownNames] });
+  finalizeImportBatch(batchId, inserted);
+  res.json({ inserted, updated, skipped, conflicts, warnings, unknownNames: [...unknownNames], batchId });
 });
 
 // ─────────────────────────────────────────
@@ -2047,12 +2106,16 @@ router.post('/team-shifts/import', (req, res) => {
     'SELECT id, left_date FROM colleagues WHERE name = ? COLLATE NOCASE'
   );
   const insertShift = db.prepare(
-    'INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type) VALUES (?,?,?,?,?)'
+    'INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_batch_id) VALUES (?,?,?,?,?,?)'
   );
+  // Note: with overwrite=true this REPLACEs any existing row at the same key, so an
+  // undo of this batch would remove the replacement rather than restore what was
+  // there before — acceptable here since this route isn't used by any current UI.
   const replaceShift = db.prepare(
-    'INSERT OR REPLACE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type) VALUES (?,?,?,?,?)'
+    'INSERT OR REPLACE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, import_batch_id) VALUES (?,?,?,?,?,?)'
   );
 
+  const batchId = createImportBatch('bulk-api', `Bulk API import — ${shifts.length} row(s)`);
   let imported = 0, skipped = 0;
   const errors      = [];
   const unknownNames = [];
@@ -2076,13 +2139,14 @@ router.post('/team-shifts/import', (req, res) => {
       if (col.left_date && col.left_date < date) { skipped++; continue; }
 
       const stmt = overwrite ? replaceShift : insertShift;
-      const info = stmt.run(col.id, date, startTime, endTime, shiftType);
+      const info = stmt.run(col.id, date, startTime, endTime, shiftType, batchId);
       if (info.changes > 0) imported++;
       else skipped++;
     }
   })();
 
-  res.json({ imported, skipped, errors, unknownNames });
+  finalizeImportBatch(batchId, imported);
+  res.json({ imported, skipped, errors, unknownNames, batchId });
 });
 
 // ─────────────────────────────────────────
