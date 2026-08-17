@@ -1192,6 +1192,48 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 .discrepancy-banner-icon { font-size: 20px; flex-shrink: 0; }
 [data-theme="dark"] .discrepancy-banner { background: rgba(245,158,11,0.1); color: #fbbf24; border-color: rgba(245,158,11,0.3); }
 
+/* ── Weather tab ─────────────────────────────────────────────────────────── */
+.weather-strip {
+  display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
+}
+.weather-day-card {
+  flex: 0 0 118px;
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 8px; text-align: center; background: var(--bg);
+}
+.weather-day-today { border-color: var(--primary); border-width: 2px; }
+.weather-day-alert { background: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.35); }
+.weather-day-label { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.weather-day-icon { font-size: 26px; line-height: 1; margin-bottom: 2px; }
+.weather-day-desc { font-size: 10.5px; color: var(--text-muted); min-height: 14px; margin-bottom: 6px; }
+.weather-day-temps { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.weather-temp-max { margin-right: 6px; }
+.weather-temp-min { color: var(--text-muted); font-weight: 500; }
+.weather-day-meta {
+  display: flex; justify-content: space-between; font-size: 10.5px;
+  color: var(--text-muted); margin-top: 2px;
+}
+.weather-day-alerts { margin-top: 6px; font-size: 15px; }
+.weather-day-shifts { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.weather-shift-chip {
+  font-size: 10px; background: var(--primary); color: var(--primary-text);
+  border-radius: 8px; padding: 2px 6px; white-space: nowrap;
+}
+
+/* ── Rota Wrapped ────────────────────────────────────────────────────────── */
+.wrapped-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.wrapped-slide {
+  border-radius: 16px; padding: 28px 22px; color: #fff;
+  min-height: 180px; display: flex; flex-direction: column; justify-content: center;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+.wrapped-big { font-size: 34px; font-weight: 800; line-height: 1.1; word-break: break-word; }
+.wrapped-label { font-size: 15px; font-weight: 500; margin-top: 6px; opacity: 0.95; }
+.wrapped-sub { font-size: 12.5px; margin-top: 12px; opacity: 0.8; line-height: 1.4; }
+
 /* ── Calendar weekly total sidebar ──────────────────────────────────────── */
 .cal-cells-wrap {
   display: flex;

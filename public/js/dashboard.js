@@ -78,6 +78,7 @@ const DashboardView = {
         </div>
         <div class="dash-right-col">
           <div id="dash-month-summary"></div>
+          <div id="dash-payday"></div>
           <div id="dash-next-in"></div>
         </div>
       </div>
@@ -100,6 +101,73 @@ const DashboardView = {
 
     this.renderMonthSummary(monthShifts, todayStr);
     this.renderNextIn(nextIn, nextInAnchor);
+    this.renderPaydayPredictor(); // fire-and-forget — non-critical widget, own data fetch
+  },
+
+  // Countdown to the next predicted payday + an estimate of what it'll be, derived
+  // from the gap between your last couple of logged payment dates and the current
+  // month's Shifts Est. (same math Payslips uses). Best-effort — silently no-ops
+  // if there isn't enough payslip history to extrapolate from yet.
+  async renderPaydayPredictor() {
+    const el = document.getElementById('dash-payday');
+    if (!el) return;
+    try {
+      const payslips = (await API.getPayslips({}))
+        .filter(p => p.payment_date)
+        .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+      if (!payslips.length) { el.innerHTML = ''; return; }
+
+      const latest = payslips[0];
+      const prev   = payslips[1];
+      const latestDate = new Date(latest.payment_date + 'T00:00:00');
+
+      let gapDays = 30;
+      if (prev) {
+        const prevDate = new Date(prev.payment_date + 'T00:00:00');
+        const gap = Math.round((latestDate - prevDate) / 86400000);
+        if (gap >= 20 && gap <= 40) gapDays = gap; // sanity guard against odd/duplicate data
+      }
+
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      let nextPayDate = new Date(latestDate);
+      nextPayDate.setDate(nextPayDate.getDate() + gapDays);
+      while (nextPayDate <= today) nextPayDate.setDate(nextPayDate.getDate() + gapDays);
+
+      const daysUntil = Math.round((nextPayDate - today) / 86400000);
+      const nextPayDateStr = nextPayDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
+      // Best guess at which pay period this next payday covers: the month after
+      // the latest payslip already on file, if that period hasn't been added yet.
+      const [ly, lm] = latest.month.split('-').map(Number);
+      const targetDate  = new Date(ly, lm, 1); // lm is 1-indexed, so this lands on next month
+      const targetMonth = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      const hasPayslipAlready = payslips.some(p => p.month === targetMonth);
+
+      let predictedGross = null;
+      if (!hasPayslipAlready) {
+        const monthly = await API.getMonthlyReport({ year: targetDate.getFullYear().toString() });
+        const m = monthly.find(x => x.month === targetMonth);
+        if (m) predictedGross = (m.scheduled_pay || 0) + (m.leave_pay || 0);
+      }
+
+      el.innerHTML = `
+        <div class="dash-upcoming-section" style="margin-top:0;margin-bottom:16px">
+          <div class="dash-section-title">💰 Next Payday</div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0 2px">
+            <span style="font-size:20px;font-weight:700">${daysUntil <= 0 ? 'Today' : daysUntil + ' day' + (daysUntil !== 1 ? 's' : '')}</span>
+            <span style="font-size:12px;color:var(--text-muted)">${nextPayDateStr}</span>
+          </div>
+          ${predictedGross != null ? `
+            <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px">
+              <span style="color:var(--text-muted)">Predicted gross</span>
+              <span style="font-weight:600">£${predictedGross.toFixed(2)}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">From logged shifts so far — not a guarantee</div>
+          ` : ''}
+        </div>`;
+    } catch (e) {
+      el.innerHTML = ''; // non-critical — fail silently rather than showing a broken card
+    }
   },
 
   // Compact month-at-a-glance card: worked/pay so far vs the full scheduled month

@@ -160,7 +160,8 @@ const App = {
       leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
       notifications: '🔔 Notifications',
       'team-calendar': '🗓️ Team Calendar', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
-      'shift-heatmap': '🔥 Shift Heatmap',
+      'shift-heatmap': '🔥 Shift Heatmap', 'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
+      'streaks': '🏅 Streaks & Badges', 'wrapped': '🎁 Rota Wrapped',
       'manage-people': '👤 Manage People', compare: '🔀 Compare Sources',
       'photo-library': '📷 Photo Library',
       'insights': '🔍 Insights',
@@ -188,6 +189,9 @@ const App = {
       case 'notes':         await NotesView.init(); break;
       case 'settings':      await SettingsView.init(); break;
       case 'leaderboard':   await LeaderboardView.init(); break;
+      case 'what-if':        await WhatIfView.init(); break;
+      case 'streaks':        await StreaksView.init(); break;
+      case 'wrapped':        await WrappedView.init(); break;
       case 'team-metrics':  await TeamMetricsView.init(); break;
       case 'audit':         await AuditView.init(); break;
       case 'notifications':  await NotificationsView.init(); break;
@@ -196,6 +200,7 @@ const App = {
       case 'synergy':       await SynergyView.init(); break;
       case 'fatigue-audit': await FatigueAuditView.init(); break;
       case 'shift-heatmap': await ShiftHeatmapView.init(); break;
+      case 'weather':        await WeatherView.init(); break;
       case 'team-upload':    TeamUploadView.init(); break;
       case 'manage-people':  await ManagePeopleView.init(); break;
       case 'compare':        await CompareView.init(); break;

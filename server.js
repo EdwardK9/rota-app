@@ -13,6 +13,7 @@ const { db, getPayRateForDate, calcHoursWorked } = require('./db');
 const workingWithRouter = require('./working-with');
 const { callGeminiVision } = workingWithRouter;
 const commuteRouter = require('./commute');
+const { fetchHourlyForecast, nearestHourKey, buildAlerts } = commuteRouter;
 const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
 const webhooksRouter = require('./webhooks');
@@ -924,6 +925,118 @@ app.get('/api/reports/monthly', (req, res) => {
   res.json(merged);
 });
 
+// GET /api/streaks — Streaks & Badges: break-not-skipped, punctual clock-in, and
+// on-contract-hours streaks. current = consecutive up to the most recent qualifying
+// item; longest = best run ever. Kept as one endpoint since all three are cheap,
+// read-only scans over data that's already indexed by date.
+function _computeStreak(items, predicate) {
+  let longest = 0, run = 0;
+  for (const it of items) {
+    if (predicate(it)) { run++; longest = Math.max(longest, run); }
+    else { run = 0; }
+  }
+  return { current: run, longest };
+}
+
+app.get('/api/streaks', (req, res) => {
+  // Break-not-skipped streak — completed shifts, in date order
+  const doneShifts = db.prepare(
+    "SELECT date, break_taken FROM shifts WHERE completed = 1 ORDER BY date ASC, start_time ASC"
+  ).all();
+  const breakStreak = _computeStreak(doneShifts, s => !!s.break_taken && s.break_taken !== 'none');
+
+  // Punctual clock-in streak — clock-in at or before shift start (5 min grace)
+  const clockRows = db.prepare(`
+    SELECT ce.date, ce.clocked_in, MIN(s.start_time) as start_time
+    FROM clock_entries ce
+    JOIN shifts s ON s.date = ce.date
+    WHERE ce.clocked_in IS NOT NULL
+    GROUP BY ce.date
+    ORDER BY ce.date ASC
+  `).all();
+  const toMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const GRACE_MINS = 5;
+  const punctualStreak = _computeStreak(clockRows, r => toMins(r.clocked_in) <= toMins(r.start_time) + GRACE_MINS);
+
+  // On-contract-hours streak — completed calendar months only (excludes the
+  // current in-progress month, which hasn't had a chance to hit its hours yet)
+  const monthRows = db.prepare(`
+    SELECT strftime('%Y-%m', date) as month, SUM(hours_worked) as scheduled_hours
+    FROM shifts GROUP BY month ORDER BY month ASC
+  `).all();
+  const allPayRates = db.prepare('SELECT * FROM pay_rates ORDER BY effective_date ASC').all();
+  const getContractedForMonth = (monthStr) => {
+    let rate = null;
+    for (const r of allPayRates) { if (r.effective_date <= monthStr + '-01') rate = r; }
+    return rate ? Math.round(rate.contracted_hours_per_week * workingDaysInMonth(monthStr) / 5 * 100) / 100 : 0;
+  };
+  const currentMonth = localDateStr().slice(0, 7);
+  const completedMonths = monthRows.filter(m => m.month < currentMonth && getContractedForMonth(m.month) > 0);
+  const contractStreak = _computeStreak(completedMonths, m =>
+    (m.scheduled_hours || 0) >= getContractedForMonth(m.month) - 1
+  );
+
+  res.json({ breakStreak, punctualStreak, contractStreak });
+});
+
+// GET /api/wrapped?year=YYYY — "Rota Wrapped": a year-end recap of fun facts,
+// pulled together from data that already exists across shifts/payslips/colleague_shifts.
+app.get('/api/wrapped', (req, res) => {
+  const year = req.query.year || String(new Date().getFullYear());
+  const from = `${year}-01-01`, to = `${year}-12-31`;
+
+  const shifts = db.prepare('SELECT * FROM shifts WHERE date >= ? AND date <= ?').all(from, to);
+  const completed = shifts.filter(s => s.completed);
+
+  const totalHours = Math.round(completed.reduce((s, x) => s + (x.hours_worked || 0), 0) * 10) / 10;
+  const totalMiles = Math.round(completed.reduce((s, x) => s + (x.distance_miles || 0), 0) * 10) / 10;
+  const totalShifts = completed.length;
+
+  const payslips = db.prepare("SELECT * FROM payslips WHERE substr(month, 1, 4) = ?").all(year);
+  const totalGross = Math.round(payslips.reduce((s, p) => s + (p.total_gross || 0), 0) * 100) / 100;
+  const totalTax   = Math.round(payslips.reduce((s, p) => s + (p.tax_paid    || 0), 0) * 100) / 100;
+  const totalNI    = Math.round(payslips.reduce((s, p) => s + (p.ni_employee || 0), 0) * 100) / 100;
+
+  // Busiest month by hours worked
+  const hoursByMonth = {};
+  completed.forEach(s => { const m = s.date.slice(0, 7); hoursByMonth[m] = (hoursByMonth[m] || 0) + (s.hours_worked || 0); });
+  const busiestEntry = Object.entries(hoursByMonth).sort((a, b) => b[1] - a[1])[0];
+  const busiestMonth = busiestEntry ? { month: busiestEntry[0], hours: Math.round(busiestEntry[1] * 10) / 10 } : null;
+
+  // Most-worked-with colleague — same overlap-minutes logic as the leaderboard,
+  // scoped to this year and excluding other-store colleague shifts
+  const overlapMins = (s1, e1, s2, e2) => {
+    const toMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    return Math.max(0, Math.min(toMins(e1), toMins(e2)) - Math.max(toMins(s1), toMins(s2)));
+  };
+  const colShifts = db.prepare(
+    "SELECT * FROM colleague_shifts WHERE date >= ? AND date <= ? AND shift_type = 'shift' AND (store IS NULL OR store = '')"
+  ).all(from, to);
+  const colleagues = db.prepare('SELECT id, name FROM colleagues').all();
+  const nameById = {}; colleagues.forEach(c => { nameById[c.id] = c.name; });
+  const withStats = {}; // colleague_id -> { shifts, minutes }
+  for (const my of completed) {
+    for (const cs of colShifts.filter(c => c.date === my.date)) {
+      const mins = overlapMins(my.start_time, my.end_time, cs.start_time, cs.end_time);
+      if (mins <= 0) continue;
+      if (!withStats[cs.colleague_id]) withStats[cs.colleague_id] = { shifts: 0, minutes: 0 };
+      withStats[cs.colleague_id].shifts++;
+      withStats[cs.colleague_id].minutes += mins;
+    }
+  }
+  const topColleague = Object.entries(withStats)
+    .sort((a, b) => b[1].shifts - a[1].shifts)[0];
+  const mostWorkedWith = topColleague
+    ? { name: nameById[topColleague[0]] || 'Unknown', shifts: topColleague[1].shifts, hours: Math.round(topColleague[1].minutes / 60 * 10) / 10 }
+    : null;
+
+  res.json({
+    year, totalHours, totalMiles, totalShifts,
+    totalGross, totalTax, totalNI,
+    busiestMonth, mostWorkedWith,
+  });
+});
+
 // Yearly summary — GET /api/reports/yearly
 app.get('/api/reports/yearly', (req, res) => {
   const shiftRows = db.prepare(`
@@ -1640,6 +1753,55 @@ app.get('/api/leave', (req, res) => {
   }
   query += ' ORDER BY start_date DESC';
   res.json(db.prepare(query).all(...params));
+});
+
+// GET /api/leave/best-days?days=60 — upcoming shifts of yours where the team is
+// already well covered without you, so booking leave there is least likely to
+// create a coverage gap. Excludes other-store colleague shifts and days you've
+// already got leave booked.
+app.get('/api/leave/best-days', (req, res) => {
+  const days = Math.min(parseInt(req.query.days, 10) || 60, 120);
+  const today = localDateStr();
+  const endDate = (() => {
+    const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + days);
+    return localDateStr(d);
+  })();
+
+  const myShifts = db.prepare(
+    "SELECT date, start_time, end_time FROM shifts WHERE date > ? AND date <= ? ORDER BY date"
+  ).all(today, endDate);
+
+  const existingLeave = db.prepare(
+    'SELECT start_date, end_date FROM leave_entries WHERE end_date >= ? AND start_date <= ?'
+  ).all(today, endDate);
+  const leaveDates = new Set();
+  existingLeave.forEach(le => {
+    let cur = new Date(le.start_date + 'T00:00:00');
+    const end = new Date(le.end_date + 'T00:00:00');
+    while (cur <= end) { leaveDates.add(localDateStr(cur)); cur.setDate(cur.getDate() + 1); }
+  });
+
+  const colShifts = db.prepare(`
+    SELECT date, colleague_id FROM colleague_shifts
+    WHERE date > ? AND date <= ? AND shift_type = 'shift' AND (store IS NULL OR store = '')
+  `).all(today, endDate);
+  const headcountByDate = {};
+  colShifts.forEach(cs => {
+    (headcountByDate[cs.date] ||= new Set()).add(cs.colleague_id);
+  });
+
+  const candidates = myShifts
+    .filter(s => !leaveDates.has(s.date))
+    .map(s => ({
+      date: s.date,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      coverage: headcountByDate[s.date] ? headcountByDate[s.date].size : 0,
+    }))
+    .sort((a, b) => b.coverage - a.coverage || a.date.localeCompare(b.date))
+    .slice(0, 10);
+
+  res.json({ from: today, to: endDate, candidates });
 });
 
 app.post('/api/leave', (req, res) => {
@@ -3603,6 +3765,8 @@ app.get('/api/rotageek/autosync-status', (req, res) => {
     ntfyArrivalEnabled:      rgSetting('ntfy_arrival_enabled') === '1',
     ntfyArrivalLeadMins:     parseInt(rgSetting('ntfy_arrival_lead_mins') || '10', 10),
     ntfyArrivalOnlyOnShift:  rgSetting('ntfy_arrival_only_on_shift') !== '0',
+    ntfyWeatherEnabled:      rgSetting('ntfy_weather_enabled') === '1',
+    ntfyWeatherTime:         rgSetting('ntfy_weather_time') || '19:00',
     running:             !!autoSyncTimer,
     lastRun:             rgSetting('autosync_last_run')      || null,
     lastResult:          lastResult ? JSON.parse(lastResult) : null,
@@ -3611,7 +3775,7 @@ app.get('/api/rotageek/autosync-status', (req, res) => {
 
 // POST /api/rotageek/autosync-config
 app.post('/api/rotageek/autosync-config', (req, res) => {
-  const { enabled, interval_hours, ntfy_topic, ntfy_server, ntfy_enabled, ntfy_times, ntfy_disconnect_alert, ntfy_shift_reminders, ntfy_json_reminder_enabled, ntfy_json_reminder_time, ntfy_birthday_enabled, ntfy_birthday_time, ntfy_arrival_enabled, ntfy_arrival_lead_mins, ntfy_arrival_only_on_shift, password } = req.body;
+  const { enabled, interval_hours, ntfy_topic, ntfy_server, ntfy_enabled, ntfy_times, ntfy_disconnect_alert, ntfy_shift_reminders, ntfy_json_reminder_enabled, ntfy_json_reminder_time, ntfy_birthday_enabled, ntfy_birthday_time, ntfy_arrival_enabled, ntfy_arrival_lead_mins, ntfy_arrival_only_on_shift, ntfy_weather_enabled, ntfy_weather_time, password } = req.body;
   if (enabled !== undefined)               rgUpsert('autosync_enabled',         enabled ? '1' : '0');
   if (interval_hours !== undefined)        rgUpsert('autosync_interval_hours',   String(interval_hours));
   if (ntfy_topic !== undefined)            rgUpsert('ntfy_topic',               ntfy_topic);
@@ -3627,6 +3791,8 @@ app.post('/api/rotageek/autosync-config', (req, res) => {
   if (ntfy_arrival_enabled !== undefined)  rgUpsert('ntfy_arrival_enabled',     ntfy_arrival_enabled ? '1' : '0');
   if (ntfy_arrival_lead_mins !== undefined) rgUpsert('ntfy_arrival_lead_mins',  String(parseInt(ntfy_arrival_lead_mins, 10) || 10));
   if (ntfy_arrival_only_on_shift !== undefined) rgUpsert('ntfy_arrival_only_on_shift', ntfy_arrival_only_on_shift ? '1' : '0');
+  if (ntfy_weather_enabled !== undefined)  rgUpsert('ntfy_weather_enabled',     ntfy_weather_enabled ? '1' : '0');
+  if (ntfy_weather_time !== undefined)     rgUpsert('ntfy_weather_time',        ntfy_weather_time || '19:00');
   if (password)                            rgUpsert('password',                 password);
   startAutoSync();
   startTimeSync();
@@ -3634,6 +3800,7 @@ app.post('/api/rotageek/autosync-config', (req, res) => {
   startJsonReminderSync();
   startBirthdayReminderSync();
   startArrivalReminderSync();
+  startWeatherReminderSync();
   res.json({ ok: true });
 });
 
@@ -4001,6 +4168,54 @@ function startBirthdayReminderSync() {
   }, 30000);
 }
 
+// Commute weather nudge — the evening before a shift, check whether the commute
+// forecast has a frost/rain alert and push it, instead of only showing it if you
+// happen to open the dashboard. Uses the same alert logic as the per-shift badge.
+let weatherReminderTimer = null;
+const weatherReminderLastFired = {}; // key: "YYYY-MM-DD" -> true
+
+function startWeatherReminderSync() {
+  if (weatherReminderTimer) { clearInterval(weatherReminderTimer); weatherReminderTimer = null; }
+  weatherReminderTimer = setInterval(async () => {
+    const topic   = rgSetting('ntfy_topic');
+    const enabled = rgSetting('ntfy_enabled') === '1';
+    const wxEnabled = rgSetting('ntfy_weather_enabled') === '1';
+    if (!topic || !enabled || !wxEnabled) return;
+
+    const now = new Date();
+    const targetTime = rgSetting('ntfy_weather_time') || '19:00';
+    const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    if (hhmm !== targetTime) return;
+
+    const todayStr = localDateStr();
+    if (weatherReminderLastFired[todayStr]) return;
+    weatherReminderLastFired[todayStr] = true;
+    Object.keys(weatherReminderLastFired).forEach(k => { if (k !== todayStr) delete weatherReminderLastFired[k]; });
+
+    const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = localDateStr(tomorrow);
+    const shift = db.prepare('SELECT start_time FROM shifts WHERE date = ? ORDER BY start_time ASC').get(tomorrowStr);
+    if (!shift) return; // not working tomorrow — nothing to warn about
+
+    const homeLat = db.prepare("SELECT value FROM settings WHERE key='commute_home_lat'").get()?.value;
+    const homeLon = db.prepare("SELECT value FROM settings WHERE key='commute_home_lon'").get()?.value;
+    if (!homeLat || !homeLon) return; // no home location configured
+
+    try {
+      const forecast = await fetchHourlyForecast(homeLat, homeLon, tomorrowStr);
+      const toTime = new Date(`${tomorrowStr}T${shift.start_time}:00`); toTime.setMinutes(toTime.getMinutes() - 40);
+      const point = forecast[nearestHourKey(toTime)];
+      if (!point) return;
+      const alerts = buildAlerts(point);
+      if (!alerts.length) return;
+      await sendNtfy(`${alerts[0].icon} Tomorrow's commute`, `${alerts.map(a => a.text).join(' · ')} — shift starts ${shift.start_time}`, 'default');
+      console.log(`[WeatherReminder] Sent ${new Date().toISOString()} for ${tomorrowStr}`);
+    } catch (e) {
+      console.error('[WeatherReminder] error:', e.message);
+    }
+  }, 30000);
+}
+
 // "About to arrive" reminder — a colleague's shift starts within the configured lead
 // time (default 10 min). Message kept deliberately short so it fits on a watch screen.
 let arrivalReminderTimer = null;
@@ -4083,6 +4298,7 @@ startShiftReminderSync();
 startJsonReminderSync();
 startBirthdayReminderSync();
 startArrivalReminderSync();
+startWeatherReminderSync();
 startDbBackupSync();
 webhooksRouter.startWebhookScheduler();
 

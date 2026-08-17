@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rota" />
-  <link rel="stylesheet" href="/css/style.css?v=20260817a" />
+  <link rel="stylesheet" href="/css/style.css?v=20260817b" />
 </head>
 <body>
   <!-- Sidebar -->
@@ -63,6 +63,7 @@
           <li><a href="#" class="nav-link" data-view="reports"><span class="nav-icon">📊</span><span class="nav-label">Reports</span></a></li>
           <li><a href="#" class="nav-link" data-view="insights"><span class="nav-icon">🔍</span><span class="nav-label">Insights</span></a></li>
           <li><a href="#" class="nav-link" data-view="leaderboard"><span class="nav-icon">🏆</span><span class="nav-label">Leaderboard</span></a></li>
+          <li><a href="#" class="nav-link" data-view="what-if"><span class="nav-icon">🧮</span><span class="nav-label">What If?</span></a></li>
         </ul>
       </li>
 
@@ -91,6 +92,9 @@
           <li><a href="#" class="nav-link" data-view="team-metrics"><span class="nav-icon">💷</span><span class="nav-label">Team Metrics</span></a></li>
           <li><a href="#" class="nav-link" data-view="fatigue-audit"><span class="nav-icon">🩺</span><span class="nav-label">Fatigue Audit</span></a></li>
           <li><a href="#" class="nav-link" data-view="shift-heatmap"><span class="nav-icon">🔥</span><span class="nav-label">Shift Heatmap</span></a></li>
+          <li><a href="#" class="nav-link" data-view="weather"><span class="nav-icon">🌤️</span><span class="nav-label">Weather</span></a></li>
+          <li><a href="#" class="nav-link" data-view="streaks"><span class="nav-icon">🏅</span><span class="nav-label">Streaks &amp; Badges</span></a></li>
+          <li><a href="#" class="nav-link" data-view="wrapped"><span class="nav-icon">🎁</span><span class="nav-label">Rota Wrapped</span></a></li>
         </ul>
       </li>
 
@@ -149,6 +153,10 @@
     <div id="view-team-metrics" class="view hidden"></div>
     <div id="view-fatigue-audit" class="view hidden"></div>
     <div id="view-shift-heatmap" class="view hidden"></div>
+    <div id="view-weather" class="view hidden"></div>
+    <div id="view-what-if" class="view hidden"></div>
+    <div id="view-streaks" class="view hidden"></div>
+    <div id="view-wrapped" class="view hidden"></div>
     <div id="view-compare" class="view hidden"></div>
     <div id="view-team-upload" class="view hidden"></div>
       <div id="view-manage-people" class="view hidden"></div>
@@ -179,14 +187,14 @@
   <!-- defer lets the browser fetch all of these in parallel instead of one at a time
        (no attribute = strictly sequential fetch+execute per file); execution still
        happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
-  <script src="/js/api.js?v=20260727b" defer></script>
+  <script src="/js/api.js?v=20260817b" defer></script>
   <script src="/js/utils.js?v=20260624d" defer></script>
   <script src="/js/shifts.js?v=20260708a" defer></script>
   <script src="/js/calendar.js?v=20260629a" defer></script>
   <script src="/js/payslips.js?v=20260817a" defer></script>
   <script src="/js/reports.js?v=20260714a" defer></script>
   <script src="/js/import.js?v=20260714a" defer></script>
-  <script src="/js/leave.js?v=20260624d" defer></script>
+  <script src="/js/leave.js?v=20260817b" defer></script>
   <script src="/js/settings.js?v=20260727b" defer></script>
   <script src="/js/export.js?v=20260727a" defer></script>
   <script src="/js/notes.js?v=20260624d" defer></script>
@@ -197,6 +205,10 @@
   <script src="/js/teamMetrics.js?v=20260727a" defer></script>
   <script src="/js/fatigueAudit.js?v=20260727a" defer></script>
   <script src="/js/shiftHeatmap.js?v=20260814a" defer></script>
+  <script src="/js/weather.js?v=20260817a" defer></script>
+  <script src="/js/whatIf.js?v=20260817a" defer></script>
+  <script src="/js/streaks.js?v=20260817a" defer></script>
+  <script src="/js/wrapped.js?v=20260817a" defer></script>
   <script src="/js/teamupload.js?v=20260817a" defer></script>
   <script src="/js/managePeople.js?v=20260727a" defer></script>
   <script src="/js/photoLibrary.js?v=20260624d" defer></script>
@@ -204,11 +216,11 @@
   <script src="/js/insights.js?v=20260711c" defer></script>
   <script src="/js/whosin.js?v=20260714b" defer></script>
   <script src="/js/audit.js?v=20260710a" defer></script>
-  <script src="/js/notifications.js?v=20260713a" defer></script>
+  <script src="/js/notifications.js?v=20260817b" defer></script>
   <script src="/js/clockInOut.js?v=20260711a" defer></script>
-  <script src="/js/dashboard.js?v=20260727a" defer></script>
+  <script src="/js/dashboard.js?v=20260817b" defer></script>
   <script src="/js/key.js?v=20260711a" defer></script>
-  <script src="/js/app.js?v=20260817a" defer></script>
+  <script src="/js/app.js?v=20260817b" defer></script>
   <script>
     // PWA: register the (no-cache, passthrough) service worker so the app is installable
     if ('serviceWorker' in navigator) {

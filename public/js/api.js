@@ -55,6 +55,13 @@ const API = {
   // Commute & weather (V2.0 Phase 2.1)
   geocodePostcode:    (postcode) => API.post('/api/commute/geocode', { postcode }),
   getCommuteWeather:  (date, start, end) => API.get(`/api/commute/weather?${new URLSearchParams({ date, start, end })}`),
+  getForecast:        (days) => API.get(`/api/commute/forecast${days ? '?days=' + days : ''}`),
+
+  // Streaks & Badges (V2.0)
+  getStreaks:         () => API.get('/api/streaks'),
+
+  // Rota Wrapped (V2.0)
+  getWrapped:         (year) => API.get(`/api/wrapped${year ? '?year=' + year : ''}`),
 
   // Synergy score (V2.0 Phase 2.2)
   getSynergyScore:    (date) => API.get(`/api/working-with/synergy-score/${date}`),
@@ -84,6 +91,7 @@ const API = {
 
   // Leave
   getLeave:    (params = {}) => API.get('/api/leave?' + new URLSearchParams(params)),
+  getBestLeaveDays: (days) => API.get('/api/leave/best-days' + (days ? '?days=' + days : '')),
   createLeave: (data)        => API.post('/api/leave', data),
   updateLeave: (id, data)    => API.put(`/api/leave/${id}`, data),
   deleteLeave: (id)          => API.delete(`/api/leave/${id}`),

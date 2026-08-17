@@ -158,6 +158,77 @@ router.get('/commute/weather', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────
+// Detailed multi-day forecast (Weather tab) — daily min/max, sunrise/sunset,
+// wind, alongside your logged shifts for each day.
+// ─────────────────────────────────────────
+
+const DAILY_CACHE_TTL_MS = 30 * 60 * 1000;
+const _dailyCache = new Map(); // "lat,lon,days" -> { expires, data }
+
+async function fetchDailyForecast(lat, lon, days) {
+  const cacheKey = `${lat},${lon},${days}`;
+  const cached = _dailyCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.data;
+
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset` +
+    `&timezone=Europe%2FLondon&forecast_days=${days}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Open-Meteo returned ${resp.status}`);
+  const data = await resp.json();
+  const d = data.daily || {};
+  const out = (d.time || []).map((date, i) => {
+    const w = weatherLabel(d.weather_code[i]);
+    return {
+      date,
+      tempMax: d.temperature_2m_max[i],
+      tempMin: d.temperature_2m_min[i],
+      precipProbMax: d.precipitation_probability_max[i],
+      windMax: d.wind_speed_10m_max[i],
+      sunrise: (d.sunrise[i] || '').slice(11, 16),
+      sunset: (d.sunset[i] || '').slice(11, 16),
+      code: d.weather_code[i],
+      label: w.label,
+      icon: w.icon,
+      alerts: buildAlerts({ temp: d.temperature_2m_min[i], precipProb: d.precipitation_probability_max[i] }),
+    };
+  });
+  _dailyCache.set(cacheKey, { expires: Date.now() + DAILY_CACHE_TTL_MS, data: out });
+  return out;
+}
+
+router.get('/commute/forecast', async (req, res) => {
+  const days = Math.min(parseInt(req.query.days, 10) || MAX_FORECAST_DAYS, MAX_FORECAST_DAYS);
+  const homeLat = getSetting('commute_home_lat'), homeLon = getSetting('commute_home_lon');
+  if (!homeLat || !homeLon) return res.json({ available: false, reason: 'no location set' });
+  const workLatRaw = getSetting('commute_work_lat'), workLonRaw = getSetting('commute_work_lon');
+  const hasWork = !!(workLatRaw && workLonRaw);
+  const workLat = workLatRaw || homeLat, workLon = workLonRaw || homeLon;
+
+  try {
+    const [homeDaily, workDaily] = await Promise.all([
+      fetchDailyForecast(homeLat, homeLon, days),
+      hasWork ? fetchDailyForecast(workLat, workLon, days) : Promise.resolve(null),
+    ]);
+
+    // Annotate each day with any shift(s) you're logged to work, so the Weather
+    // tab can show "you're in at 06:45" alongside the forecast.
+    const from = homeDaily[0]?.date, to = homeDaily[homeDaily.length - 1]?.date;
+    const shifts = from && to
+      ? db.prepare('SELECT date, start_time, end_time FROM shifts WHERE date >= ? AND date <= ? ORDER BY date, start_time').all(from, to)
+      : [];
+    const shiftsByDate = {};
+    shifts.forEach(s => { (shiftsByDate[s.date] ||= []).push({ start_time: s.start_time, end_time: s.end_time }); });
+
+    const daily = homeDaily.map(d => ({ ...d, shifts: shiftsByDate[d.date] || [] }));
+
+    res.json({ available: true, hasWork, daily, workDaily: hasWork ? workDaily : null });
+  } catch (e) {
+    res.status(502).json({ available: false, error: e.message });
+  }
+});
+
 // Exported alongside the router so other modules (e.g. webhooks.js, for the
 // commute-prep payload's weather field) can reuse the same forecast logic
 // without duplicating it.

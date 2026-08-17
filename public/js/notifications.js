@@ -150,6 +150,23 @@ const NotificationsView = {
               </div>
             </div>
 
+            <!-- Commute weather nudge -->
+            <div class="form-row" style="flex-direction:column;gap:8px;margin-top:8px">
+              <label style="font-size:13px;font-weight:600;margin:0">🌦️ Commute weather nudge</label>
+              <div class="form-hint" style="margin-top:0">
+                The evening before a shift, a heads-up if tomorrow's commute forecast has a frost or rain
+                alert — same alert logic as the dashboard's weather badge, just pushed ahead of time instead
+                of only showing up when you open the app.
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
+                <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="nfWeatherEnabled" style="width:16px;height:16px;cursor:pointer" />
+                  Remind me at
+                </label>
+                <input type="time" id="nfWeatherTime" class="form-select" style="width:130px" />
+              </div>
+            </div>
+
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px">
               <button class="btn btn-primary" id="nfSaveBtn">Save</button>
               <button class="btn btn-secondary" id="nfTestBtn">Test notification</button>
@@ -234,6 +251,8 @@ const NotificationsView = {
       document.getElementById('nfArrivalEnabled').checked      = !!s.ntfyArrivalEnabled;
       document.getElementById('nfArrivalLeadMins').value       = s.ntfyArrivalLeadMins || 10;
       document.getElementById('nfArrivalOnlyOnShift').checked  = s.ntfyArrivalOnlyOnShift !== false;
+      document.getElementById('nfWeatherEnabled').checked      = !!s.ntfyWeatherEnabled;
+      document.getElementById('nfWeatherTime').value           = s.ntfyWeatherTime || '19:00';
       this._reminders = s.ntfyShiftReminders
         ? s.ntfyShiftReminders.split(',').map(m => parseInt(m.trim())).filter(m => m > 0)
         : [];
@@ -279,6 +298,8 @@ const NotificationsView = {
           ntfy_arrival_enabled:  document.getElementById('nfArrivalEnabled').checked,
           ntfy_arrival_lead_mins: parseInt(document.getElementById('nfArrivalLeadMins').value, 10) || 10,
           ntfy_arrival_only_on_shift: document.getElementById('nfArrivalOnlyOnShift').checked,
+          ntfy_weather_enabled: document.getElementById('nfWeatherEnabled').checked,
+          ntfy_weather_time:    document.getElementById('nfWeatherTime').value || '19:00',
           password:             password || undefined,
         }),
       });

@@ -78,6 +78,8 @@ const LeaveView = {
         <div class="card-body" id="leaveProgressBody"></div>
       </div>
 
+      <div id="leaveBestDays" style="margin-bottom:24px"></div>
+
       <div class="report-section">
         <h3 id="leaveTableTitle">Leave Entries</h3>
         <div class="table-wrapper">
@@ -126,6 +128,48 @@ const LeaveView = {
       this._refreshYear();
     } catch(e) {
       showToast('Failed to load leave data: ' + e.message, 'error');
+    }
+    this.renderBestDays(); // own data fetch — non-critical, fails silently
+  },
+
+  // Suggests upcoming shifts of yours where the team's already well covered
+  // without you, so requesting leave there is least likely to create a gap.
+  async renderBestDays() {
+    const el = document.getElementById('leaveBestDays');
+    if (!el) return;
+    try {
+      const { candidates } = await API.getBestLeaveDays(60);
+      if (!candidates || !candidates.length) { el.innerHTML = ''; return; }
+
+      const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      const rows = candidates.slice(0, 6).map(c => {
+        const good = c.coverage >= 3;
+        const ok   = c.coverage === 2;
+        const colour = good ? 'var(--success)' : ok ? 'var(--warning, #f59e0b)' : 'var(--danger)';
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px">
+            <div>
+              <strong style="font-size:13.5px">${fmtDate(c.date)}</strong>
+              <span style="font-size:12px;color:var(--text-muted)"> · ${c.start_time}–${c.end_time}</span>
+            </div>
+            <span style="font-size:12px;color:${colour};font-weight:600">${c.coverage} other${c.coverage !== 1 ? 's' : ''} scheduled</span>
+            <button class="btn btn-sm btn-ghost" onclick="LeaveView.openAddModal('${c.date}')">+ Log Leave</button>
+          </div>`;
+      }).join('');
+
+      el.innerHTML = `
+        <div class="card">
+          <div class="card-header"><h2>📅 Best Days to Book Leave</h2></div>
+          <div class="card-body">
+            <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">
+              Upcoming shifts of yours where the team's already well staffed without you —
+              lowest risk of leaving a coverage gap if you book leave here.
+            </p>
+            <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
+          </div>
+        </div>`;
+    } catch (e) {
+      el.innerHTML = '';
     }
   },
 
@@ -343,8 +387,8 @@ const LeaveView = {
       </div>`;
   },
 
-  openAddModal() {
-    Modal.open('Log Leave', this.leaveFormHtml({}));
+  openAddModal(prefillDate) {
+    Modal.open('Log Leave', this.leaveFormHtml(prefillDate ? { start_date: prefillDate, end_date: prefillDate } : {}));
     this.wireLeaveForm(null);
   },
 
