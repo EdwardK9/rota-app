@@ -57,6 +57,9 @@ const PayslipsView = {
         </table>
       </div>
 
+      <!-- Hours vs contract — helps explain why a month's pay came in low -->
+      <div id="monthComparisonSection" style="margin-top:24px"></div>
+
       <!-- Year-to-date running totals -->
       <div id="ytdSection" style="margin-top:24px"></div>
       <div id="psTaxRefundsSection" style="margin-top:24px"></div>
@@ -102,18 +105,32 @@ const PayslipsView = {
 
   async load() {
     try {
-      [this.payslips, this.allPayslips, this.monthly, this.settings, this.taxRefunds] = await Promise.all([
+      [this.payslips, this.allPayslips, this.monthly, this.settings, this.taxRefunds, this.payRates] = await Promise.all([
         API.getPayslips({ year: this.currentYear }),
         API.getPayslips({}),          // all years — for financial-year YTD
         API.getMonthlyReport({ year: this.currentYear }),
         API.getSettings(),
         API.get('/api/tax-refunds'),
+        API.getPayRates(),
       ]);
       this.renderStats();
       this.renderTable();
+      this.renderMonthComparison();
       this.renderYtd();
       this.renderTaxRefunds();
     } catch(e) { showToast('Failed to load payslips: ' + e.message, 'error'); }
+  },
+
+  // Hourly rate in effect for a given YYYY-MM month — latest pay_rates row whose
+  // effective_date falls on or before the 1st of that month (mirrors the server's
+  // getRateForMonth in /api/reports/monthly).
+  _rateForMonth(month) {
+    const firstDay = month + '-01';
+    let rate = null;
+    for (const r of (this.payRates || []).slice().sort((a, b) => a.effective_date.localeCompare(b.effective_date))) {
+      if (r.effective_date <= firstDay) rate = r;
+    }
+    return rate ? rate.hourly_rate : 0;
   },
 
   renderStats() {
@@ -335,6 +352,79 @@ const PayslipsView = {
     tbody.querySelectorAll('.paid-in-next-btn').forEach(btn =>
       btn.addEventListener('click', () => this.togglePaidInNext(btn.dataset.month))
     );
+  },
+
+  // Hours vs Contract — a diagnostic view separate from the main table. The main
+  // table's "Paid vs Est." tells you THAT a month came in low; this tells you
+  // whether fewer logged hours than your contract is WHY, so you're not left
+  // wondering if it's a payroll error when it's actually just a quieter rota.
+  renderMonthComparison() {
+    const el = document.getElementById('monthComparisonSection');
+    if (!el) return;
+    if (!this.monthly || !this.monthly.length) { el.innerHTML = ''; return; }
+
+    const months = [...this.monthly].sort((a, b) => b.month.localeCompare(a.month));
+
+    const rows = months.map(m => {
+      const contracted = m.contracted_hours || 0;
+      const logged     = m.scheduled_hours  || 0;
+      const hrsDiff     = logged - contracted;
+      const rate        = this._rateForMonth(m.month);
+      const hrsDiffPay  = hrsDiff * rate;
+
+      let note, noteColour;
+      if (contracted === 0) {
+        note = 'No contracted hours set for this month'; noteColour = 'var(--text-muted)';
+      } else if (Math.abs(hrsDiff) < 1) {
+        note = 'On contract'; noteColour = 'var(--text-muted)';
+      } else if (hrsDiff < 0) {
+        note = `${fmtHours(Math.abs(hrsDiff))} under contract ${rate ? `(≈ ${fmtCurrency(Math.abs(hrsDiffPay))} less)` : ''}`;
+        noteColour = 'var(--danger)';
+      } else {
+        note = `${fmtHours(hrsDiff)} over contract ${rate ? `(≈ +${fmtCurrency(hrsDiffPay)})` : ''}`;
+        noteColour = 'var(--success)';
+      }
+
+      return `<tr>
+        <td><strong>${fmtMonth(m.month)}</strong></td>
+        <td>${contracted ? fmtHours(contracted) : '—'}</td>
+        <td>${logged ? fmtHours(logged) : '—'}</td>
+        <td style="color:${hrsDiff < 0 ? 'var(--danger)' : hrsDiff > 0 ? 'var(--success)' : 'var(--text-muted)'}">
+          ${hrsDiff ? (hrsDiff > 0 ? '+' : '') + fmtHours(hrsDiff) : '—'}
+        </td>
+        <td>${rate ? fmtCurrency(rate) + '/hr' : '—'}</td>
+        <td style="color:${noteColour}">${note}</td>
+      </tr>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h2>📊 Hours vs Contract</h2>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+            Compares your contracted hours against hours actually logged (worked + upcoming shifts) each month —
+            useful for telling whether a low "Paid vs Est." month above was really just fewer hours on the rota,
+            rather than a payroll mistake.
+          </p>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th title="Your contracted hours for this month, based on your pay rate settings">Contracted Hrs</th>
+                  <th title="Total hours from your logged shifts this month — includes shifts not worked yet">Logged Hrs</th>
+                  <th>Hours Diff</th>
+                  <th title="Hourly rate in effect for this month">Rate</th>
+                  <th>What this means</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>`;
   },
 
   async togglePaidInNext(month) {
@@ -831,14 +921,26 @@ const PayslipsView = {
   </div>
   <div class="form-row">
     <div class="form-group">
-      <label>Taxable Pay YTD <span style="font-size:11px;color:var(--text-muted)">(from payslip)</span></label>
+      <label>
+        Taxable Pay YTD
+        <button type="button" id="pfCalcTaxableYtdBtn" class="btn btn-sm btn-ghost" style="margin-left:8px;padding:1px 8px;font-size:11px">Auto ↻</button>
+        <span style="font-size:11px;color:var(--text-muted)">(estimated — check against payslip)</span>
+      </label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfTaxableYtd" step="0.01" value="${vn('taxable_ytd')}" /></div>
     </div>
     <div class="form-group">
-      <label>NI'able Pay YTD <span style="font-size:11px;color:var(--text-muted)">(from payslip)</span></label>
+      <label>
+        NI'able Pay YTD
+        <button type="button" id="pfCalcNiYtdBtn" class="btn btn-sm btn-ghost" style="margin-left:8px;padding:1px 8px;font-size:11px">Auto ↻</button>
+        <span style="font-size:11px;color:var(--text-muted)">(estimated — check against payslip)</span>
+      </label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfNiYtd" step="0.01" value="${vn('ni_able_ytd')}" /></div>
     </div>
   </div>
+  <p style="font-size:11px;color:var(--text-muted);margin-top:4px">
+    Gross/Tax YTD are exact running totals from your logged payslips. Taxable/NI'able YTD are estimated as
+    Gross − SIP contribution (Sharesave isn't deducted pre-tax) — if your payslip shows a different figure, trust the payslip and enter it directly.
+  </p>
 </div>
 
 <div class="form-group" style="margin-top:10px">
@@ -904,7 +1006,16 @@ const PayslipsView = {
     document.getElementById('pfCalcDeducBtn').addEventListener('click', calcDeduc);
     document.getElementById('pfCalcNetBtn').addEventListener('click', calcNet);
 
-    // YTD auto-calc from accumulated payslips in the same tax year
+    // YTD auto-calc from accumulated payslips in the same UK tax year (6 Apr - 5 Apr,
+    // bucketed here by calendar month since that's how payslips are stored).
+    // gross/tax are exact running sums of each month's own payslip figure.
+    // taxable/ni are estimated as gross minus SIP contribution — SIP is a genuine
+    // pre-tax salary sacrifice, Sharesave (SAYE) is deducted from net pay so it
+    // doesn't reduce taxable/NI'able pay.
+    const periodTaxableNiablePay = (grossVal) => {
+      const sip = Math.abs(pfToggled('togSIP', 'pfSIP'));
+      return grossVal - sip;
+    };
     const calcYtd = (field) => {
       const month = document.getElementById('pfMonth').value;
       if (!month) { showToast('Select a month first', 'warning'); return; }
@@ -913,19 +1024,34 @@ const PayslipsView = {
       const prev = PayslipsView.allPayslips.filter(p =>
         p.month >= taxYearStart && p.month < month && p.id !== editId
       );
+      const thisGross = pf('pfTotalGross') || pf('pfBasicPay');
       if (field === 'gross') {
-        const prevSum  = prev.reduce((s, p) => s + (p.total_gross || 0), 0);
-        const thisGross = pf('pfTotalGross') || pf('pfBasicPay');
+        const prevSum = prev.reduce((s, p) => s + (p.total_gross || 0), 0);
         document.getElementById('pfGrossYtd').value = round2(prevSum + thisGross);
-      } else {
+      } else if (field === 'tax') {
         const prevSum = prev.reduce((s, p) => s + (p.tax_paid || 0), 0);
-        const thisTax = pf('pfTax');
-        document.getElementById('pfTaxYtd').value = round2(prevSum + thisTax);
+        document.getElementById('pfTaxYtd').value = round2(prevSum + pf('pfTax'));
+      } else if (field === 'taxable') {
+        // Re-derive each prior month's taxable pay the same way (gross - SIP) for consistency
+        const prevSum = prev.reduce((s, p) => s + ((p.total_gross || 0) - Math.abs(p.sip_contribution || 0)), 0);
+        document.getElementById('pfTaxableYtd').value = round2(prevSum + periodTaxableNiablePay(thisGross));
+      } else if (field === 'ni') {
+        const prevSum = prev.reduce((s, p) => s + ((p.total_gross || 0) - Math.abs(p.sip_contribution || 0)), 0);
+        document.getElementById('pfNiYtd').value = round2(prevSum + periodTaxableNiablePay(thisGross));
       }
     };
 
-    document.getElementById('pfCalcGrossYtdBtn').addEventListener('click', () => calcYtd('gross'));
-    document.getElementById('pfCalcTaxYtdBtn').addEventListener('click',  () => calcYtd('tax'));
+    document.getElementById('pfCalcGrossYtdBtn').addEventListener('click',   () => calcYtd('gross'));
+    document.getElementById('pfCalcTaxYtdBtn').addEventListener('click',    () => calcYtd('tax'));
+    document.getElementById('pfCalcTaxableYtdBtn').addEventListener('click', () => calcYtd('taxable'));
+    document.getElementById('pfCalcNiYtdBtn').addEventListener('click',      () => calcYtd('ni'));
+
+    // Auto-run once on open for any YTD field that's still blank, so YTD "just works"
+    // without needing a click — the buttons stay available to refresh after edits.
+    ['pfGrossYtd', 'pfTaxYtd', 'pfTaxableYtd', 'pfNiYtd'].forEach((id, i) => {
+      const el = document.getElementById(id);
+      if (el && !el.value) calcYtd(['gross', 'tax', 'taxable', 'ni'][i]);
+    });
 
     document.getElementById('pfSaveBtn').addEventListener('click', () => this.savePayslipForm(editId));
   },
