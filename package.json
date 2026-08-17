@@ -1,6 +1,6 @@
 {
   "name": "screwfix-rota-app",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "Shift and pay tracker for Screwfix",
   "main": "server.js",
   "scripts": {

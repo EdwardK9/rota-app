@@ -579,11 +579,11 @@ const payslipPhotoUpload = require('multer')({ storage: require('multer').memory
 app.post('/api/payslips/import-photo', payslipPhotoUpload.single('photo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   try {
-    const { parsed, rawText } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png', PAYSLIP_PROMPT);
+    const { parsed, rawText, modelUsed } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png', PAYSLIP_PROMPT);
     if (!parsed) {
       return res.status(502).json({ error: 'Gemini returned unexpected output — could not parse JSON', rawText: (rawText || '').slice(0, 3000) });
     }
-    res.json({ data: parsed });
+    res.json({ data: parsed, model_used: modelUsed });
   } catch (err) {
     console.error('Payslip photo import error:', err);
     res.status(err.status || 500).json({ error: err.message });

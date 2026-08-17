@@ -313,6 +313,8 @@ RULES — follow exactly:
     const status = document.getElementById('tuAutoStatus');
     const results = [];
     const errors = [];
+    const fallbackModels = new Set();
+    const configuredModel = App.settings?.gemini_model;
 
     for (let i = 0; i < files.length; i++) {
       status.style.color = 'var(--text-muted)';
@@ -322,6 +324,9 @@ RULES — follow exactly:
       try {
         const result = await API.extractScreenshotGemini(files[i]);
         results.push({ file: files[i].name, data: result.data });
+        if (result.model_used && configuredModel && result.model_used !== configuredModel) {
+          fallbackModels.add(result.model_used);
+        }
       } catch (e) {
         errors.push(`${files[i].name}: ${e.message}`);
       }
@@ -333,9 +338,12 @@ RULES — follow exactly:
       return;
     }
 
+    const fallbackNote = fallbackModels.size
+      ? ` (your configured model was overloaded — used ${[...fallbackModels].join(', ')} instead)`
+      : '';
     status.textContent = errors.length
-      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')}) — switching to preview…`
-      : '✓ Read successfully — switching to preview…';
+      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')})${fallbackNote} — switching to preview…`
+      : `✓ Read successfully${fallbackNote} — switching to preview…`;
     status.style.color = errors.length ? 'var(--warning)' : 'var(--success)';
 
     this._jsonFiles = results;

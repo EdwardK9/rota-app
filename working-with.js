@@ -969,22 +969,41 @@ router.post('/colleagues/import-screenshot', upload.single('screenshot'), async 
 // Gemini AI Screenshot import
 // ─────────────────────────────────────────
 
-// Shared by any route that needs an image read by Gemini (team-schedule screenshots
-// here, and the payslip-photo import in server.js). Throws (with .status) for a
-// missing key or a hard API error; returns parsed:null (with rawText) if Gemini's
-// response wasn't valid JSON, so callers can decide how to surface that softly.
-async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
-  const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
-  const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
-  const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
-  const model    = (modelRow && modelRow.value && modelRow.value.trim()) || 'gemini-2.0-flash';
-  if (!apiKey) {
-    const err = new Error('No Gemini API key configured. Add one in Settings → AI Screenshot Import.');
-    err.status = 400;
-    throw err;
-  }
+// "Overloaded" is Google's own wording for a model at capacity — worth retrying with
+// a different model, unlike a bad request or auth error which would just fail again.
+function isGeminiOverloadError(status, message) {
+  return status === 503 || /overloaded|high demand|unavailable|try again later/i.test(message || '');
+}
 
-  const imageB64 = imageBuffer.toString('base64');
+// Same live-model fetch as GET /colleagues/gemini-models, reused here so the fallback
+// list never goes stale the way a hardcoded one would (see the gemini-2.5-flash
+// retirement this was already bitten by once).
+async function fetchAvailableGeminiModels(apiKey) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+  if (!r.ok) return [];
+  const data = await r.json();
+  return (data.models || [])
+    .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map(m => (m.name || '').replace(/^models\//, ''))
+    .filter(Boolean)
+    .filter(name => !/embedding|aqa/i.test(name));
+}
+
+// Rough capability ranking so fallback tries the next-BEST available model rather
+// than whatever happens to sort first alphabetically — newer/higher-tier models tend
+// to read cluttered screenshots more reliably than "lite"/8b-class ones.
+function rankGeminiModel(name) {
+  let score = 0;
+  const ver = name.match(/(\d+)\.(\d+)/);
+  if (ver) score += parseFloat(`${ver[1]}.${ver[2]}`) * 100;
+  if (/\bpro\b/i.test(name)) score += 50;
+  if (/\bflash\b/i.test(name)) score += 20;
+  if (/flash-lite|flash-8b/i.test(name)) score -= 60;
+  if (/preview|exp/i.test(name)) score -= 10;
+  return score;
+}
+
+async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model) {
   const geminiRes = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -999,8 +1018,10 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
 
   if (!geminiRes.ok) {
     const errBody = await geminiRes.json().catch(() => ({}));
-    const err = new Error(errBody?.error?.message || `Gemini API error ${geminiRes.status}`);
-    err.status = 502;
+    const message  = errBody?.error?.message || `Gemini API error ${geminiRes.status}`;
+    const err = new Error(message);
+    err.status = geminiRes.status;
+    err.overloaded = isGeminiOverloadError(geminiRes.status, message);
     throw err;
   }
 
@@ -1012,7 +1033,58 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
 
   let parsed = null;
   try { parsed = JSON.parse(jsonStr); } catch (_) { /* leave parsed null — caller handles */ }
-  return { parsed, rawText };
+  return { parsed, rawText, modelUsed: model };
+}
+
+// Shared by any route that needs an image read by Gemini (team-schedule screenshots
+// here, and the payslip-photo import in server.js). Tries the configured model first;
+// if that specific model is overloaded, automatically retries with the best-ranked
+// other available vision models (up to 3) before giving up. Throws (with .status) for
+// a missing key or a hard non-overload error; returns parsed:null (with rawText) if
+// Gemini's response wasn't valid JSON, so callers can decide how to surface that softly.
+async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
+  const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
+  const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
+  const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
+  const primaryModel = (modelRow && modelRow.value && modelRow.value.trim()) || 'gemini-2.0-flash';
+  if (!apiKey) {
+    const err = new Error('No Gemini API key configured. Add one in Settings → AI Screenshot Import.');
+    err.status = 400;
+    throw err;
+  }
+
+  const imageB64 = imageBuffer.toString('base64');
+
+  let lastErr;
+  try {
+    return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, primaryModel);
+  } catch (err) {
+    if (!err.overloaded) throw err;
+    lastErr = err;
+  }
+
+  let fallbacks = [];
+  try {
+    const available = await fetchAvailableGeminiModels(apiKey);
+    fallbacks = available
+      .filter(m => m !== primaryModel)
+      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
+      .slice(0, 3);
+  } catch (_) { /* no model list available — fall through with nothing to try */ }
+
+  for (const model of fallbacks) {
+    try {
+      return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, model);
+    } catch (err) {
+      lastErr = err;
+      if (!err.overloaded) throw err;
+    }
+  }
+
+  lastErr.message = fallbacks.length
+    ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all overloaded right now — try again shortly. (${lastErr.message})`
+    : lastErr.message;
+  throw lastErr;
 }
 
 // Read a screenshot with Gemini and return the raw { date_range, schedule } JSON —
@@ -1021,11 +1093,11 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
 router.post('/colleagues/gemini-extract', upload.single('screenshot'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   try {
-    const { parsed, rawText } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
+    const { parsed, rawText, modelUsed } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
     if (!parsed) {
       return res.status(502).json({ error: 'Gemini returned unexpected output — could not parse JSON', rawText: rawText.slice(0, 3000) });
     }
-    res.json({ data: parsed });
+    res.json({ data: parsed, model_used: modelUsed });
   } catch (err) {
     console.error('Gemini extract error:', err);
     res.status(err.status || 500).json({ error: err.message });
@@ -1042,7 +1114,7 @@ router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'),
   if (colleagues.length === 0) return res.status(400).json({ error: 'Add colleagues first before importing' });
 
   try {
-    const { parsed, rawText } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
+    const { parsed, rawText, modelUsed } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
     if (!parsed) {
       return res.json({ inserted: 0, skipped: 0,
         message: 'Gemini returned unexpected output — could not parse JSON',
@@ -1087,7 +1159,7 @@ router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'),
     doInsert();
     finalizeImportBatch(batchId, inserted);
 
-    res.json({ inserted, skipped: duplicates.length, conflicts, total: shifts.length, shifts: toInsert, rawJson: JSON.stringify(normParsed).slice(0, 3000), batchId });
+    res.json({ inserted, skipped: duplicates.length, conflicts, total: shifts.length, shifts: toInsert, rawJson: JSON.stringify(normParsed).slice(0, 3000), batchId, model_used: modelUsed });
   } catch(err) {
     console.error('Gemini import error:', err);
     res.status(err.status || 500).json({ error: err.status ? err.message : ('Gemini import failed: ' + err.message) });
@@ -1156,8 +1228,11 @@ router.get('/colleagues/gemini-models', async (req, res) => {
       // models support generateContent too but aren't useful here, so drop obvious
       // non-multimodal names.
       .filter(name => !/embedding|aqa/i.test(name))
-      .sort();
-    res.json({ models });
+      // Best-ranked first (same ranking used for automatic overload fallback) so the
+      // most capable option is the obvious default rather than whatever sorts first
+      // alphabetically.
+      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a));
+    res.json({ models, recommended: models[0] || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

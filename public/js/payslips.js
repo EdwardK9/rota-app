@@ -97,7 +97,13 @@ const PayslipsView = {
         Modal.open('Add Payslip (from photo — review before saving)', this.payslipFormHtml(data));
         this.wirePayslipForm(null);
       }
-      showToast('Payslip read — check the figures before saving', 'success');
+      const usedFallback = result.model_used && App.settings?.gemini_model && result.model_used !== App.settings.gemini_model;
+      showToast(
+        usedFallback
+          ? `Payslip read via ${result.model_used} (your configured model was overloaded) — check the figures before saving`
+          : 'Payslip read — check the figures before saving',
+        'success'
+      );
     } catch (e) {
       showToast('Failed to read payslip: ' + e.message, 'error');
     }

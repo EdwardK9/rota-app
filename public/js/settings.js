@@ -1385,15 +1385,20 @@ const SettingsView = {
     const current = modelEl.value;
     if (status) status.textContent = 'Loading models…';
     try {
-      const { models } = await API.getGeminiModels();
+      const { models, recommended } = await API.getGeminiModels();
       if (!models || !models.length) {
         if (status) status.textContent = 'No models returned — save an API key first.';
         return;
       }
-      modelEl.innerHTML = models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
-      // Keep the previous selection if it's still valid, otherwise fall back to the first
-      modelEl.value = models.includes(current) ? current : models[0];
-      if (status) status.textContent = `✓ ${models.length} model${models.length !== 1 ? 's' : ''} available to your key`;
+      // Server already ranks these best-first (same ranking used for automatic
+      // overload fallback) — mark the top one so the most capable option is obvious
+      // rather than making you guess between similarly-named models.
+      modelEl.innerHTML = models.map(m =>
+        `<option value="${esc(m)}">${esc(m)}${m === recommended ? ' ⭐ Recommended (most capable)' : ''}</option>`
+      ).join('');
+      // Keep the previous selection if it's still valid, otherwise default to the recommended one
+      modelEl.value = models.includes(current) ? current : (recommended || models[0]);
+      if (status) status.textContent = `✓ ${models.length} model${models.length !== 1 ? 's' : ''} available to your key — ⭐ = most capable`;
     } catch (e) {
       if (status) status.textContent = 'Could not load models: ' + e.message;
     }
