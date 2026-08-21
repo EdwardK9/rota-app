@@ -53,6 +53,7 @@ const V3 = {
                                       })),
     yearInNumbers:()          => API.get('/api/v3/year-in-numbers'),
     didYouKnow:   (seed)      => API.get('/api/v3/did-you-know' + (seed ? '?seed=' + seed : '')),
+    didYouKnowAI: ()          => API.get('/api/v3/did-you-know/ai'),
     goals:        ()          => API.get('/api/v3/goals'),
     createGoal:   (d)         => API.post('/api/v3/goals', d),
     updateGoal:   (id, d)     => API.put('/api/v3/goals/' + id, d),

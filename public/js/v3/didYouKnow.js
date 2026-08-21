@@ -7,6 +7,9 @@ V3.register('did-you-know', '🎲 Did You Know', {
   facts: [],
   page: 0,
   PER_PAGE: 4,
+  aiState: 'idle',   // 'idle' | 'loading' | 'done' | 'error'
+  aiFact: null,
+  aiError: null,
 
   GRADIENTS: [
     'linear-gradient(135deg,#3B82F6,#1B2A4A)',
@@ -62,6 +65,8 @@ V3.register('did-you-know', '🎲 Did You Know', {
         <button class="btn btn-primary" id="dykMore">🎲 Show me more</button>
         <span class="v3-muted">${start + 1}–${Math.min(start + this.PER_PAGE, this.facts.length)} of ${this.facts.length}</span>
       </div>
+
+      <div class="card" style="margin-top:20px" id="dykAiCard"></div>
     `;
 
     document.getElementById('dykMore').addEventListener('click', () => {
@@ -69,5 +74,55 @@ V3.register('did-you-know', '🎲 Did You Know', {
       this.render();
       document.getElementById('view-did-you-know').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+
+    this.renderAiCard();
+  },
+
+  renderAiCard() {
+    const card = document.getElementById('dykAiCard');
+    if (!card) return;
+
+    const body = {
+      idle: `
+        <div class="card-body" style="text-align:center;padding:24px">
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+            Everything above is a fixed formula. This one asks Gemini to find a fresh angle on the
+            same kind of numbers — a different comparison every time you ask.
+          </div>
+          <button class="btn btn-primary" id="dykAiBtn">🤖 Ask Gemini for a fact</button>
+        </div>`,
+      loading: `
+        <div class="card-body" style="text-align:center;padding:24px;color:var(--text-muted)">
+          Thinking of something…
+        </div>`,
+      done: `
+        <div class="card-header"><h2>🤖 AI Bonus Fact</h2></div>
+        <div class="card-body">
+          <div style="font-size:15px;font-weight:600;line-height:1.4">${esc(this.aiFact)}</div>
+          <button class="btn btn-ghost btn-sm" id="dykAiBtn" style="margin-top:14px">🔄 Get another</button>
+        </div>`,
+      error: `
+        <div class="card-body">
+          <p style="color:var(--danger);font-size:13px">${esc(this.aiError)}</p>
+          <button class="btn btn-ghost btn-sm" id="dykAiBtn">Try again</button>
+        </div>`,
+    }[this.aiState];
+
+    card.innerHTML = body;
+    document.getElementById('dykAiBtn')?.addEventListener('click', () => this.loadAiFact());
+  },
+
+  async loadAiFact() {
+    this.aiState = 'loading';
+    this.renderAiCard();
+    try {
+      const d = await V3.api.didYouKnowAI();
+      this.aiFact = d.fact;
+      this.aiState = 'done';
+    } catch (e) {
+      this.aiError = e.message;
+      this.aiState = 'error';
+    }
+    this.renderAiCard();
   },
 });

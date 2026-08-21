@@ -14,9 +14,10 @@
 
 const express = require('express');
 const {
-  db, DAYS, MONTHS, localDateStr, daysBetween, toMins, spanMins, overlapMins,
+  db, DAYS, MONTHS, getSetting, localDateStr, daysBetween, toMins, spanMins, overlapMins,
   paidHours, shiftPay, round1, round2,
 } = require('./helpers');
+const { careerStats } = require('./stats');
 
 const router = express.Router();
 
@@ -157,6 +158,99 @@ router.get('/did-you-know', (req, res) => {
 
   res.json({ facts, count: facts.length, seed, today });
 });
+
+/* GET /api/v3/did-you-know/ai
+   The facts above are all hand-written formulas. This one instead hands a
+   compact, names-free summary of the same kind of numbers to Gemini and asks
+   for a single fresh comparison — same spirit, different phrasing every time,
+   without needing a new hand-written rule for every possible angle.
+
+   Kept deliberately small in scope: one fact per request, on demand (a button
+   click, not something that runs on every page load), no retry/fallback-model
+   machinery like the screenshot importer has — if it fails, the button can
+   just be clicked again. */
+router.get('/did-you-know/ai', async (req, res) => {
+  const apiKey = getSetting('gemini_api_key', null);
+  if (!apiKey) {
+    return res.status(400).json({ error: 'No Gemini API key configured. Add one in Settings → AI Screenshot Import.' });
+  }
+  const model = getSetting('gemini_model', null) || 'gemini-2.0-flash';
+
+  const s = careerStats();
+  if (!s.totalShifts) return res.status(400).json({ error: 'Not enough shift history yet to generate a fact.' });
+
+  // Aggregate numbers only — no colleague names, no dates, nothing that reads
+  // as a diary entry once it leaves the server.
+  const context = {
+    total_shifts: s.totalShifts,
+    total_hours: round1(s.totalHours),
+    total_pay_gbp: round2(s.totalPay),
+    total_commute_miles: round1(s.totalMiles),
+    weekend_shifts: s.weekendShifts,
+    bank_holiday_shifts: s.bankHolidayShifts,
+    longest_single_shift_hours: s.longestShift ? round1(paidHours(s.longestShift)) : 0,
+    longest_streak_of_days_worked: s.longestStreakDays,
+    distinct_colleagues_worked_with: s.distinctColleagues,
+    breaks_skipped_count: s.breaksSkipped,
+    clock_ins_recorded: s.clockIns,
+    lifetime_tax_and_ni_paid_gbp: round2(s.lifetimeTax),
+    leave_days_taken: s.leaveDays,
+    days_employed: s.daysEmployed || 0,
+  };
+
+  const prompt = `You write a single "did you know" fact for a UK retail shift-worker's personal work-stats app, based on the real JSON data below.
+
+Rules:
+- Output ONLY the fact itself as plain text. No preamble, no markdown, no quote marks, no label.
+- One or two sentences, under 220 characters total.
+- Turn one of the numbers into a surprising real-world comparison or conversion (e.g. equivalent in films watched, marathons, football pitches, flights, batteries of a phone charged — vary it, don't just restate the number).
+- Be playful but honest — every number you use must be derivable from the data given, don't invent statistics.
+- Do not give financial or tax advice, just observations.
+
+Data:
+${JSON.stringify(context)}`;
+
+  try {
+    const fact = await callGeminiText(prompt, apiKey, model);
+    res.json({ fact, model });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message || 'Gemini request failed.' });
+  }
+});
+
+/** Minimal text-only Gemini call — no image, no JSON parsing, no fallback
+ *  model chain. The screenshot importer's callGeminiVision (working-with.js)
+ *  handles that heavier case; this is deliberately the small version. */
+async function callGeminiText(prompt, apiKey, model) {
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 150 },
+      }),
+    }
+  );
+
+  if (!r.ok) {
+    const errBody = await r.json().catch(() => ({}));
+    const message = errBody?.error?.message || `Gemini API error ${r.status}`;
+    const err = new Error(message);
+    err.status = r.status;
+    throw err;
+  }
+
+  const data = await r.json();
+  const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+  if (!text) {
+    const err = new Error('Gemini returned an empty response.');
+    err.status = 502;
+    throw err;
+  }
+  return text;
+}
 
 function mode(arr) {
   const t = {};
