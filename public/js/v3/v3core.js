@@ -26,7 +26,10 @@ const V3 = {
     moneyClock:   ()          => API.get('/api/v3/money-clock'),
     trophies:     ()          => API.get('/api/v3/trophies'),
     records:      ()          => API.get('/api/v3/records'),
-    forecast:     (taxYear)   => API.get('/api/v3/forecast' + (taxYear ? '?tax_year=' + taxYear : '')),
+    forecast:     (taxYear, basis) => API.get('/api/v3/forecast?' + new URLSearchParams({
+                                       ...(taxYear ? { tax_year: taxYear } : {}),
+                                       ...(basis ? { basis } : {}),
+                                     })),
     shiftDna:     (year)      => API.get('/api/v3/shift-dna?year=' + encodeURIComponent(year || 'all')),
     balance:      (weeks)     => API.get('/api/v3/balance?weeks=' + (weeks || 12)),
     commuteCost:  (year)      => API.get('/api/v3/commute-cost?year=' + encodeURIComponent(year || 'all')),

@@ -126,7 +126,10 @@ V3.register('money-clock', '💸 Money Clock', {
             </div>
             ${V3.bar(paydayPct, 'success')}
             <div style="margin-top:14px;display:flex;justify-content:space-between;font-size:13px">
-              <span class="v3-muted">Earned since ${fmtDate(payday.accrued_from)}</span>
+              <span class="v3-muted">
+                Earned since last payday (${fmtDate(payday.last_payday)})
+                ${payday.accrued_shifts ? `<br><span style="font-size:11.5px">${payday.accrued_shifts} shift${payday.accrued_shifts === 1 ? '' : 's'} from ${fmtDate(payday.accrued_from)}</span>` : ''}
+              </span>
               <strong>${fmtCurrency(payday.accrued_since_last)}</strong>
             </div>
             ${payday.last_net != null ? `
@@ -138,6 +141,9 @@ V3.register('money-clock', '💸 Money Clock', {
               The payday date is worked out from the dates on your logged payslips, pulled back to
               the Friday when it would otherwise land on a weekend. Amounts here are gross shift pay,
               before tax and NI.
+              <br><br>
+              "Earned since last payday" is a rough guide, not what this payslip will say — monthly
+              payroll cuts off before payday, so the most recent shifts usually land on the month after.
             </div>
           </div>
         </div>

@@ -110,18 +110,39 @@ router.get('/forecast', (req, res) => {
   const scheduledGross = round2(scheduled.reduce((t, s) => t + (shiftPay(s) || 0), 0));
 
   // ── 3. The gap after the rota runs out ───────────────────────────────────
-  // Priced at your contracted weekly hours × current rate — the honest "if
-  // nothing changes" baseline rather than an optimistic extrapolation of a
-  // busy patch.
+  // The weakest link in the whole forecast, so it's explicit and switchable.
+  //   contracted — your contract's weekly hours: a conservative floor
+  //   recent     — what you've actually averaged lately: usually far closer,
+  //                since contracted hours ignore every extra shift you pick up
+  // Both are always returned so the client can show what the other basis implies.
   const rotaEndsOn = shifts.length ? shifts[shifts.length - 1].date : today;
   const gapFrom = rotaEndsOn > today ? rotaEndsOn : today;
   const gapDays = Math.max(0, daysBetween(gapFrom, ty.to));
   const gapWeeks = round1(gapDays / 7);
   const rate = rateForDate(today) || 0;
   const contracted = contractHoursForDate(today) || 0;
-  const projectedGap = round2(gapWeeks * contracted * rate);
+
+  // Recent actual average: paid hours per week over the last 12 completed weeks.
+  // Measured against elapsed weeks, not weeks-with-shifts, so holidays and quiet
+  // spells pull the average down the way they really do.
+  const RECENT_WEEKS = 12;
+  const recentFrom = addDays(today, -(RECENT_WEEKS * 7));
+  const recentShifts = db.prepare(
+    'SELECT * FROM shifts WHERE completed = 1 AND date >= ? AND date <= ?'
+  ).all(recentFrom, today);
+  const recentHours = recentShifts.reduce((t, s) => t + paidHours(s), 0);
+  const recentWeekly = round1(recentHours / RECENT_WEEKS);
+
+  const basis = req.query.basis === 'recent' ? 'recent' : 'contracted';
+  const weeklyHours = basis === 'recent' ? recentWeekly : contracted;
+  const projectedGap = round2(gapWeeks * weeklyHours * rate);
 
   const projectedGross = round2(bankedGross + workedGross + scheduledGross + projectedGap);
+
+  // How much of the headline is fact rather than forecast — the thing that makes
+  // a single big number honest to read.
+  const certainGross = round2(bankedGross + workedGross);
+  const bookedGross  = round2(certainGross + scheduledGross);
 
   // ── Tax on the projected annual figure ───────────────────────────────────
   const projectedTax = incomeTax(projectedGross, cfg);
@@ -150,7 +171,30 @@ router.get('/forecast', (req, res) => {
     scheduled:      { gross: scheduledGross, shifts: scheduled.length,
                       hours: round1(scheduled.reduce((t, s) => t + paidHours(s), 0)),
                       rota_ends: shifts.length ? rotaEndsOn : null },
-    projected_gap:  { gross: projectedGap, weeks: gapWeeks, contracted_hours: contracted, rate },
+    projected_gap:  {
+      gross: projectedGap, weeks: gapWeeks, rate,
+      basis,                                  // which assumption produced the number
+      weekly_hours: weeklyHours,              // hours/week it assumes
+      contracted_hours: contracted,
+      recent_weekly_hours: recentWeekly,
+      recent_window_weeks: RECENT_WEEKS,
+      // What the other basis would add instead, so the swing is visible
+      alternative: {
+        basis: basis === 'recent' ? 'contracted' : 'recent',
+        weekly_hours: basis === 'recent' ? contracted : recentWeekly,
+        gross: round2(gapWeeks * (basis === 'recent' ? contracted : recentWeekly) * rate),
+      },
+    },
+    certainty: {
+      // banked + already worked: will not change
+      certain: certainGross,
+      // + shifts on the rota but not yet worked
+      booked: bookedGross,
+      // the remainder is the only guessed part
+      estimated: projectedGap,
+      certain_pct: projectedGross > 0 ? round1((certainGross / projectedGross) * 100) : 0,
+      booked_pct:  projectedGross > 0 ? round1((bookedGross / projectedGross) * 100) : 0,
+    },
     projection: {
       gross: projectedGross,
       tax: projectedTax,

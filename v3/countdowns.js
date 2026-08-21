@@ -15,6 +15,7 @@ const {
   db, DAYS, getSetting, localDateStr, parseDate, addDays, daysBetween, toMins, shiftPay, round2,
 } = require('./helpers');
 const { paydayDayOfMonth, nextPayday } = require('./moneyClock');
+const { leaveSummary } = require('./leaveYear');
 
 const router = express.Router();
 
@@ -197,20 +198,27 @@ router.get('/countdowns', async (req, res) => {
     detail: 'Your P60 figures are locked in on this date',
   });
 
-  const leaveYearStart = getSetting('leave_year_start', '04-01');
-  if (/^\d{2}-\d{2}$/.test(leaveYearStart)) {
-    const next = nextAnniversary(leaveYearStart, today);
-    const remaining = (() => {
-      const entitlement = parseFloat(getSetting('annual_leave_entitlement', '28')) || 0;
-      const yearFrom = daysBetween(today, next) >= 0 ? addDays(next, -365) : next;
-      const used = db.prepare('SELECT SUM(days_taken) AS d FROM leave_entries WHERE start_date >= ? AND start_date < ?')
-        .get(yearFrom, next).d || 0;
-      return Math.round((entitlement - used) * 10) / 10;
-    })();
+  // Leave-year reset. The window and the "remaining" figure both come from
+  // leaveYear.js, which mirrors the Leave view — so this can't drift from what
+  // the Leave tab shows.
+  const leave = leaveSummary(today);
+  if (/^\d{2}-\d{2}$/.test(leave.lys)) {
+    let detail;
+    if (!leave.configured) {
+      detail = 'No entitlement set for this leave year yet';
+    } else if (leave.remaining_hours > 0) {
+      const days = leave.remaining_days;
+      detail = `${leave.remaining_hours}h left to book or lose` +
+               (days >= 0.5 ? ` (about ${days} day${days === 1 ? '' : 's'})` : '');
+    } else if (leave.remaining_hours === 0) {
+      detail = 'Entitlement fully used';
+    } else {
+      detail = `${Math.abs(leave.remaining_hours)}h over your entitlement`;
+    }
     add({
       key: 'leave_year_end', icon: '📆', title: 'Leave year resets', category: 'rest',
-      date: next, target: targetAt(next, '00:00'),
-      detail: remaining > 0 ? `${remaining} days left to book or lose` : 'Entitlement fully used',
+      date: leave.end, target: targetAt(leave.end, '00:00'),
+      detail,
     });
   }
 

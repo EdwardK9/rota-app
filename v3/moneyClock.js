@@ -114,14 +114,16 @@ router.get('/money-clock', (req, res) => {
   const payDate = nextPayday(today, payDay);
   const lastPayslip = db.prepare('SELECT * FROM payslips ORDER BY month DESC LIMIT 1').get();
 
-  // Everything worked since the last payday is what the next one will cover.
-  const prevPaydayAnchor = addDays(payDate, -1);
-  const prevD = parseDate(prevPaydayAnchor);
-  const prevPayday = (() => {
-    const p = new Date(prevD.getFullYear(), prevD.getMonth(), 1, 12, 0, 0);
-    return paydayFor(p.getFullYear(), p.getMonth() + 1, payDay);
-  })();
-  const sinceLastPayday = range(prevPayday, today);
+  // Everything worked since the last payday is roughly what the next one covers.
+  // The last payday is the one a whole month BEFORE the next one — stepping back
+  // a single day lands in the same month whenever payday is late in it, which
+  // would make "earned since" span nothing at all.
+  const payD = parseDate(payDate);
+  const prevMonth = new Date(payD.getFullYear(), payD.getMonth() - 1, 1, 12, 0, 0);
+  const prevPayday = paydayFor(prevMonth.getFullYear(), prevMonth.getMonth() + 1, payDay);
+  // Count from the day after, so a shift never lands in two pay periods at once.
+  const accruedFrom = addDays(prevPayday, 1);
+  const sinceLastPayday = range(accruedFrom, today);
 
   res.json({
     now: new Date().toISOString(),
@@ -146,7 +148,9 @@ router.get('/money-clock', (req, res) => {
       day_of_month: payDay,
       days_away: daysBetween(today, payDate),
       accrued_since_last: sumPay(sinceLastPayday),
-      accrued_from: prevPayday,
+      accrued_from: accruedFrom,
+      accrued_shifts: sinceLastPayday.length,
+      last_payday: prevPayday,
       last_net: lastPayslip ? lastPayslip.net_payment : null,
       last_month: lastPayslip ? lastPayslip.month : null,
     },
