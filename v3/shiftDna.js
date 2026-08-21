@@ -176,13 +176,21 @@ router.get('/shift-dna', (req, res) => {
   const startSpread = stdDev(starts);
   const distinctStarts = new Set(entries.map(s => s.start_time)).size;
 
+  // Variety needs to measure genuinely different shift patterns, not clock-in
+  // noise — real rota data has starts like 06:45/06:48/07:02 for what's really
+  // one "opening" slot, so counting exact minutes made nearly everyone max out
+  // this trait (and land on The Chameleon) regardless of how varied their rota
+  // actually was. Rounding to the nearest half hour collapses that noise while
+  // still counting a person who genuinely works mornings, middays and closes.
+  const distinctStartBuckets = new Set(starts.map(m => Math.round(m / 30) * 30)).size;
+
   const scores = {
     earlyBird:   round1((starts.filter(m => m <= 8 * 60).length / n) * 100),
     nightOwl:    round1((finishes.filter(m => m >= 19 * 60).length / n) * 100),
     weekendLoad: round1((entries.filter(s => isWeekend(s.date)).length / n) * 100),
     endurance:   round1(clamp((avgLength / 10) * 100, 0, 100)),
     consistency: round1(clamp(100 - (startSpread / 120) * 100, 0, 100)),
-    variety:     round1(clamp((distinctStarts / 8) * 100, 0, 100)),
+    variety:     round1(clamp((distinctStartBuckets / 6) * 100, 0, 100)),
     social:      round1(clamp((avgCrew / 5) * 100, 0, 100)),
   };
 
