@@ -79,35 +79,44 @@ app.get('/api/version', (req, res) => {
   res.json({ version: packageJson.version, commit: _gitCommit, startedAt: SERVER_STARTED_AT });
 });
 
-// Changelog — read straight from git history rather than hand-maintained, so it
-// can never drift out of sync with what actually shipped. Every commit that
-// bumps the version follows a "vX.Y.Z: summary" subject line convention; this
-// just parses that back out. Computed once at startup (same as _gitCommit
-// above) since the history a running container has is fixed for its lifetime.
+// Changelog — every commit that bumps the version follows a "vX.Y.Z: summary"
+// subject line convention, parsed back out below. The production Docker image
+// has no .git directory (and no git binary at all — see Dockerfile) so this
+// can't be read live at runtime the way _gitCommit is; instead changelog.json
+// is regenerated and committed alongside every version bump (see
+// scripts/generate-changelog.js) and just gets read as a plain file here. The
+// live git-log attempt is kept as a fallback purely for local dev on a machine
+// that has git — e.g. running the server straight after a code change, before
+// bothering to regenerate the file.
 let _changelog = [];
 try {
-  const raw = execFileSync(
-    'git', ['log', '--date=short', '--pretty=format:%ad|||%B%x00'],
-    { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }
-  ).toString();
-  _changelog = raw.split('\x00')
-    .map(chunk => chunk.trim())
-    .filter(Boolean)
-    .map(chunk => {
-      const sep = chunk.indexOf('|||');
-      if (sep === -1) return null;
-      const date = chunk.slice(0, sep);
-      const body = chunk.slice(sep + 3).trim();
-      const lines = body.split('\n');
-      const m = lines[0].match(/^v(\d+\.\d+\.\d+):\s*(.+)$/);
-      if (!m) return null;
-      const details = lines.slice(1).join('\n')
-        .replace(/^Co-Authored-By:.*$/gim, '')
-        .trim();
-      return { version: m[1], date, summary: m[2], details };
-    })
-    .filter(Boolean);
-} catch (_) { /* not a git checkout, or git unavailable — changelog stays empty */ }
+  const raw = fs.readFileSync(path.join(__dirname, 'changelog.json'), 'utf8');
+  _changelog = JSON.parse(raw).entries || [];
+} catch (_) {
+  try {
+    const raw = execFileSync(
+      'git', ['log', '--date=short', '--pretty=format:%ad|||%B%x00'],
+      { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }
+    ).toString();
+    _changelog = raw.split('\x00')
+      .map(chunk => chunk.trim())
+      .filter(Boolean)
+      .map(chunk => {
+        const sep = chunk.indexOf('|||');
+        if (sep === -1) return null;
+        const date = chunk.slice(0, sep);
+        const body = chunk.slice(sep + 3).trim();
+        const lines = body.split('\n');
+        const m = lines[0].match(/^v(\d+\.\d+\.\d+):\s*(.+)$/);
+        if (!m) return null;
+        const details = lines.slice(1).join('\n')
+          .replace(/^Co-Authored-By:.*$/gim, '')
+          .trim();
+        return { version: m[1], date, summary: m[2], details };
+      })
+      .filter(Boolean);
+  } catch (_2) { /* no changelog.json and no usable git — changelog stays empty */ }
+}
 
 app.get('/api/changelog', (req, res) => {
   res.json({ entries: _changelog, currentVersion: packageJson.version });
