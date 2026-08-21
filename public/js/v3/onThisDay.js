@@ -122,7 +122,7 @@ V3.register('on-this-day', '📼 On This Day', {
         this date has cost you ${d.summary.total_hours} hours and earned you ${fmtCurrency(d.summary.total_pay)}.
       </div>` : '';
 
-    el.innerHTML = toolbar + milestones + todayLine + flashbacks + pastLeave + summary;
+    el.innerHTML = V3.backButton() + toolbar + milestones + todayLine + flashbacks + pastLeave + summary;
 
     const go = date => { this.date = date; this.load(); };
     document.getElementById('otdDate').addEventListener('change', e => go(e.target.value));

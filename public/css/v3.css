@@ -31,6 +31,9 @@
   border-left: 3px solid var(--border); padding-left: 10px; margin-top: 14px;
 }
 
+/* ── Back-to-hub link, top of every V3 feature page ─────────────────────── */
+.v3-back-btn { margin-bottom: 14px; }
+
 /* ── Hero panel (Money Clock, Balance, Forecast headline) ───────────────── */
 .v3-hero {
   border-radius: 16px; padding: 26px 24px; color: #fff;

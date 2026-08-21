@@ -43,6 +43,7 @@ V3.register('did-you-know', '🎲 Did You Know', {
     const slice = this.facts.slice(start, start + this.PER_PAGE);
 
     el.innerHTML = `
+      ${V3.backButton()}
       <p class="v3-intro">
         Things your own data knows about you that no other view is ever going to mention.
         All of it is derived from your logged shifts, clock-ins and colleagues.

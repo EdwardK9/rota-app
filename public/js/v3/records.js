@@ -31,6 +31,7 @@ V3.register('records', '📖 Record Book', {
     const l = d.lifetime;
 
     el.innerHTML = `
+      ${V3.backButton()}
       <div class="v3-hero" style="background:linear-gradient(135deg,#8B5CF6,#4C1D95)">
         <div class="v3-hero-label">CAREER TOTALS</div>
         <div class="v3-hero-value">${l.hours}h</div>

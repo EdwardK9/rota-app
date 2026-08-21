@@ -82,6 +82,7 @@ V3.register('head-to-head', '🥊 Head to Head', {
     const t = d.tally;
 
     el.innerHTML = `
+      ${V3.backButton()}
       ${this._toolbar()}
 
       <div class="v3-hero" style="background:linear-gradient(135deg,#6366F1,#312E81)">

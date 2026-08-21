@@ -36,6 +36,7 @@ V3.register('bingo', '🎲 Rota Bingo', {
     }
 
     el.innerHTML = `
+      ${V3.backButton()}
       <div class="toolbar">
         <div class="month-nav">
           <button class="btn btn-ghost btn-sm" id="bgPrev">‹ Week</button>

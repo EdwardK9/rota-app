@@ -41,6 +41,7 @@ V3.register('break-debt', '☕ Break Debt', {
     }[d.trend.direction] : '';
 
     el.innerHTML = `
+      ${V3.backButton()}
       ${picker}
 
       <div class="v3-hero" style="background:${clean

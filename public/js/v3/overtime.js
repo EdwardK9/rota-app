@@ -32,6 +32,7 @@ V3.register('overtime', '⏰ Overtime Tracker', {
     const t = d.totals;
 
     el.innerHTML = `
+      ${V3.backButton()}
       ${picker}
 
       <div class="v3-hero" style="background:linear-gradient(135deg,#10B981,#065F46)">

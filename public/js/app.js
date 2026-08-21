@@ -119,6 +119,14 @@ const App = {
       if (e.target === document.getElementById('modalOverlay')) Modal.close();
     });
 
+    // Keep the visible view in sync with browser Back/Forward. Those buttons
+    // change window.location.hash directly (no navigate() call), so without
+    // this listener the URL updates but the on-screen view never does.
+    window.addEventListener('hashchange', () => {
+      const view = window.location.hash.replace('#', '') || 'dashboard';
+      if (view !== this.currentView) this.navigate(view);
+    });
+
     // Navigate to default view
     const hash = window.location.hash.replace('#', '') || 'dashboard';
     this.navigate(hash);

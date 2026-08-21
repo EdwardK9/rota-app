@@ -27,6 +27,7 @@ V3.register('goals', '🎯 Goal Tracker', {
   render() {
     const today = fmtLocalDate(new Date());
     document.getElementById('view-goals').innerHTML = `
+      ${V3.backButton()}
       <p class="v3-intro">
         Set a target and this tracks it against your actual shifts — how far in you are, how fast
         you're going, and whether the rota you've already got booked gets you there in time.

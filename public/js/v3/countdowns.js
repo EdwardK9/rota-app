@@ -77,6 +77,7 @@ V3.register('countdowns', '⏳ Countdown Board', {
       .filter(g => g.items.length);
 
     el.innerHTML = `
+      ${V3.backButton()}
       <p class="v3-intro">
         Everything the app knows a date for, ticking live. Nothing to set up — it reads your
         shifts, payslip dates, booked leave, the gov.uk bank holiday list and colleague birthdays.

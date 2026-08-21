@@ -137,6 +137,7 @@ V3.register('money-clock', '💸 Money Clock', {
     const paydayPct = payday.days_away >= 0 ? Math.max(0, 100 - (payday.days_away / 31) * 100) : 100;
 
     el.innerHTML = `
+      ${V3.backButton()}
       ${hero}
 
       <div class="v3-grid v3-grid-sm" style="margin-bottom:18px">

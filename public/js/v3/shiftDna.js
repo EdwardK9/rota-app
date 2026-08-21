@@ -71,6 +71,7 @@ V3.register('shift-dna', '🧬 Shift DNA', {
     const maxHour = Math.max(...p.hour_histogram.map(x => x.count), 1);
 
     el.innerHTML = `
+      ${V3.backButton()}
       ${picker}
 
       <div class="v3-hero" style="background:linear-gradient(135deg,#EC4899,#831843)">

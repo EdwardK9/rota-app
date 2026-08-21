@@ -27,6 +27,7 @@ V3.register('pay-rises', '📈 Pay Rise History', {
     const overdue = s.days_since_last_rise > 400;
 
     el.innerHTML = `
+      ${V3.backButton()}
       <div class="v3-hero" style="background:linear-gradient(135deg,#10B981,#065F46)">
         <div class="v3-hero-label">CURRENT RATE</div>
         <div class="v3-hero-value">${fmtCurrency(s.current_rate)}<span style="font-size:20px;opacity:0.75">/hr</span></div>

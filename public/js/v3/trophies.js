@@ -33,6 +33,7 @@ V3.register('trophies', '🏆 Trophy Cabinet', {
     const closest = d.families.filter(f => !f.complete).slice(0, 3);
 
     el.innerHTML = `
+      ${V3.backButton()}
       <div class="v3-hero" style="background:linear-gradient(135deg,#F59E0B,#92400E)">
         <div class="v3-hero-label">TROPHY CABINET</div>
         <div class="v3-hero-value">${d.earned_tiers} / ${d.total_tiers}</div>

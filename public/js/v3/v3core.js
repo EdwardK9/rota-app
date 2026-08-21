@@ -57,12 +57,17 @@ const V3 = {
 
   /* ── Render helpers ───────────────────────────────────────────────────── */
 
+  /** Link back to the V3 hub, meant to sit at the top of every feature page. */
+  backButton() {
+    return `<button class="btn btn-ghost btn-sm v3-back-btn" onclick="App.navigate('v3-hub')">← All V3 Features</button>`;
+  },
+
   loading(text = 'Loading…') {
-    return `<div class="v3-loading">${esc(text)}</div>`;
+    return `${V3.backButton()}<div class="v3-loading">${esc(text)}</div>`;
   },
 
   error(err) {
-    return `<p class="v3-error">Failed to load: ${esc(err && err.message ? err.message : String(err))}</p>`;
+    return `${V3.backButton()}<p class="v3-error">Failed to load: ${esc(err && err.message ? err.message : String(err))}</p>`;
   },
 
   empty(icon, text, sub) {

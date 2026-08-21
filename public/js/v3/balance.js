@@ -81,6 +81,7 @@ V3.register('balance', '⚖️ Work-Life Balance', {
       : 'linear-gradient(135deg,#EF4444,#7F1D1D)';
 
     el.innerHTML = `
+      ${V3.backButton()}
       ${this._picker()}
 
       <div class="v3-hero" style="background:${gradient}">

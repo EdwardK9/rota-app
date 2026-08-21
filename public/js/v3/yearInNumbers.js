@@ -50,6 +50,7 @@ V3.register('year-numbers', '📊 Year in Numbers', {
     const prev = d.years[1];
 
     el.innerHTML = `
+      ${V3.backButton()}
       <div class="v3-hero" style="background:linear-gradient(135deg,#0EA5E9,#0C4A6E)">
         <div class="v3-hero-label">${latest.year}${latest.partial ? ` · ${latest.elapsed_pct}% ELAPSED` : ''}</div>
         <div class="v3-hero-value">${latest.hours}h</div>

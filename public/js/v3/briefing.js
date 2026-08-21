@@ -44,6 +44,7 @@ V3.register('briefing', '🎒 Shift Briefing', {
     else if (d.turnaround && d.turnaround.tight) flags.push(['⚠️', `Only ${d.turnaround.hours}h since your last shift`, 'badge-warning']);
 
     el.innerHTML = `
+      ${V3.backButton()}
       <div class="toolbar">
         <div class="month-nav">
           <label style="margin-bottom:0;margin-right:4px;font-weight:500">Shift on:</label>
