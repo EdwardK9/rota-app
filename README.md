@@ -390,7 +390,7 @@ The app can send push notifications to your phone using [ntfy](https://ntfy.sh) 
 
 ### V3.0 Features
 
-Twelve extra views under the **✨ V3.0 Features** section of the sidebar. They are all
+Eighteen extra views under the **✨ V3.0 Features** section of the sidebar. They are all
 read-only lenses on data the app already holds — apart from the Goal Tracker, none of
 them ask you to enter anything new, and nothing here changes an existing shift.
 
@@ -407,6 +407,12 @@ them ask you to enter anything new, and nothing here changes an existing shift.
 | ☕ **Break Debt** | Pay always deducts the *scheduled* break, so any break you skipped is unpaid time. This totals those minutes, prices them, and tracks whether it's getting better or worse. |
 | ⛽ **Commute Cost** | Fuel, wear and parking for the drive to work, and how many minutes of every shift you work purely to cover it. Car settings live in the view itself. |
 | 📼 **On This Day** | What you were doing on this date in previous years — the shift, the crew, the pay, any note — plus milestones landing today. |
+| 🎒 **Shift Briefing** | Your next shift on one card: who's on with you, what it pays, the turnaround from your last shift, whether it's a delivery day, and how that exact slot has usually gone. |
+| ⏰ **Overtime Tracker** | Hours above (or below) contract per week, what the extra is worth, and what share of your pay depends on shifts you were never contracted to do. |
+| 📈 **Pay Rise History** | Every rate change with its percentage, the gap since the last one, what each was worth per week, and how you sit against the National Living Wage. |
+| 🥊 **Head to Head** | Your rota against one colleague's, measured like for like, plus how much time you've actually spent on the floor together. |
+| 📊 **Year in Numbers** | Every year side by side with the change on the year before. The current year is compared on its projection, not its part-year total. |
+| 💡 **Did You Know** | Oddball facts dug out of your own data — the day you've never worked, who you've only ever shared a Tuesday with, your mileage in laps of the M25. |
 | 🎲 **Rota Bingo** | A 5×5 card for the week whose squares tick themselves from real shifts. The card is dealt from the week's date, so it's the same card every time you look at that week. |
 
 **Where the code lives.** V3 is deliberately self-contained so it can be changed or removed
@@ -710,7 +716,21 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 | GET | `/api/v3/commute-cost` | Commute cost — optional `?year=YYYY\|all` |
 | POST | `/api/v3/commute-cost/settings` | Save MPG / fuel price / parking / wear |
 | GET | `/api/v3/on-this-day` | Same date in previous years — optional `?date=YYYY-MM-DD` |
+| GET |  | Next shift briefing — optional  |
+| GET |  | Hours beyond contract — optional  |
+| GET |  | Rate change history with NLW comparison |
+| GET |  | You vs a colleague —  |
+| GET |  | Every year side by side |
+| GET |  | Derived fun facts — optional  |
+| GET |  | Who can be profiled or compared |
 | GET | `/api/v3/bingo` | Weekly bingo card — optional `?week=YYYY-MM-DD` |
+| GET | `/api/v3/briefing` | Next shift briefing — optional `?date=YYYY-MM-DD` |
+| GET | `/api/v3/overtime` | Hours beyond contract — optional `?year=YYYY\|all` |
+| GET | `/api/v3/pay-rises` | Rate change history with National Living Wage comparison |
+| GET | `/api/v3/head-to-head` | You vs a colleague — `?colleague=<id>` and optional `&year=` |
+| GET | `/api/v3/year-in-numbers` | Every year side by side with year-on-year change |
+| GET | `/api/v3/did-you-know` | Derived fun facts — optional `?seed=N` |
+| GET | `/api/v3/shift-dna/people` | Who can be profiled or compared |
 
 ---
 

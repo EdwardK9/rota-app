@@ -40,6 +40,18 @@ const FEATURES = [
     blurb: 'A 5×5 card for the week that ticks itself off from real shifts.' },
   { view: 'countdowns',   icon: '⏳', name: 'Countdown Board',  module: './countdowns',
     blurb: 'Next shift, payday, leave, bank holiday and birthdays in one place.' },
+  { view: 'briefing',     icon: '🎒', name: 'Shift Briefing',   module: './briefing',
+    blurb: 'Your next shift on one card: crew, pay, turnaround and what the slot is usually like.' },
+  { view: 'overtime',     icon: '⏰', name: 'Overtime Tracker', module: './overtime',
+    blurb: 'How far above your contract you actually work, and what it is worth.' },
+  { view: 'pay-rises',    icon: '📈', name: 'Pay Rise History', module: './payRises',
+    blurb: 'Every rate change, what each was worth, and how you sit against minimum wage.' },
+  { view: 'head-to-head', icon: '🥊', name: 'Head to Head',     module: './headToHead',
+    blurb: 'Your rota against a colleague, measured like for like.' },
+  { view: 'year-numbers', icon: '📊', name: 'Year in Numbers',  module: './yearInNumbers',
+    blurb: 'Every year side by side, with the change on the year before.' },
+  { view: 'did-you-know', icon: '🎲', name: 'Did You Know',     module: './didYouKnow',
+    blurb: 'Oddball facts dug out of your own data.' },
 ];
 
 for (const feature of FEATURES) {

@@ -30,6 +30,21 @@ app.set('trust proxy', true);   // correct protocol/host behind Cloudflare proxy
 // which is fine on localhost but noticeably slow over a real network connection.
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
+// index.html is served with the running app version stamped into every ?v= asset
+// token. Hand-maintained tokens were a standing trap: forget to bump one and the
+// browser keeps last week's JS while the API moves on, which fails in exactly the
+// confusing way (new HTML, old script, "X is not a function"). Deriving the token
+// from package.json means a version bump busts every asset automatically, and the
+// cost is one re-download per deploy.
+const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
+app.get(['/', '/index.html'], (req, res, next) => {
+  fs.readFile(INDEX_HTML, 'utf8', (err, html) => {
+    if (err) return next();   // fall through to static, which will 404 properly
+    res.set('Cache-Control', 'no-cache');
+    res.type('html').send(html.replace(/\?v=[\w.]+/g, '?v=' + packageJson.version));
+  });
+});
+
 // Static assets: JS/CSS includes are versioned with ?v= tokens in index.html, so they
 // can be cached hard; index.html itself must always revalidate or deploys look stale.
 app.use(express.static(path.join(__dirname, 'public'), {
