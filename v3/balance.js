@@ -35,6 +35,11 @@ const COMPONENTS = [
     desc: 'Longest stretch of consecutive days worked.',     weight: 15, ideal: 4,   worst: 9,   higherIsBetter: false },
 ];
 
+function daysInMonth(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
 function scoreComponent(def, value) {
   if (value == null) return null;
   const span = def.ideal - def.worst;
@@ -52,8 +57,16 @@ const VERDICTS = [
 ];
 
 router.get('/balance', (req, res) => {
-  const weeks = clamp(parseInt(req.query.weeks, 10) || 12, 2, 52);
+  // Up to five years, so the trend can cover a whole career rather than
+  // stopping at one year. `all` spans back to the first shift on record.
   const today = localDateStr();
+  let weeks;
+  if (req.query.weeks === 'all') {
+    const first = db.prepare('SELECT MIN(date) AS d FROM shifts').get().d;
+    weeks = first ? Math.max(2, Math.ceil((daysBetween(first, today) + 1) / 7)) : 12;
+  } else {
+    weeks = clamp(parseInt(req.query.weeks, 10) || 12, 2, 260);
+  }
   const from = mondayOf(addDays(today, -(weeks * 7 - 1)));
   const to = today;
 
@@ -131,25 +144,34 @@ router.get('/balance', (req, res) => {
   const verdict = VERDICTS.find(v => score >= v.min);
   const weakest = scored.slice().sort((a, b) => a.score - b.score)[0] || null;
 
-  // Per-week hours vs contract, for the trend chart
-  const byWeek = {};
+  // Trend chart. Past about six months a bar per week is an unreadable comb, so
+  // long ranges group by month and compare against the monthly contract instead.
+  const grouping = weeks > 26 ? 'month' : 'week';
+  const buckets = {};
   for (const s of shifts) {
-    const wk = mondayOf(s.date);
-    (byWeek[wk] ||= { hours: 0, shifts: 0, days: new Set() });
-    byWeek[wk].hours += paidHours(s);
-    byWeek[wk].shifts += 1;
-    byWeek[wk].days.add(s.date);
+    const key = grouping === 'month' ? s.date.slice(0, 7) : mondayOf(s.date);
+    (buckets[key] ||= { hours: 0, shifts: 0, days: new Set() });
+    buckets[key].hours += paidHours(s);
+    buckets[key].shifts += 1;
+    buckets[key].days.add(s.date);
   }
-  const trend = Object.entries(byWeek).sort((a, b) => a[0].localeCompare(b[0])).map(([wk, v]) => ({
-    week: wk,
-    hours: round1(v.hours),
-    shifts: v.shifts,
-    days_worked: v.days.size,
-    contracted: contractHoursForDate(wk),
-  }));
+  const trend = Object.entries(buckets).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => {
+    const anchor = grouping === 'month' ? key + '-01' : key;
+    const weekly = contractHoursForDate(anchor);
+    // A month is ~4.35 contracted weeks; scale so the comparison stays fair.
+    const contracted = weekly == null ? null
+      : round1(grouping === 'month' ? weekly * (daysInMonth(key) / 7) : weekly);
+    return {
+      key, period: key, grouping,
+      hours: round1(v.hours),
+      shifts: v.shifts,
+      days_worked: v.days.size,
+      contracted,
+    };
+  });
 
   res.json({
-    range: { from, to, weeks },
+    range: { from, to, weeks, grouping },
     shift_count: shifts.length,
     days_worked: workedDates.length,
     total_days: totalDays,
@@ -159,6 +181,14 @@ router.get('/balance', (req, res) => {
     components,
     shortest_turnaround: shortest,
     trend,
+    // Everything the client needs to explain the score without hard-coding it
+    scale: VERDICTS.map(v => ({ min: v.min, icon: v.icon, label: v.label })),
+    how_it_works: {
+      summary: 'Five measures of recovery time, each scored 0–100 against a best case and a worst case, ' +
+               'then combined using the weights below.',
+      note: 'A measure with no data (no turnarounds in the window, say) drops out and its weight is ' +
+            'shared among the others, rather than scoring zero for missing evidence.',
+    },
   });
 });
 

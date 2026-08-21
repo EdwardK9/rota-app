@@ -30,8 +30,11 @@ const V3 = {
                                        ...(taxYear ? { tax_year: taxYear } : {}),
                                        ...(basis ? { basis } : {}),
                                      })),
-    shiftDna:     (year)      => API.get('/api/v3/shift-dna?year=' + encodeURIComponent(year || 'all')),
-    balance:      (weeks)     => API.get('/api/v3/balance?weeks=' + (weeks || 12)),
+    shiftDna:     (year, person) => API.get('/api/v3/shift-dna?' + new URLSearchParams({
+                                      year: year || 'all', person: person || 'me',
+                                    })),
+    dnaPeople:    ()          => API.get('/api/v3/shift-dna/people'),
+    balance:      (weeks)     => API.get('/api/v3/balance?weeks=' + encodeURIComponent(weeks || 12)),
     commuteCost:  (year)      => API.get('/api/v3/commute-cost?year=' + encodeURIComponent(year || 'all')),
     saveCommuteSettings: (d)  => API.post('/api/v3/commute-cost/settings', d),
     onThisDay:    (date)      => API.get('/api/v3/on-this-day' + (date ? '?date=' + date : '')),
