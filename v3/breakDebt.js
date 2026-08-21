@@ -126,4 +126,3 @@ router.get('/break-debt', (req, res) => {
 });
 
 module.exports = router;
-module.exports.unpaidMinutes = unpaidMinutes;

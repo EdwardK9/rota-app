@@ -218,6 +218,3 @@ router.get('/forecast', (req, res) => {
 });
 
 module.exports = router;
-module.exports.incomeTax = incomeTax;
-module.exports.nationalInsurance = nationalInsurance;
-module.exports.taxYearFor = taxYearFor;

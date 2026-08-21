@@ -8,7 +8,6 @@
 const { db } = require('../db');
 
 const DAYS       = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const DOW_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTHS     = ['January','February','March','April','May','June',
                     'July','August','September','October','November','December'];
 
@@ -138,10 +137,10 @@ const pct    = (part, whole) => (whole > 0 ? round1((part / whole) * 100) : 0);
 const clamp  = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 module.exports = {
-  db, DAYS, DOW_SHORT, MONTHS,
+  db, DAYS, MONTHS,
   getSetting, getNumSetting, setSetting,
-  pad, localDateStr, parseDate, addDays, daysBetween, mondayOf, dowIndex, isWeekend,
+  localDateStr, parseDate, addDays, daysBetween, mondayOf, dowIndex, isWeekend,
   toMins, fromMins, spanMins, overlapMins,
-  paidHours, shiftPay, rateForDate, rateRecordForDate, contractHoursForDate,
+  paidHours, shiftPay, rateForDate, contractHoursForDate,
   round1, round2, pct, clamp,
 };

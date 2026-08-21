@@ -15,7 +15,7 @@
 
 const express = require('express');
 const {
-  db, DAYS, MONTHS, paidHours, shiftPay, toMins, fromMins, spanMins, round1, round2,
+  DAYS, MONTHS, paidHours, shiftPay, toMins, fromMins, spanMins, round1, round2,
 } = require('./helpers');
 const { careerStats } = require('./stats');
 const { bankHolidayDates } = require('./bankHolidays');

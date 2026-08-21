@@ -10,44 +10,14 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 const express = require('express');
-const https = require('https');
 const {
   db, DAYS, getSetting, localDateStr, parseDate, addDays, daysBetween, toMins, shiftPay, round2,
 } = require('./helpers');
 const { paydayDayOfMonth, nextPayday } = require('./moneyClock');
 const { leaveSummary } = require('./leaveYear');
+const { bankHolidayList } = require('./bankHolidays');
 
 const router = express.Router();
-
-/* Bank holidays come from the same gov.uk feed the rest of the app uses. Cached
-   for a day so the board stays instant and works offline after the first hit. */
-let bankHolCache = { at: 0, dates: [] };
-const BANK_HOL_TTL = 24 * 60 * 60 * 1000;
-
-function fetchBankHolidays() {
-  return new Promise(resolve => {
-    if (Date.now() - bankHolCache.at < BANK_HOL_TTL && bankHolCache.dates.length) {
-      return resolve(bankHolCache.dates);
-    }
-    const req = https.get('https://www.gov.uk/bank-holidays.json', { timeout: 4000 }, res => {
-      if (res.statusCode !== 200) { res.resume(); return resolve(bankHolCache.dates); }
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', chunk => { body += chunk; });
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          const division = data['england-and-wales'] || data[Object.keys(data)[0]];
-          const dates = (division.events || []).map(e => ({ date: e.date, title: e.title }));
-          bankHolCache = { at: Date.now(), dates };
-          resolve(dates);
-        } catch (_) { resolve(bankHolCache.dates); }
-      });
-    });
-    req.on('timeout', () => { req.destroy(); resolve(bankHolCache.dates); });
-    req.on('error', () => resolve(bankHolCache.dates));
-  });
-}
 
 /** Local ISO timestamp for a date + HH:MM, so the client counts down to the
  *  right wall-clock moment rather than to midnight UTC. */
@@ -135,7 +105,7 @@ router.get('/countdowns', async (req, res) => {
   }
 
   // ── Bank holiday ─────────────────────────────────────────────────────────
-  const bankHols = await fetchBankHolidays();
+  const bankHols = await bankHolidayList();
   const nextBH = bankHols.filter(b => b.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
   if (nextBH) {
     const working = db.prepare('SELECT COUNT(*) AS c FROM shifts WHERE date = ?').get(nextBH.date).c > 0;

@@ -240,4 +240,3 @@ router.get('/bingo', (req, res) => {
 });
 
 module.exports = router;
-module.exports.weekFacts = weekFacts;

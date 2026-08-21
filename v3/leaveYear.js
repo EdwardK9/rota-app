@@ -68,4 +68,4 @@ function leaveSummary(today = localDateStr()) {
   };
 }
 
-module.exports = { leaveYearWindow, entitlementHours, leaveSummary };
+module.exports = { leaveSummary };

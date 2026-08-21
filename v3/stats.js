@@ -210,4 +210,4 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
   };
 }
 
-module.exports = { careerStats, longestConsecutiveRun, allRuns };
+module.exports = { careerStats, longestConsecutiveRun };

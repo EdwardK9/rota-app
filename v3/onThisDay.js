@@ -33,16 +33,41 @@ router.get('/on-this-day', (req, res) => {
   const colleagues = {};
   for (const c of db.prepare('SELECT id, name FROM colleagues').all()) colleagues[c.id] = c.name;
 
+  // Fetch the crew, notes and clock rows for every matching date in one query
+  // each, rather than three per flashback. Same result, and it stops re-preparing
+  // identical SQL inside the loop.
+  const dates = matches.map(s => s.date);
+  const placeholders = dates.map(() => '?').join(',') || "''";
+
+  const crewByDate = {};
+  if (dates.length) {
+    for (const cs of db.prepare(
+      `SELECT * FROM colleague_shifts
+       WHERE date IN (${placeholders}) AND shift_type = 'shift' AND (store IS NULL OR store = '')`
+    ).all(...dates)) {
+      (crewByDate[cs.date] ||= []).push(cs);
+    }
+  }
+
+  const noteByDate = {};
+  const clockByDate = {};
+  if (dates.length) {
+    for (const n of db.prepare(`SELECT date, note FROM calendar_notes WHERE date IN (${placeholders})`).all(...dates)) {
+      noteByDate[n.date] = n.note;
+    }
+    for (const c of db.prepare(`SELECT * FROM clock_entries WHERE date IN (${placeholders})`).all(...dates)) {
+      clockByDate[c.date] = c;
+    }
+  }
+
   const flashbacks = matches.map(s => {
-    const crew = db.prepare(
-      "SELECT * FROM colleague_shifts WHERE date = ? AND shift_type = 'shift' AND (store IS NULL OR store = '')"
-    ).all(s.date)
+    const crew = (crewByDate[s.date] || [])
       .filter(cs => overlapMins(s.start_time, s.end_time, cs.start_time, cs.end_time) > 0)
       .map(cs => colleagues[cs.colleague_id])
       .filter(Boolean);
 
-    const note = db.prepare('SELECT note FROM calendar_notes WHERE date = ?').get(s.date);
-    const clock = db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(s.date);
+    const note = noteByDate[s.date] != null ? { note: noteByDate[s.date] } : null;
+    const clock = clockByDate[s.date] || null;
 
     return {
       date: s.date,

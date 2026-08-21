@@ -93,10 +93,4 @@ async function bankHolidayList() {
   return [];
 }
 
-/** True if this shift should count as a bank holiday: either it was flagged as
- *  one, or its date really is one. */
-function isBankHolidayShift(shift, dates) {
-  return !!shift.is_bank_holiday || dates.has(shift.date);
-}
-
-module.exports = { bankHolidayDates, bankHolidayList, isBankHolidayShift };
+module.exports = { bankHolidayDates, bankHolidayList };
