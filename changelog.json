@@ -1,6 +1,13 @@
 {
-  "generated_at": "2026-08-21T19:30:38.221Z",
+  "generated_at": "2026-08-21T19:35:35.782Z",
+  "commit": "49d96d6",
   "entries": [
+    {
+      "version": "3.5.1",
+      "date": "2026-08-21",
+      "summary": "Fix changelog showing empty in production",
+      "details": "The Docker image has no .git directory and no git binary at all (Alpine's\nnode:18 image doesn't ship one), so last push's runtime `git log` call for\nthe changelog silently failed every time in the actual deployment — hence\n\"No changelog available\" in Portainer even though the sidebar commit hash\nreadout (which has the same problem, just less visibly) was probably also\nblank.\n\nSwitched to a generated changelog.json, committed alongside every version\nbump via scripts/generate-changelog.js and copied into the image like any\nother static file — same fix as the Dockerfile's existing \"explicit COPY\nper server dir\" pattern, just for a new file instead of a new directory."
+    },
     {
       "version": "3.5.0",
       "date": "2026-08-21",

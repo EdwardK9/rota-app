@@ -66,33 +66,34 @@ app.use('/api', webhooksRouter);
 app.use('/api', exportsV2Router);
 app.use('/api/v3', v3Router);
 
-// Version readout — lets the running app be identified at a glance (sidebar footer),
-// so it's obvious whether the latest push has actually deployed.
+// Version readout + changelog — lets the running app be identified at a glance
+// (sidebar footer, and the "What's New" page behind clicking it), so it's
+// obvious whether the latest push has actually deployed.
+//
+// Both the commit hash and the changelog entries are read from changelog.json
+// rather than live git, because the production Docker image has no .git
+// directory and no git binary at all (Alpine's node:18 image doesn't ship
+// one) — see scripts/generate-changelog.js, which is what actually writes
+// that file, run locally (where git *is* available) before every push. The
+// live git attempts below are kept only as a fallback for local dev on a
+// machine that has git, e.g. running the server straight after a code change
+// before bothering to regenerate the file.
 let _gitCommit = null;
-try {
-  _gitCommit = execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
-    .toString().trim();
-} catch (_) { /* not a git checkout, or git unavailable — commit stays null */ }
-const SERVER_STARTED_AT = new Date().toISOString();
-
-app.get('/api/version', (req, res) => {
-  res.json({ version: packageJson.version, commit: _gitCommit, startedAt: SERVER_STARTED_AT });
-});
-
-// Changelog — every commit that bumps the version follows a "vX.Y.Z: summary"
-// subject line convention, parsed back out below. The production Docker image
-// has no .git directory (and no git binary at all — see Dockerfile) so this
-// can't be read live at runtime the way _gitCommit is; instead changelog.json
-// is regenerated and committed alongside every version bump (see
-// scripts/generate-changelog.js) and just gets read as a plain file here. The
-// live git-log attempt is kept as a fallback purely for local dev on a machine
-// that has git — e.g. running the server straight after a code change, before
-// bothering to regenerate the file.
 let _changelog = [];
 try {
-  const raw = fs.readFileSync(path.join(__dirname, 'changelog.json'), 'utf8');
-  _changelog = JSON.parse(raw).entries || [];
-} catch (_) {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'changelog.json'), 'utf8'));
+  _gitCommit = data.commit || null;
+  _changelog = data.entries || [];
+} catch (_) { /* no changelog.json yet — fall through to live git below */ }
+
+if (!_gitCommit) {
+  try {
+    _gitCommit = execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim();
+  } catch (_) { /* not a git checkout, or git unavailable — commit stays null */ }
+}
+
+if (!_changelog.length) {
   try {
     const raw = execFileSync(
       'git', ['log', '--date=short', '--pretty=format:%ad|||%B%x00'],
@@ -115,8 +116,14 @@ try {
         return { version: m[1], date, summary: m[2], details };
       })
       .filter(Boolean);
-  } catch (_2) { /* no changelog.json and no usable git — changelog stays empty */ }
+  } catch (_) { /* no changelog.json and no usable git — changelog stays empty */ }
 }
+
+const SERVER_STARTED_AT = new Date().toISOString();
+
+app.get('/api/version', (req, res) => {
+  res.json({ version: packageJson.version, commit: _gitCommit, startedAt: SERVER_STARTED_AT });
+});
 
 app.get('/api/changelog', (req, res) => {
   res.json({ entries: _changelog, currentVersion: packageJson.version });
