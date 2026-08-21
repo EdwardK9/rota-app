@@ -14,10 +14,11 @@
 
 const express = require('express');
 const {
-  db, DAYS, MONTHS, getSetting, localDateStr, daysBetween, toMins, spanMins, overlapMins,
+  db, DAYS, MONTHS, localDateStr, daysBetween, toMins, spanMins, overlapMins,
   paidHours, shiftPay, round1, round2,
 } = require('./helpers');
 const { careerStats } = require('./stats');
+const { callGeminiText } = require('../working-with');
 
 const router = express.Router();
 
@@ -165,17 +166,12 @@ router.get('/did-you-know', (req, res) => {
    for a single fresh comparison — same spirit, different phrasing every time,
    without needing a new hand-written rule for every possible angle.
 
-   Kept deliberately small in scope: one fact per request, on demand (a button
-   click, not something that runs on every page load), no retry/fallback-model
-   machinery like the screenshot importer has — if it fails, the button can
-   just be clicked again. */
+   Uses the same overload/fallback-model retry chain as screenshot import
+   (callGeminiText in working-with.js) — the free-tier flash models this app
+   defaults to genuinely do return "high demand" 503s at busy times, and the
+   first version of this route had no retry at all, so that surfaced straight
+   to the user instead of quietly trying the next-best model. */
 router.get('/did-you-know/ai', async (req, res) => {
-  const apiKey = getSetting('gemini_api_key', null);
-  if (!apiKey) {
-    return res.status(400).json({ error: 'No Gemini API key configured. Add one in Settings → AI Screenshot Import.' });
-  }
-  const model = getSetting('gemini_model', null) || 'gemini-2.0-flash';
-
   const s = careerStats();
   if (!s.totalShifts) return res.status(400).json({ error: 'Not enough shift history yet to generate a fact.' });
 
@@ -211,46 +207,12 @@ Data:
 ${JSON.stringify(context)}`;
 
   try {
-    const fact = await callGeminiText(prompt, apiKey, model);
-    res.json({ fact, model });
+    const fact = await callGeminiText(prompt);
+    res.json({ fact });
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message || 'Gemini request failed.' });
   }
 });
-
-/** Minimal text-only Gemini call — no image, no JSON parsing, no fallback
- *  model chain. The screenshot importer's callGeminiVision (working-with.js)
- *  handles that heavier case; this is deliberately the small version. */
-async function callGeminiText(prompt, apiKey, model) {
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 150 },
-      }),
-    }
-  );
-
-  if (!r.ok) {
-    const errBody = await r.json().catch(() => ({}));
-    const message = errBody?.error?.message || `Gemini API error ${r.status}`;
-    const err = new Error(message);
-    err.status = r.status;
-    throw err;
-  }
-
-  const data = await r.json();
-  const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-  if (!text) {
-    const err = new Error('Gemini returned an empty response.');
-    err.status = 502;
-    throw err;
-  }
-  return text;
-}
 
 function mode(arr) {
   const t = {};

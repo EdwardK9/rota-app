@@ -438,6 +438,90 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
   throw lastErr;
 }
 
+async function callGeminiOnceText(prompt, apiKey, model) {
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 150 },
+      }),
+    }
+  );
+
+  if (!geminiRes.ok) {
+    const errBody = await geminiRes.json().catch(() => ({}));
+    const message  = errBody?.error?.message || `Gemini API error ${geminiRes.status}`;
+    const err = new Error(message);
+    err.status = geminiRes.status;
+    err.overloaded = isGeminiOverloadError(geminiRes.status, message);
+    throw err;
+  }
+
+  const geminiData = await geminiRes.json();
+  const text = (geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+  if (!text) {
+    const err = new Error('Gemini returned an empty response.');
+    err.status = 502;
+    throw err;
+  }
+  return { text, modelUsed: model };
+}
+
+// Text-only counterpart to callGeminiVision, same overload/fallback-model
+// retry chain (see the comment on that function) minus the image part — used
+// by the Did You Know AI fact button. Was previously a single-attempt call
+// with no retry at all, which meant any transient "model overloaded" response
+// (common on the free-tier flash models at busy times) surfaced straight to
+// the user instead of quietly trying the next-best model like screenshot
+// import already does.
+async function callGeminiText(prompt) {
+  const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
+  const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
+  const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
+  const primaryModel = (modelRow && modelRow.value && modelRow.value.trim()) || 'gemini-2.0-flash';
+  if (!apiKey) {
+    const err = new Error('No Gemini API key configured. Add one in Settings → AI Screenshot Import.');
+    err.status = 400;
+    throw err;
+  }
+
+  let lastErr;
+  try {
+    const { text } = await callGeminiOnceText(prompt, apiKey, primaryModel);
+    return text;
+  } catch (err) {
+    if (!err.overloaded) throw err;
+    lastErr = err;
+  }
+
+  let fallbacks = [];
+  try {
+    const available = await fetchAvailableGeminiModels(apiKey);
+    fallbacks = available
+      .filter(m => m !== primaryModel)
+      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
+      .slice(0, 3);
+  } catch (_) { /* no model list available — fall through with nothing to try */ }
+
+  for (const model of fallbacks) {
+    try {
+      const { text } = await callGeminiOnceText(prompt, apiKey, model);
+      return text;
+    } catch (err) {
+      lastErr = err;
+      if (!err.overloaded) throw err;
+    }
+  }
+
+  lastErr.message = fallbacks.length
+    ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all overloaded right now — try again shortly. (${lastErr.message})`
+    : lastErr.message;
+  throw lastErr;
+}
+
 // Read a screenshot with Gemini and return the raw { date_range, schedule } JSON —
 // no DB writes. Lets the Team Upload UI run an AI-read screenshot through the exact
 // same preview/conflict-resolution flow as a manually pasted JSON.
@@ -1725,3 +1809,4 @@ router.delete('/photo-library/files/:id', (req, res) => {
 
 module.exports = router;
 module.exports.callGeminiVision = callGeminiVision;
+module.exports.callGeminiText = callGeminiText;

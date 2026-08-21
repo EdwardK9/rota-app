@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-21T19:35:35.782Z",
-  "commit": "49d96d6",
+  "generated_at": "2026-08-21T19:55:07.864Z",
+  "commit": "a2368ba",
   "entries": [
+    {
+      "version": "3.5.2",
+      "date": "2026-08-21",
+      "summary": "Fix the sidebar commit hash too — same root cause as the changelog",
+      "details": "The version readout's short commit hash used the same live `git rev-parse`\napproach the changelog did before v3.5.1 — broken for the same reason\n(no .git, no git binary in the production image), so it's almost certainly\nbeen silently blank in Portainer this whole time regardless of how the\nimage actually gets built.\n\ngenerate-changelog.js now also stamps the commit hash into changelog.json\nalongside the entries, and server.js reads it from there instead of\nattempting git at runtime. Same one-commit lag as the changelog entries\nalready have, for the same unavoidable reason (a commit can't know its own\nhash before it exists) — negligible for what's fundamentally a \"does this\nlook like a recent deploy\" sanity check."
+    },
     {
       "version": "3.5.1",
       "date": "2026-08-21",
