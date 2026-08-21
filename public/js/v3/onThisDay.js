@@ -5,6 +5,7 @@
 
 V3.register('on-this-day', '📼 On This Day', {
   date: fmtLocalDate(new Date()),
+  matchMode: 'date',
 
   async init() {
     document.getElementById('view-on-this-day').innerHTML = V3.loading('Rewinding the tape…');
@@ -13,7 +14,7 @@ V3.register('on-this-day', '📼 On This Day', {
 
   async load() {
     try {
-      this.render(await V3.api.onThisDay(this.date));
+      this.render(await V3.api.onThisDay(this.date, this.matchMode));
     } catch (e) {
       document.getElementById('view-on-this-day').innerHTML = V3.error(e);
     }
@@ -29,6 +30,14 @@ V3.register('on-this-day', '📼 On This Day', {
           <input type="date" id="otdDate" value="${d.date}" style="width:auto" />
           <button class="btn btn-ghost btn-sm" id="otdNext">Day ›</button>
           <button class="btn btn-ghost btn-sm" id="otdToday">Today</button>
+        </div>
+        <div class="radio-group" id="otdMatch">
+          <label class="radio-label" title="The exact same calendar date, whatever day of the week that was">
+            <input type="radio" name="otdMatch" value="date" ${d.match_mode === 'date' ? 'checked' : ''}> Same date
+          </label>
+          <label class="radio-label" title="The nearest date with the same day of the week — closer to how a weekly rota repeats">
+            <input type="radio" name="otdMatch" value="weekday" ${d.match_mode === 'weekday' ? 'checked' : ''}> Same weekday
+          </label>
         </div>
       </div>`;
 
@@ -51,6 +60,9 @@ V3.register('on-this-day', '📼 On This Day', {
                  <div class="v3-record-body">
                    <div class="v3-record-title">${s.completed ? 'Worked' : 'Scheduled'}</div>
                    <div class="v3-record-value">${s.start_time}–${s.end_time}</div>
+                   <div class="v3-muted" style="font-size:12px;margin-top:2px">
+                     ${s.crew.length ? '👥 With ' + s.crew.map(esc).join(', ') : '👤 On your own'}
+                   </div>
                  </div>
                  <div class="v3-record-meta"><div>${s.hours}h</div><div>${fmtCurrency(s.pay)}</div></div>
                </div>`).join('')}
@@ -129,6 +141,14 @@ V3.register('on-this-day', '📼 On This Day', {
     document.getElementById('otdPrev').addEventListener('click', () => go(this._shift(-1)));
     document.getElementById('otdNext').addEventListener('click', () => go(this._shift(1)));
     document.getElementById('otdToday').addEventListener('click', () => go(fmtLocalDate(new Date())));
+
+    el.querySelectorAll('input[name="otdMatch"]').forEach(input => {
+      input.addEventListener('change', e => {
+        this.matchMode = e.target.value;
+        document.getElementById('view-on-this-day').innerHTML = V3.loading();
+        this.load();
+      });
+    });
   },
 
   _shift(days) {

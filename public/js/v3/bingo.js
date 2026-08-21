@@ -5,6 +5,7 @@
 
 V3.register('bingo', '🎲 Rota Bingo', {
   week: null,   // null = current week
+  board: 'week', // 'week' | 'all-time'
 
   async init() {
     document.getElementById('view-bingo').innerHTML = V3.loading('Dealing the card…');
@@ -13,10 +14,71 @@ V3.register('bingo', '🎲 Rota Bingo', {
 
   async load() {
     try {
-      this.render(await V3.api.bingo(this.week));
+      if (this.board === 'all-time') {
+        this.renderAllTime(await V3.api.bingoAllTime());
+      } else {
+        this.render(await V3.api.bingo(this.week));
+      }
     } catch (e) {
       document.getElementById('view-bingo').innerHTML = V3.error(e);
     }
+  },
+
+  showAllTime() {
+    this.board = 'all-time';
+    document.getElementById('view-bingo').innerHTML = V3.loading('Adding up every week…');
+    this.load();
+  },
+
+  showWeek() {
+    this.board = 'week';
+    document.getElementById('view-bingo').innerHTML = V3.loading('Dealing the card…');
+    this.load();
+  },
+
+  renderAllTime(d) {
+    const el = document.getElementById('view-bingo');
+    const max = Math.max(1, ...d.squares.map(sq => sq.times));
+
+    el.innerHTML = `
+      ${V3.backButton()}
+      <div class="toolbar">
+        <button class="btn btn-ghost btn-sm" id="bgBackToWeek">‹ Back to this week</button>
+      </div>
+
+      <div class="v3-hero" style="background:linear-gradient(135deg,#F59E0B,#B45309)">
+        <div class="v3-hero-label">OVERALL BOARD</div>
+        <div class="v3-hero-value">${d.total_weeks} week${d.total_weeks === 1 ? '' : 's'}</div>
+        <div class="v3-hero-sub">
+          Every square in the pool, tallied against every completed week — not just the 24 that
+          happened to get dealt onto any one card.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body" style="padding:0">
+          ${d.squares.map(sq => `
+            <div class="v3-record">
+              <div class="v3-record-icon">${sq.icon}</div>
+              <div class="v3-record-body" style="min-width:0">
+                <div class="v3-record-title">${esc(sq.text)}</div>
+                <div style="margin-top:6px">${V3.bar((sq.times / max) * 100)}</div>
+              </div>
+              <div class="v3-record-meta">
+                <div>${sq.times}×</div>
+                <div>${sq.pct}%</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <div class="v3-note">
+        Percentage is out of ${d.total_weeks} completed week${d.total_weeks === 1 ? '' : 's'} of history
+        — the current week doesn't count yet, since it hasn't happened.
+      </div>
+    `;
+
+    document.getElementById('bgBackToWeek').addEventListener('click', () => this.showWeek());
   },
 
   render(d) {
@@ -44,6 +106,7 @@ V3.register('bingo', '🎲 Rota Bingo', {
           <button class="btn btn-ghost btn-sm" id="bgNext">Week ›</button>
           <button class="btn btn-ghost btn-sm" id="bgThis">This week</button>
         </div>
+        <button class="btn btn-ghost btn-sm" id="bgAllTime">🏆 Overall board</button>
       </div>
 
       <div class="v3-hero" style="background:${banner.grad}">
@@ -78,6 +141,7 @@ V3.register('bingo', '🎲 Rota Bingo', {
     document.getElementById('bgPrev').addEventListener('click', () => go(this._shift(d.week.monday, -7)));
     document.getElementById('bgNext').addEventListener('click', () => go(this._shift(d.week.monday, 7)));
     document.getElementById('bgThis').addEventListener('click', () => { this.week = null; this.load(); });
+    document.getElementById('bgAllTime').addEventListener('click', () => this.showAllTime());
   },
 
   _shift(dateStr, days) {

@@ -34,13 +34,13 @@ const SQUARES = [
   { code: 'three_row',   icon: '🔁', text: '3 days in a row',            test: f => f.longestRun >= 3 },
   { code: 'over_contract',icon: '📈',text: 'Beat your contracted hours', test: f => f.contracted > 0 && f.hours > f.contracted },
   { code: 'ton_up',      icon: '💯', text: 'Earned £100 in a single shift', test: f => f.bestShiftPay >= 100 },
-  { code: 'full_breaks', icon: '☕', text: 'Took every break in full',   test: f => f.completed > 0 && f.fullBreaks === f.completed },
+  { code: 'no_breaks',    icon: '🐫', text: 'Skipped every break this week', test: f => f.completed > 0 && f.skippedBreaks === f.completed },
   { code: 'skipped',     icon: '🚫', text: 'Skipped a break',            test: f => f.skippedBreaks > 0 },
   { code: 'busy_crew',   icon: '👥', text: 'Worked with 5+ colleagues',  test: f => f.distinctCrew >= 5 },
-  { code: 'solo',        icon: '🧍', text: 'A shift with nobody else on',test: f => f.soloShift },
+  { code: 'pair_shift',  icon: '🤝', text: 'A shift with just one other colleague', test: f => f.pairShift },
   { code: 'punctual',    icon: '⏰', text: 'Clocked in early every day', test: f => f.clockIns > 0 && f.lateClockIns === 0 },
   { code: 'bank_hol',    icon: '🎆', text: 'Worked a bank holiday',      test: f => f.bankHoliday },
-  { code: 'twenty_miles',icon: '🚗', text: '20+ miles of commuting',     test: f => f.miles >= 20 },
+  { code: 'no_drive',    icon: '🚲', text: "Didn't drive to work at least once", test: f => f.noMilesShift },
   { code: 'monday_blues',icon: '😑', text: 'Started the week on a Monday', test: f => f.dows.includes(1) },
   { code: 'midweek_off', icon: '🛌', text: 'Had a midweek day off',      test: f => f.midweekOff },
   { code: 'double_digit',icon: '🔟', text: '10+ hours in two days',      test: f => f.bestTwoDay >= 10 },
@@ -115,15 +115,21 @@ function weekFacts(monday) {
     "SELECT * FROM colleague_shifts WHERE date >= ? AND date <= ? AND shift_type = 'shift' AND (store IS NULL OR store = '')"
   ).all(monday, sunday);
   const crew = new Set();
-  let soloShift = false;
+  let pairShift = false;
   for (const s of shifts) {
     let count = 0;
     for (const cs of colShifts) {
       if (cs.date !== s.date) continue;
       if (overlapMins(s.start_time, s.end_time, cs.start_time, cs.end_time) > 0) { crew.add(cs.colleague_id); count++; }
     }
-    if (count === 0) soloShift = true;
+    // The minimum staffing is two people, so "nobody else on" never happens —
+    // just one other colleague is as quiet as a shift gets.
+    if (count === 1) pairShift = true;
   }
+
+  // A shift with no commute miles logged — walked, cycled, got a lift, whatever
+  // it was, the odometer stayed at home.
+  const noMilesShift = shifts.some(s => !s.distance_miles);
 
   // Clock-ins
   const clocks = db.prepare(
@@ -172,10 +178,9 @@ function weekFacts(monday) {
     shortestShift: lengths.length ? Math.min(...lengths) : null,
     bestShiftPay: shifts.length ? Math.max(...shifts.map(s => shiftPay(s) || 0)) : 0,
     bestTwoDay: round1(bestTwoDay),
-    longestRun, clopening, midweekOff, soloShift,
+    longestRun, clopening, midweekOff, pairShift, noMilesShift,
     distinctCrew: crew.size,
     completed: completed.length,
-    fullBreaks: completed.filter(s => s.break_taken === 'full').length,
     skippedBreaks: completed.filter(s => s.break_taken === 'none' || s.break_taken === 'partial').length,
     clockIns: clocks.length,
     lateClockIns,
@@ -236,6 +241,42 @@ router.get('/bingo', (req, res) => {
       colleagues: facts.distinctCrew,
       days: DAYS,
     },
+  });
+});
+
+/* GET /api/v3/bingo/all-time
+   The whole square pool, tallied against every completed week of history —
+   how many times each one has ever come up true, regardless of whether it was
+   actually dealt onto that week's card. The current (still unfinished) week is
+   excluded, since a week in progress would understate anything that needs the
+   full week to judge, like "5+ days worked". */
+router.get('/bingo/all-time', (req, res) => {
+  const dates = db.prepare('SELECT DISTINCT date FROM shifts').all().map(r => r.date);
+  const today = localDateStr();
+  const thisMonday = mondayOf(today);
+  const mondays = [...new Set(dates.map(d => mondayOf(d)))]
+    .filter(m => m < thisMonday)
+    .sort();
+
+  const times = {};
+  for (const sq of SQUARES) times[sq.code] = 0;
+  for (const monday of mondays) {
+    const facts = weekFacts(monday);
+    for (const sq of SQUARES) {
+      let hit = false;
+      try { hit = !!sq.test(facts); } catch (_) { hit = false; }
+      if (hit) times[sq.code]++;
+    }
+  }
+
+  const totalWeeks = mondays.length;
+  res.json({
+    total_weeks: totalWeeks,
+    squares: SQUARES.map(sq => ({
+      code: sq.code, icon: sq.icon, text: sq.text,
+      times: times[sq.code],
+      pct: totalWeeks ? round1((times[sq.code] / totalWeeks) * 100) : 0,
+    })).sort((a, b) => b.times - a.times || a.text.localeCompare(b.text)),
   });
 });
 

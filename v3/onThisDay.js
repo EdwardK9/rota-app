@@ -9,7 +9,7 @@
 
 const express = require('express');
 const {
-  db, DAYS, MONTHS, getSetting, localDateStr, parseDate, daysBetween,
+  db, DAYS, MONTHS, getSetting, localDateStr, parseDate, addDays, daysBetween,
   overlapMins, paidHours, shiftPay, round1, round2,
 } = require('./helpers');
 
@@ -26,9 +26,36 @@ router.get('/on-this-day', (req, res) => {
   const mmdd = date.slice(5);
 
   // ── Same date, previous years ────────────────────────────────────────────
-  const matches = db.prepare(
-    "SELECT * FROM shifts WHERE substr(date, 6) = ? AND date < ? ORDER BY date DESC"
-  ).all(mmdd, date);
+  // Two ways to pick "the same day" in a past year: the literal calendar date
+  // (what an anniversary or birthday means), or the nearest date with the same
+  // day of the week (what a weekly rota pattern means — a retail Saturday last
+  // year is a more useful comparison than whatever weekday 12 months back the
+  // exact date happened to fall on). Both are offered; exact date stays the
+  // default since milestones below are calendar-date events either way.
+  const matchMode = req.query.match === 'weekday' ? 'weekday' : 'date';
+  let matches;
+  if (matchMode === 'weekday') {
+    const todayDow = parseDate(date).getDay();
+    const years = db.prepare('SELECT DISTINCT substr(date, 1, 4) AS y FROM shifts WHERE date < ?')
+      .all(date).map(r => parseInt(r.y, 10));
+    const candidateDates = [...new Set(years.map(y => {
+      const anchor = `${y}-${mmdd}`;
+      const anchorDow = parseDate(anchor).getDay();
+      // Nudge to the same weekday within the anniversary week (±3 days) rather
+      // than jump a full week away.
+      let diff = (todayDow - anchorDow + 7) % 7;
+      if (diff > 3) diff -= 7;
+      return addDays(anchor, diff);
+    }))].filter(d => d < date);
+    const ph = candidateDates.map(() => '?').join(',') || "''";
+    matches = candidateDates.length
+      ? db.prepare(`SELECT * FROM shifts WHERE date IN (${ph}) ORDER BY date DESC`).all(...candidateDates)
+      : [];
+  } else {
+    matches = db.prepare(
+      "SELECT * FROM shifts WHERE substr(date, 6) = ? AND date < ? ORDER BY date DESC"
+    ).all(mmdd, date);
+  }
 
   const colleagues = {};
   for (const c of db.prepare('SELECT id, name FROM colleagues').all()) colleagues[c.id] = c.name;
@@ -141,14 +168,24 @@ router.get('/on-this-day', (req, res) => {
   const totalPastPay   = round2(flashbacks.reduce((t, f) => t + f.pay, 0));
 
   const todayShifts = db.prepare('SELECT * FROM shifts WHERE date = ?').all(date);
+  const todayCrew = todayShifts.length
+    ? db.prepare(
+        `SELECT * FROM colleague_shifts WHERE date = ? AND shift_type = 'shift' AND (store IS NULL OR store = '')`
+      ).all(date)
+    : [];
 
   res.json({
     date,
     day_name: DAYS[parseDate(date).getDay()],
     pretty: `${day} ${MONTHS[month - 1]}`,
+    match_mode: matchMode,
     today_shifts: todayShifts.map(s => ({
       start_time: s.start_time, end_time: s.end_time,
       hours: round1(paidHours(s)), pay: round2(shiftPay(s) || 0), completed: !!s.completed,
+      crew: todayCrew
+        .filter(cs => overlapMins(s.start_time, s.end_time, cs.start_time, cs.end_time) > 0)
+        .map(cs => colleagues[cs.colleague_id])
+        .filter(Boolean),
     })),
     flashbacks,
     past_leave: pastLeave,
