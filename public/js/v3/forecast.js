@@ -40,11 +40,15 @@ V3.register('forecast', '🔮 Pay Forecast', {
     ];
     const totalParts = parts.reduce((t, x) => t + x.value, 0) || 1;
 
-    const yearOptions = [0, 1, 2].map(back => {
-      const start = parseInt(d.tax_year.startYear, 10) - back;
-      return `<option value="${start}" ${start === d.tax_year.startYear ? 'selected' : ''}>
-        ${start}/${String(start + 1).slice(2)}</option>`;
-    }).join('');
+    // Fixed range — current tax year down to the one employment started in (or
+    // 4 years back if that's not set) — so it never shifts based on which year
+    // happens to be selected right now.
+    const maxStart = d.current_tax_year_start;
+    const minStart = d.min_tax_year_start ?? (maxStart - 4);
+    const years = [];
+    for (let start = maxStart; start >= minStart; start--) years.push(start);
+    const yearOptions = years.map(start => `<option value="${start}" ${start === d.tax_year.startYear ? 'selected' : ''}>
+        ${start}/${String(start + 1).slice(2)}</option>`).join('');
 
     el.innerHTML = `
       ${V3.backButton()}

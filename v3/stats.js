@@ -144,7 +144,7 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
   `).all();
 
   let punctualCount = 0, earlyBy10Count = 0, totalEarlyMins = 0, totalLateMins = 0;
-  let punctualOutCount = 0;
+  let punctualOutCount = 0, lateOutBy10Count = 0;
   let earliestClockIn = null, biggestEarly = null, biggestLate = null, longestOnSite = null;
   const clockDetail = [];
   for (const r of clockRows) {
@@ -168,6 +168,8 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
       // 5 minutes before it) counts as seeing the shift through.
       const diffOut = toMins(r.clocked_out) - toMins(r.end_time);
       if (diffOut >= -5) punctualOutCount++;
+      // Mirrors Keen Bean's early-by-10 bar, but for staying past the end time.
+      if (diffOut >= 10) lateOutBy10Count++;
     }
   }
 
@@ -214,7 +216,7 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
     breaksFull, breaksPartial, breaksSkipped,
     clockIns: clockRows.length,
     clockRows,
-    punctualCount, punctualOutCount, earlyBy10Count,
+    punctualCount, punctualOutCount, earlyBy10Count, lateOutBy10Count,
     totalEarlyMins: Math.round(totalEarlyMins),
     totalLateMins: Math.round(totalLateMins),
     earliestClockIn, biggestEarly, biggestLate, longestOnSite,

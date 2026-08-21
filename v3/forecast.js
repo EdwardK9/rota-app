@@ -16,7 +16,7 @@
 
 const express = require('express');
 const {
-  db, getNumSetting, localDateStr, parseDate, addDays, daysBetween,
+  db, getSetting, getNumSetting, localDateStr, parseDate, addDays, daysBetween,
   paidHours, shiftPay, rateForDate, contractHoursForDate, round2, round1,
 } = require('./helpers');
 
@@ -80,10 +80,21 @@ function taxYearFor(dateStr) {
 
 router.get('/forecast', (req, res) => {
   const today = localDateStr();
+  const currentTy = taxYearFor(today);
+
+  // Bounds for the year picker: never later than the current tax year (nothing
+  // to forecast yet), and never earlier than the tax year employment started in
+  // (there's no data before then, however far back a stale request asks for).
+  const jobStart = getSetting('job_start_date', null);
+  const minTy = jobStart ? taxYearFor(jobStart) : null;
+
   const requested = parseInt(req.query.tax_year, 10);
-  const ty = Number.isFinite(requested)
+  let ty = Number.isFinite(requested)
     ? { startYear: requested, from: `${requested}-04-06`, to: `${requested + 1}-04-05` }
-    : taxYearFor(today);
+    : currentTy;
+  if (ty.startYear > currentTy.startYear) ty = currentTy;
+  if (minTy && ty.startYear < minTy.startYear) ty = minTy;
+
   const cfg = taxConfig();
 
   // ── 1. Banked: payslips already logged inside this tax year ──────────────
@@ -162,6 +173,11 @@ router.get('/forecast', (req, res) => {
 
   res.json({
     tax_year: { label: `${ty.startYear}/${String(ty.startYear + 1).slice(2)}`, ...ty },
+    // Fixed bounds for the year picker, independent of which year is currently
+    // selected — a sliding "current ± 2" window meant picking an old year could
+    // scroll the newest years out of reach.
+    current_tax_year_start: currentTy.startYear,
+    min_tax_year_start: minTy ? minTy.startYear : null,
     today,
     elapsed_pct: round1((elapsed / yearDays) * 100),
     banked:    { gross: bankedGross, tax: bankedTax, ni: bankedNI, net: bankedNet, payslips: payslips.length,
