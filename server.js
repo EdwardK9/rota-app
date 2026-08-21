@@ -748,6 +748,7 @@ app.get('/api/colleagues/next-shifts', (req, res) => {
     JOIN colleagues c ON c.id = cs.colleague_id
     WHERE cs.date >= ? AND cs.date <= ?
       AND (c.left_date IS NULL OR c.left_date = '')
+      AND (cs.store IS NULL OR cs.store = '')
     ORDER BY cs.date ASC, cs.start_time ASC, c.name ASC
   `).all(from, to);
 

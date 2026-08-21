@@ -55,6 +55,18 @@ const SettingsView = {
                   <div class="form-hint">Used to apply the correct break entitlement (under/over 18 rules).</div>
                 </div>
               </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Public URL</label>
+                  <input type="text" id="setPublicBaseUrl" placeholder="https://schedule.example.uk" />
+                  <div class="form-hint">
+                    Your public address (e.g. a Cloudflare tunnel domain), if different from whatever
+                    address you're viewing this page on right now. Used for the NFC clock-in tag below and
+                    the Export page's calendar subscription link, so they work from anywhere, not just your
+                    home network.
+                  </div>
+                </div>
+              </div>
               <button class="btn btn-primary" id="saveGeneralBtn">Save</button>
             </div>
           </div>
@@ -1057,6 +1069,8 @@ const SettingsView = {
     if (jsdEl) jsdEl.value = this.settings.job_start_date || '';
     const dobEl = document.getElementById('setUserDob');
     if (dobEl) dobEl.value = this.settings.user_dob || '';
+    const urlEl = document.getElementById('setPublicBaseUrl');
+    if (urlEl) urlEl.value = this.settings.public_base_url || '';
   },
 
   populateCommute() {
@@ -1330,7 +1344,8 @@ const SettingsView = {
     if (!status || !urlEl) return;
     if (token) {
       status.innerHTML = '<span style="color:var(--success,#2e9e5b)">● Token configured</span>';
-      urlEl.value = `${window.location.origin}/clock-tap?token=${token}`;
+      const base = this.settings.public_base_url || window.location.origin;
+      urlEl.value = `${base}/clock-tap?token=${token}`;
     } else {
       status.innerHTML = '<span style="color:var(--text-muted)">○ No token yet — click "Generate new token"</span>';
       urlEl.value = '';
@@ -1434,6 +1449,7 @@ const SettingsView = {
       leave_year_start:          document.getElementById('setLeaveYearStart').value,
       job_start_date:            document.getElementById('setJobStartDate').value,
       user_dob:                  document.getElementById('setUserDob').value,
+      public_base_url:           document.getElementById('setPublicBaseUrl').value.trim().replace(/\/+$/, ''),
     };
     try {
       await API.saveSettings(data);
@@ -1442,6 +1458,7 @@ const SettingsView = {
       if (window.App) App.settings = await API.getSettings();
       this.settings = await API.getSettings();
       this.renderMilestones();
+      this.populateNfc();
     } catch(e) { showToast(e.message, 'error'); }
   },
 

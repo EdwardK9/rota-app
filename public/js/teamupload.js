@@ -653,7 +653,7 @@ RULES — follow exactly:
     importBtn.disabled = true;
     status.style.color = 'var(--text-muted)';
 
-    let totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
+    let totalInserted = 0, totalUpdated = 0, totalSkipped = 0, totalReconciled = 0;
     const allWarnings = [], allUnknown = new Set(), allConflicts = [];
     // allConflicts entries include {fileIdx} so we can resolve per-file later
 
@@ -662,9 +662,10 @@ RULES — follow exactly:
       const overrides = overridesByFile[i] || [];
       try {
         const result = await API.importColleagueJson(files[i].data, overrides);
-        totalInserted += result.inserted || 0;
-        totalUpdated  += result.updated  || 0;
-        totalSkipped  += result.skipped  || 0;
+        totalInserted   += result.inserted   || 0;
+        totalUpdated    += result.updated    || 0;
+        totalSkipped    += result.skipped    || 0;
+        totalReconciled += result.reconciled || 0;
         (result.warnings     || []).forEach(w => allWarnings.push(w));
         (result.unknownNames || []).forEach(n => allUnknown.add(n));
         (result.conflicts    || []).forEach(c => allConflicts.push({ ...c, fileIdx: i }));
@@ -678,8 +679,9 @@ RULES — follow exactly:
 
     // Build result summary
     let msg = `✓ ${totalInserted} inserted`;
-    if (totalUpdated)  msg += ` · ${totalUpdated} updated`;
+    if (totalUpdated)    msg += ` · ${totalUpdated} updated`;
     msg += ` · ${totalSkipped} skipped`;
+    if (totalReconciled) msg += ` · ${totalReconciled} stale entr${totalReconciled === 1 ? 'y' : 'ies'} removed`;
     if (allUnknown.size) msg += ` · ${allUnknown.size} unknown`;
     status.textContent = msg;
     status.style.color = (totalInserted + totalUpdated) > 0 ? 'var(--success)' : 'var(--text-muted)';

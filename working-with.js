@@ -1211,10 +1211,17 @@ router.post('/colleagues/import-json', (req, res) => {
   );
 
   const batchId = createImportBatch('json', schedule_data.date_range || 'Team schedule JSON import');
-  let inserted = 0, updated = 0, skipped = 0;
+  let inserted = 0, updated = 0, skipped = 0, reconciled = 0;
   const unknownNames = new Set();
   const warnings = [];
   const conflicts = []; // shifts that exist in DB with different data
+
+  // The screenshot is treated as the authoritative picture for the home-store
+  // days it actually covers: a colleague who was in a *previous* import for one
+  // of those days but is completely absent from this one is stale data, not a
+  // day off that just needs recording — see the reconciliation pass below.
+  const incomingHomePresence = new Set(); // `${colleague_id}|${date}`
+  const resolvedDates = new Set();
 
   db.transaction(() => {
     for (const day of schedule_data.schedule) {
@@ -1227,6 +1234,7 @@ router.post('/colleagues/import-json', (req, res) => {
         skipped += count;
         continue;
       }
+      resolvedDates.add(dayDate);
 
       for (const shift of (day.shifts || [])) {
         const rawName = (shift.name || '').trim();
@@ -1265,6 +1273,11 @@ router.post('/colleagues/import-json', (req, res) => {
         const col = fuzzyMatch(rawName, colleagues);
         if (!col) { unknownNames.add(rawName); skipped++; continue; }
         if (col.left_date && col.left_date < dayDate) { skipped++; continue; }
+
+        // Mentioned in the screenshot at the home store, regardless of what
+        // happens with the actual insert below (matched, conflicting, whatever)
+        // — that's enough to protect this colleague/date from reconciliation.
+        if (!store) incomingHomePresence.add(`${col.id}|${dayDate}`);
 
         const overrideKey = `${col.id}|${dayDate}|${start_time}`;
         const override    = overrideMap.get(overrideKey);
@@ -1308,10 +1321,31 @@ router.post('/colleagues/import-json', (req, res) => {
         }
       }
     }
+
+    // Reconciliation: for every home-store day this screenshot actually covers,
+    // any *previously imported* home-store row for a colleague who doesn't
+    // appear in this screenshot at all on that day is stale — delete it. Scoped
+    // to import_batch_id IS NOT NULL so hand-entered/manually-corrected shifts
+    // (added via the Team Calendar "Add Shift" modal) are never touched, and to
+    // home-store rows only, since this screenshot has no authority over what a
+    // colleague is doing at a different store.
+    const staleHomeRowsStmt = db.prepare(
+      `SELECT id, colleague_id FROM colleague_shifts
+       WHERE date = ? AND (store IS NULL OR store = '') AND import_batch_id IS NOT NULL`
+    );
+    for (const d of weekDates) {
+      if (!resolvedDates.has(d)) continue;
+      for (const row of staleHomeRowsStmt.all(d)) {
+        if (!incomingHomePresence.has(`${row.colleague_id}|${d}`)) {
+          deleteShiftById.run(row.id);
+          reconciled++;
+        }
+      }
+    }
   })();
 
   finalizeImportBatch(batchId, inserted);
-  res.json({ inserted, updated, skipped, conflicts, warnings, unknownNames: [...unknownNames], batchId });
+  res.json({ inserted, updated, skipped, reconciled, conflicts, warnings, unknownNames: [...unknownNames], batchId });
 });
 
 // ─────────────────────────────────────────
@@ -1446,7 +1480,7 @@ router.get('/whos-in', (req, res) => {
       `SELECT cs.start_time, cs.end_time, c.name
        FROM colleague_shifts cs
        JOIN colleagues c ON c.id = cs.colleague_id
-       WHERE cs.date = ? AND cs.shift_type = 'shift'
+       WHERE cs.date = ? AND cs.shift_type = 'shift' AND (cs.store IS NULL OR cs.store = '')
        ORDER BY cs.start_time ASC`
     ).all(date).map(s => ({ name: s.name, start: s.start_time, end: s.end_time }));
 

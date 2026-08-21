@@ -25,7 +25,7 @@ const ExportView = {
             On iPhone: Settings \u2192 Calendar \u2192 Accounts \u2192 Add Subscribed Calendar. On Google Calendar: Other calendars \u2192 From URL.
           </p>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <code id="icalUrl" style="background:var(--bg);padding:8px 10px;border-radius:6px;font-size:13px;word-break:break-all;">${window.location.origin}/calendar.ics</code>
+            <code id="icalUrl" style="background:var(--bg);padding:8px 10px;border-radius:6px;font-size:13px;word-break:break-all;">${(App.settings && App.settings.public_base_url) || window.location.origin}/calendar.ics</code>
             <button class="btn btn-secondary" id="copyIcalUrl" style="min-height:36px;">Copy</button>
           </div>
         </div>

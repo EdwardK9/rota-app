@@ -12,6 +12,8 @@ const TeamCalendarView = {
   _selectedId: null,
   _personFrom: null,
   _personTo: null,
+  _searchQuery: '',
+  _allShiftsCache: null,      // lazily loaded, invalidated on any edit/add/delete
 
   async init() {
     if (!this._currentWeek) {
@@ -155,6 +157,13 @@ const TeamCalendarView = {
 
   render() {
     document.getElementById('view-team-calendar').innerHTML = `
+      <div class="toolbar" style="margin-bottom:10px">
+        <input type="search" id="tcSearchInput" placeholder="🔍 Search every shift ever imported — name, date, time, store…"
+               value="${esc(this._searchQuery || '')}" style="flex:1;min-width:240px" />
+        ${this._searchQuery ? `<button class="btn btn-ghost btn-sm" id="tcSearchClear">✕ Clear</button>` : ''}
+      </div>
+      <div id="tcSearchResults"></div>
+
       <div class="import-tabs" style="margin-bottom:0">
         <button class="import-tab ${this.activeTab==='week'?'active':''}"   data-tc="week">📅 Week View</button>
         <button class="import-tab ${this.activeTab==='person'?'active':''}" data-tc="person">👤 Person View</button>
@@ -228,6 +237,23 @@ const TeamCalendarView = {
     });
     document.getElementById('tcAddSaveBtn').addEventListener('click', () => this._saveNewShift());
 
+    // Search — client-side, over every colleague_shift ever imported (fetched
+    // once and cached; the same call the CSV export already uses). Debounced
+    // so typing doesn't refilter on every keystroke.
+    let searchDebounce;
+    document.getElementById('tcSearchInput').addEventListener('input', e => {
+      clearTimeout(searchDebounce);
+      const value = e.target.value;
+      searchDebounce = setTimeout(() => { this._searchQuery = value; this._runSearch(); }, 250);
+    });
+    document.getElementById('tcSearchClear')?.addEventListener('click', () => {
+      this._searchQuery = '';
+      document.getElementById('tcSearchInput').value = '';
+      document.getElementById('tcSearchClear').remove();
+      this._runSearch();
+    });
+    if (this._searchQuery) this._runSearch();
+
   },
 
   async loadActiveTab() {
@@ -271,6 +297,7 @@ const TeamCalendarView = {
       await API.addColleagueShift({ colleague_id, date, shift_type, start_time, end_time, store });
       this._closeAddModal();
       showToast('Shift added');
+      this._allShiftsCache = null;
       await this.loadActiveTab();
     } catch (e) {
       showToast(e.message, 'error');
@@ -300,11 +327,85 @@ const TeamCalendarView = {
     } catch (e) { showToast('Export failed: ' + e.message, 'error'); }
   },
 
+  // Finding a mis-imported shift (wrong time, wrong day) means paging through
+  // week after week — this searches every shift ever imported at once, so a
+  // stray "05:45" that should say "06:45" turns up in one go, then reuses the
+  // existing edit modal to fix it on the spot.
+  async _runSearch() {
+    const results = document.getElementById('tcSearchResults');
+    const tabContent = document.getElementById('tcTabContent');
+    const tabs = document.querySelector('.import-tabs');
+    const q = (this._searchQuery || '').trim().toLowerCase();
+
+    if (!q) {
+      results.innerHTML = '';
+      if (tabContent) tabContent.style.display = '';
+      if (tabs) tabs.style.display = '';
+      return;
+    }
+    if (tabContent) tabContent.style.display = 'none';
+    if (tabs) tabs.style.display = 'none';
+    results.innerHTML = '<p style="color:var(--text-muted);padding:12px 0">Searching…</p>';
+
+    try {
+      if (!this._allShiftsCache) {
+        const { shifts, colleagues } = await API.getAllColleagueShifts();
+        const nameById = {};
+        for (const c of (colleagues || [])) nameById[c.id] = c.name;
+        this._allShiftsCache = (shifts || []).map(s => ({ ...s, name: nameById[s.colleague_id] || 'Unknown' }));
+      }
+      const matches = this._allShiftsCache.filter(s => {
+        const hay = `${s.name} ${s.date} ${s.start_time || ''} ${s.end_time || ''} ${s.store || ''} ${s.shift_type || ''}`.toLowerCase();
+        return hay.includes(q);
+      }).sort((a, b) => b.date.localeCompare(a.date) || (a.start_time || '').localeCompare(b.start_time || ''));
+      this._renderSearchResults(matches);
+    } catch (e) {
+      results.innerHTML = `<p style="color:var(--danger);padding:12px 0">Search failed: ${esc(e.message)}</p>`;
+    }
+  },
+
+  _renderSearchResults(matches) {
+    const results = document.getElementById('tcSearchResults');
+    if (!matches.length) {
+      results.innerHTML = `<p style="color:var(--text-muted);padding:12px 0">No shifts match "${esc(this._searchQuery)}".</p>`;
+      return;
+    }
+    const MAX = 150;
+    const shown = matches.slice(0, MAX);
+    results.innerHTML = `
+      <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px">
+        <div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted)">
+          ${matches.length} match${matches.length === 1 ? '' : 'es'}${matches.length > MAX ? ` — showing the first ${MAX}, newest first` : ''}
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tbody>
+              ${shown.map(s => `
+                <tr style="border-bottom:1px solid var(--border)">
+                  <td style="padding:8px 10px;white-space:nowrap;font-weight:600">${esc(s.name)}</td>
+                  <td style="padding:8px 10px;white-space:nowrap;color:var(--text-muted)">${fmtDate(s.date)}</td>
+                  <td style="padding:8px 10px;white-space:nowrap">${
+                    s.shift_type === 'shift' ? `${s.start_time}–${s.end_time}` : (s.shift_type === 'leave' ? '🌴 Leave' : '🏪 All Day')}</td>
+                  <td style="padding:8px 10px;white-space:nowrap;color:var(--text-muted)">${s.store ? '📍 ' + esc(s.store) : ''}</td>
+                  <td style="padding:8px 10px;text-align:right">
+                    <button class="btn btn-ghost btn-sm"
+                      onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type || 'shift'}','${_jsStr(s.store || '')}')">
+                      ✎ Edit
+                    </button>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  },
+
   async _deleteShift(id) {
     if (!confirm('Delete this shift entry?')) return;
     try {
       await API.deleteColleagueShift(id);
       showToast('Deleted');
+      this._allShiftsCache = null;
       await this.loadActiveTab();
     } catch (e) {
       showToast(e.message, 'error');
@@ -1055,7 +1156,9 @@ const TeamCalendarView = {
         await API.updateColleagueShift(id, { shift_type, start_time, end_time, store: storeVal });
         Modal.close();
         showToast('Shift updated');
-        await this.loadActiveTab();
+        this._allShiftsCache = null;
+        if (this._searchQuery) await this._runSearch();
+        else await this.loadActiveTab();
       } catch (e) { showToast(e.message, 'error'); }
     });
   },
