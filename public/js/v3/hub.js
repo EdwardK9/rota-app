@@ -53,8 +53,8 @@ V3.register('v3-hub', '✨ All V3 Features', {
         <div class="v3-hero-label">V3.0 FEATURES</div>
         <div class="v3-hero-value">${this.features.length}</div>
         <div class="v3-hero-sub">
-          extra views, all built from data the app already holds. Tap any card to jump straight in —
-          they are also in the sidebar under <strong>V3.0 Features</strong>, which scrolls.
+          extra views, all built from data the app already holds. Tap any card to jump straight in,
+          and use <strong>✨ V3.0 Features</strong> in the sidebar to come back here.
         </div>
       </div>
 

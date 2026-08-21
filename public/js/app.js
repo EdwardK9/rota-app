@@ -142,6 +142,12 @@ const App = {
       l.classList.toggle('active', l.dataset.view === view);
     });
 
+    // V3 features have no nav link of their own — they're reached through the
+    // V3 hub — so keep that one entry highlighted while you're inside any of them.
+    if (typeof V3 !== 'undefined' && V3.views[view]) {
+      document.querySelector('.nav-link[data-view="v3-hub"]')?.classList.add('active');
+    }
+
     // Highlight + auto-expand the group containing the active view
     document.querySelectorAll('.nav-group').forEach(g => {
       const hasActive = !!g.querySelector('.nav-link.active');
