@@ -15,6 +15,7 @@ const WeatherView = {
 
   render() {
     document.getElementById('view-weather').innerHTML = `
+      ${v2BackButton()}
       <div id="weatherContent">
         <div style="text-align:center;padding:40px;color:var(--text-muted)">Loading forecast…</div>
       </div>

@@ -18,6 +18,7 @@ const WhatIfView = {
 
   render() {
     document.getElementById('view-what-if').innerHTML = `
+      ${v2BackButton()}
       <div class="toolbar">
         <div class="month-nav">
           <label style="margin-bottom:0;margin-right:4px;font-weight:500">Year:</label>

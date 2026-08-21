@@ -81,22 +81,11 @@
         </ul>
       </li>
 
-      <li class="nav-group" data-group="v2">
-        <button class="nav-group-header" type="button">
-          <span class="nav-icon">🚀</span><span class="nav-label">V2.0 Features</span>
-          <span class="nav-chevron">▸</span>
-        </button>
-        <ul class="nav-sublinks">
-          <li><a href="#" class="nav-link" data-view="synergy"><span class="nav-icon">🤝</span><span class="nav-label">Synergy Score</span></a></li>
-          <li><a href="#" class="nav-link" data-view="team-metrics"><span class="nav-icon">💷</span><span class="nav-label">Team Metrics</span></a></li>
-          <li><a href="#" class="nav-link" data-view="fatigue-audit"><span class="nav-icon">🩺</span><span class="nav-label">Fatigue Audit</span></a></li>
-          <li><a href="#" class="nav-link" data-view="shift-heatmap"><span class="nav-icon">🔥</span><span class="nav-label">Shift Heatmap</span></a></li>
-          <li><a href="#" class="nav-link" data-view="weather"><span class="nav-icon">🌤️</span><span class="nav-label">Weather</span></a></li>
-          <li><a href="#" class="nav-link" data-view="what-if"><span class="nav-icon">🧮</span><span class="nav-label">What If?</span></a></li>
-          <li><a href="#" class="nav-link" data-view="streaks"><span class="nav-icon">🏅</span><span class="nav-label">Streaks &amp; Badges</span></a></li>
-          <li><a href="#" class="nav-link" data-view="wrapped"><span class="nav-icon">🎁</span><span class="nav-label">Rota Wrapped</span></a></li>
-        </ul>
-      </li>
+      <!-- Both feature sets are reached through their own index page rather than a
+           long sidebar group — same reasoning as V3.0 below applied here too. -->
+      <li><a href="#" class="nav-link" data-view="v2-hub">
+        <span class="nav-icon">🚀</span><span class="nav-label">V2.0 Features</span>
+      </a></li>
 
       <!-- V3 features are reached through their own index page. Eighteen entries
            overflowed the sidebar, so most of them sat below the fold unseen; one
@@ -156,6 +145,7 @@
     <div id="view-leaderboard" class="view hidden"></div>
     <div id="view-people" class="view hidden"></div>
     <div id="view-team-calendar" class="view hidden"></div>
+    <div id="view-v2-hub" class="view hidden"></div>
     <div id="view-synergy" class="view hidden"></div>
     <div id="view-team-metrics" class="view hidden"></div>
     <div id="view-fatigue-audit" class="view hidden"></div>
@@ -215,7 +205,7 @@
        (no attribute = strictly sequential fetch+execute per file); execution still
        happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
   <script src="/js/api.js?v=20260817c" defer></script>
-  <script src="/js/utils.js?v=20260624d" defer></script>
+  <script src="/js/utils.js?v=20260821a" defer></script>
   <script src="/js/shifts.js?v=20260708a" defer></script>
   <script src="/js/calendar.js?v=20260629a" defer></script>
   <script src="/js/payslips.js?v=20260817a" defer></script>
@@ -228,14 +218,15 @@
   <script src="/js/leaderboard.js?v=20260624d" defer></script>
   <script src="/js/people.js?v=20260624d" defer></script>
   <script src="/js/teamcalendar.js?v=20260817a" defer></script>
-  <script src="/js/synergyScore.js?v=20260817a" defer></script>
-  <script src="/js/teamMetrics.js?v=20260727a" defer></script>
-  <script src="/js/fatigueAudit.js?v=20260727a" defer></script>
-  <script src="/js/shiftHeatmap.js?v=20260814a" defer></script>
-  <script src="/js/weather.js?v=20260817a" defer></script>
-  <script src="/js/whatIf.js?v=20260817a" defer></script>
-  <script src="/js/streaks.js?v=20260817a" defer></script>
-  <script src="/js/wrapped.js?v=20260817a" defer></script>
+  <script src="/js/v2hub.js?v=20260821a" defer></script>
+  <script src="/js/synergyScore.js?v=20260821a" defer></script>
+  <script src="/js/teamMetrics.js?v=20260821a" defer></script>
+  <script src="/js/fatigueAudit.js?v=20260821a" defer></script>
+  <script src="/js/shiftHeatmap.js?v=20260821a" defer></script>
+  <script src="/js/weather.js?v=20260821a" defer></script>
+  <script src="/js/whatIf.js?v=20260821a" defer></script>
+  <script src="/js/streaks.js?v=20260821a" defer></script>
+  <script src="/js/wrapped.js?v=20260821a" defer></script>
   <script src="/js/teamupload.js?v=20260817a" defer></script>
   <script src="/js/managePeople.js?v=20260727a" defer></script>
   <script src="/js/photoLibrary.js?v=20260624d" defer></script>
@@ -271,7 +262,7 @@
   <script src="/js/v3/yearInNumbers.js?v=20260821d" defer></script>
   <script src="/js/v3/didYouKnow.js?v=20260821d" defer></script>
 
-  <script src="/js/app.js?v=20260821b" defer></script>
+  <script src="/js/app.js?v=20260821c" defer></script>
   <script>
     // PWA: register the (no-cache, passthrough) service worker so the app is installable
     if ('serviceWorker' in navigator) {

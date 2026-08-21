@@ -17,6 +17,7 @@ const SynergyView = {
   render() {
     const el = document.getElementById('view-synergy');
     el.innerHTML = `
+      ${v2BackButton()}
       <div style="max-width:720px">
         <div class="card" style="padding:16px 20px;margin-bottom:16px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">

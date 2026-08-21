@@ -14,6 +14,7 @@ const ShiftHeatmapView = {
   render() {
     const el = document.getElementById('view-shift-heatmap');
     el.innerHTML = `
+      ${v2BackButton()}
       <div class="toolbar">
         <div class="month-nav">
           <button class="btn btn-ghost btn-sm" id="hmPrevYear">‹</button>

@@ -3,6 +3,7 @@
 const App = {
   currentView: 'dashboard',
   settings: {},
+  V2_VIEWS: ['synergy', 'team-metrics', 'fatigue-audit', 'shift-heatmap', 'weather', 'what-if', 'streaks', 'wrapped'],
 
   async start() {
     // Dark mode — restore saved preference
@@ -156,6 +157,12 @@ const App = {
       document.querySelector('.nav-link[data-view="v3-hub"]')?.classList.add('active');
     }
 
+    // Same idea for V2.0 — those views aren't in a registry the way V3 is, so
+    // the list here is just the fixed set of eight.
+    if (this.V2_VIEWS.includes(view)) {
+      document.querySelector('.nav-link[data-view="v2-hub"]')?.classList.add('active');
+    }
+
     // Highlight + auto-expand the group containing the active view
     document.querySelectorAll('.nav-group').forEach(g => {
       const hasActive = !!g.querySelector('.nav-link.active');
@@ -180,7 +187,7 @@ const App = {
       notes: 'Notes', settings: 'Settings',
       leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
       notifications: '🔔 Notifications',
-      'team-calendar': '🗓️ Team Calendar', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
+      'team-calendar': '🗓️ Team Calendar', 'v2-hub': '🚀 V2.0 Features', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
       'shift-heatmap': '🔥 Shift Heatmap', 'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
       'streaks': '🏅 Streaks & Badges', 'wrapped': '🎁 Rota Wrapped',
       'manage-people': '👤 Manage People',
@@ -220,6 +227,7 @@ const App = {
       case 'notifications':  await NotificationsView.init(); break;
       case 'people':        await PeopleView.init(); break;
       case 'team-calendar': await TeamCalendarView.init(); break;
+      case 'v2-hub':        V2Hub.init(); break;
       case 'synergy':       await SynergyView.init(); break;
       case 'fatigue-audit': await FatigueAuditView.init(); break;
       case 'shift-heatmap': await ShiftHeatmapView.init(); break;

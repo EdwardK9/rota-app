@@ -36,6 +36,7 @@ const StreaksView = {
 
   render() {
     document.getElementById('view-streaks').innerHTML = `
+      ${v2BackButton()}
       <div id="streaksContent">
         <div style="text-align:center;padding:40px;color:var(--text-muted)">Loading…</div>
       </div>
