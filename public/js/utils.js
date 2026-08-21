@@ -192,9 +192,11 @@ const BankHols = {
         }
       }
     } catch (_) {}
-    // Fetch from UK gov API
+    // Fetch from UK gov API — bounded so a slow/unresponsive gov.uk doesn't hang
+    // whatever page is waiting on this (Shifts awaits it as part of its main
+    // render). A healthy response is near-instant; 6s is already generous.
     try {
-      const res = await fetch('https://www.gov.uk/bank-holidays.json');
+      const res = await fetch('https://www.gov.uk/bank-holidays.json', { signal: AbortSignal.timeout(6000) });
       if (!res.ok) throw new Error('fetch failed');
       const data = await res.json();
       const division = data['england-and-wales'] || data[Object.keys(data)[0]];

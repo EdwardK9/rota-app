@@ -118,9 +118,13 @@ router.get('/on-this-day', (req, res) => {
 
   // Leave taken on this date in past years is worth showing too — a fortnight in
   // Spain is at least as memorable as a Tuesday on the trade counter.
+  // Only pull leave that's already fully over (the JS filter below does the
+  // actual "same calendar day" matching by comparing MM-DD, regardless of
+  // year) — binding one param three times previously made "end_date >= date
+  // AND end_date < date" mutually exclusive, so this never returned a row.
   const pastLeave = db.prepare(
-    'SELECT * FROM leave_entries WHERE start_date <= ? AND end_date >= ? AND end_date < ?'
-  ).all(date, date, date).map(l => ({
+    'SELECT * FROM leave_entries WHERE end_date < ?'
+  ).all(date).map(l => ({
     ...l,
     year: parseInt(l.start_date.slice(0, 4), 10),
     years_ago: year - parseInt(l.start_date.slice(0, 4), 10),

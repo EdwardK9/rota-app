@@ -10,6 +10,7 @@ V3.register('did-you-know', '🎲 Did You Know', {
   aiState: 'idle',   // 'idle' | 'loading' | 'done' | 'error'
   aiFact: null,
   aiError: null,
+  aiLoadingHint: '',
 
   GRADIENTS: [
     'linear-gradient(135deg,#3B82F6,#1B2A4A)',
@@ -93,7 +94,7 @@ V3.register('did-you-know', '🎲 Did You Know', {
         </div>`,
       loading: `
         <div class="card-body" style="text-align:center;padding:24px;color:var(--text-muted)">
-          Thinking of something…
+          ${esc(this.aiLoadingHint || 'Thinking of something…')}
         </div>`,
       done: `
         <div class="card-header"><h2>🤖 AI Bonus Fact</h2></div>
@@ -114,7 +115,18 @@ V3.register('did-you-know', '🎲 Did You Know', {
 
   async loadAiFact() {
     this.aiState = 'loading';
+    this.aiLoadingHint = '';
     this.renderAiCard();
+
+    // The server retries against another model if the first one is overloaded
+    // or unresponsive (up to ~10s per attempt) — worth saying so once it's
+    // taking a moment, so a longer wait reads as "working on it" rather than
+    // "stuck".
+    const hintTimers = [
+      setTimeout(() => { this.aiLoadingHint = 'Still thinking… the first model it tried may be busy.'; this.renderAiCard(); }, 6000),
+      setTimeout(() => { this.aiLoadingHint = 'Trying another model — almost there.'; this.renderAiCard(); }, 16000),
+    ];
+
     try {
       const d = await V3.api.didYouKnowAI();
       this.aiFact = d.fact;
@@ -123,6 +135,7 @@ V3.register('did-you-know', '🎲 Did You Know', {
       this.aiError = e.message;
       this.aiState = 'error';
     }
+    hintTimers.forEach(clearTimeout);
     this.renderAiCard();
   },
 });

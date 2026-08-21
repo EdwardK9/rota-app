@@ -248,13 +248,15 @@ const DashboardView = {
   },
 
   async renderHero(shift, clockToday) {
-    // Fetch colleagues working the same shift (clock state passed in from render)
-    let colleagues = [], weather = null;
+    // Fetch colleagues working the same shift (clock state passed in from render).
+    // Weather is deliberately NOT awaited here — it's a live call to Open-Meteo,
+    // an external API with no guaranteed response time, and awaiting it here
+    // meant a slow/flaky Open-Meteo response stalled the whole hero card (and
+    // by extension the rest of the dashboard, since render() awaits this).
+    // It's now fetched in the background after the hero paints and dropped
+    // into its own slot once (if) it resolves.
     if (clockToday === undefined) clockToday = this._clockToday || null;
-    [colleagues, weather] = await Promise.all([
-      API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []),
-      API.getCommuteWeather(shift.date, shift.start_time, shift.end_time).catch(() => null),
-    ]);
+    const colleagues = await API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []);
 
     const el = document.getElementById('dash-hero');
     const isToday  = shift.date === _fmtDateDash(new Date());
@@ -314,7 +316,7 @@ const DashboardView = {
           ${shift.is_bank_holiday ? `<span class="dash-meta-pill dash-meta-bh">🏦 Bank Holiday</span>` : ''}
         </div>
 
-        ${this._renderWeatherBadges(weather)}
+        <div id="dashWeatherSlot"></div>
 
         ${(() => {
           const ce = clockToday?.entry || null;
@@ -353,6 +355,14 @@ const DashboardView = {
 
     const colleaguesEl = el.querySelector('.dash-colleagues-clickable');
     if (colleaguesEl) colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+
+    // Background-fill the weather slot — see the comment above on why this
+    // isn't awaited before the hero renders. If the user's already navigated
+    // away by the time this resolves, the slot just won't exist any more.
+    API.getCommuteWeather(shift.date, shift.start_time, shift.end_time).catch(() => null).then(weather => {
+      const slot = document.getElementById('dashWeatherSlot');
+      if (slot) slot.outerHTML = this._renderWeatherBadges(weather) || '<div id="dashWeatherSlot"></div>';
+    });
   },
 
   // Commute weather badges (V2.0 Phase 2.1) — shown on the hero card when a

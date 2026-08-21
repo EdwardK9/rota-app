@@ -61,7 +61,11 @@ async function fetchHourlyForecast(lat, lon, dateStr) {
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}` +
     `&hourly=temperature_2m,precipitation_probability,weather_code&timezone=Europe%2FLondon&start_date=${dateStr}&end_date=${dateStr}`;
-  const resp = await fetch(url);
+  // No timeout here used to mean a slow/flaky Open-Meteo response could hang
+  // the Dashboard's hero card indefinitely — this call sits directly on that
+  // render path. 6s is generous for a same-region API call; failing fast lets
+  // the dashboard render without weather rather than stall waiting for it.
+  const resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
   if (!resp.ok) throw new Error(`Open-Meteo returned ${resp.status}`);
   const data = await resp.json();
   const map = {};

@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-21T19:55:07.864Z",
-  "commit": "a2368ba",
+  "generated_at": "2026-08-21T20:10:06.260Z",
+  "commit": "9855c73",
   "entries": [
+    {
+      "version": "3.5.3",
+      "date": "2026-08-21",
+      "summary": "Give the AI fact button the same retry/fallback-model resilience as screenshot import",
+      "details": "It was a single, no-retry Gemini call by design (documented as deliberately\nminimal when it shipped in v3.4.12) — fine in theory, but in practice the\nfree-tier flash models this app defaults to do genuinely return \"model\noverloaded, try again later\" at busy times, and with no retry that surfaced\nstraight to the user after a long wait instead of quietly trying the\nnext-best available model the way screenshot import already does.\n\nAdded callGeminiText to working-with.js — a text-only sibling of the\nexisting callGeminiVision, same overload-detection and ranked-fallback-model\nchain, just without an image attached — and pointed the AI fact route at it\ninstead of its own one-shot implementation."
+    },
     {
       "version": "3.5.2",
       "date": "2026-08-21",

@@ -421,6 +421,7 @@ const TeamCalendarView = {
     try {
       const { deleted } = await API.bulkDeleteColleagueShifts(ids);
       showToast(`Deleted ${deleted} shift${deleted !== 1 ? 's' : ''}`);
+      this._allShiftsCache = null;
       await this.loadActiveTab();
     } catch (e) {
       showToast(e.message, 'error');
@@ -448,6 +449,7 @@ const TeamCalendarView = {
     try {
       const { deleted } = await API.bulkDeleteColleagueShifts(ids);
       showToast(`Deleted ${deleted} shift${deleted !== 1 ? 's' : ''}`);
+      this._allShiftsCache = null;
       await this.loadActiveTab();
     } catch (e) {
       showToast(e.message, 'error');
@@ -460,6 +462,7 @@ const TeamCalendarView = {
     try {
       const { deleted } = await API.deleteAllShiftsByMonth(month);
       showToast(`Deleted ${deleted} shift${deleted !== 1 ? 's' : ''} for ${label}`);
+      this._allShiftsCache = null;
       await this.loadWeek();
     } catch (e) { showToast(e.message, 'error'); }
   },
@@ -469,6 +472,7 @@ const TeamCalendarView = {
     try {
       const { deleted } = await API.deleteAllColleagueShiftsEver();
       showToast(`Deleted ${deleted} shift${deleted !== 1 ? 's' : ''}`);
+      this._allShiftsCache = null;
       await this.loadWeek();
     } catch (e) { showToast(e.message, 'error'); }
   },
@@ -479,6 +483,7 @@ const TeamCalendarView = {
     try {
       await API.deleteColleagueShiftsByMonth(colleagueId, month);
       showToast(`Deleted ${name}'s shifts for ${label}`);
+      this._allShiftsCache = null;
       await this.loadWeek();
     } catch (e) {
       showToast(e.message, 'error');
@@ -490,6 +495,7 @@ const TeamCalendarView = {
     try {
       await API.deleteAllColleagueShifts(colleagueId);
       showToast(`Deleted all shifts for ${name}`);
+      this._allShiftsCache = null;
       await this.loadWeek();
     } catch (e) {
       showToast(e.message, 'error');
@@ -508,6 +514,7 @@ const TeamCalendarView = {
     try {
       const { deleted } = await API.bulkDeleteColleagueShifts(shifts.map(s => s.id));
       showToast(`Deleted ${deleted} shift${deleted !== 1 ? 's' : ''}`);
+      this._allShiftsCache = null;
       await this.loadWeek();
     } catch (e) {
       showToast(e.message, 'error');

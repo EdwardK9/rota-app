@@ -330,7 +330,12 @@ function isGeminiOverloadError(status, message) {
 // list never goes stale the way a hardcoded one would (see the gemini-2.5-flash
 // retirement this was already bitten by once).
 async function fetchAvailableGeminiModels(apiKey) {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+  let r;
+  try {
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (_) { return []; }
   if (!r.ok) return [];
   const data = await r.json();
   return (data.models || [])
@@ -438,18 +443,38 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
   throw lastErr;
 }
 
+// A stuck/slow model is functionally the same problem as an overloaded one
+// from the caller's point of view — either way, waiting on it isn't worth it
+// when there are other models to try. 10s is generous for a ~150-token reply;
+// a healthy model answers in 1-3s, so this only ever bites when something's
+// genuinely wrong with that specific model right now.
+const GEMINI_TEXT_TIMEOUT_MS = 10000;
+
 async function callGeminiOnceText(prompt, apiKey, model) {
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 150 },
-      }),
-    }
-  );
+  let geminiRes;
+  try {
+    geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.9, maxOutputTokens: 150 },
+        }),
+        signal: AbortSignal.timeout(GEMINI_TEXT_TIMEOUT_MS),
+      }
+    );
+  } catch (fetchErr) {
+    const err = new Error(
+      fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError'
+        ? `${model} didn't respond within ${GEMINI_TEXT_TIMEOUT_MS / 1000}s`
+        : fetchErr.message
+    );
+    err.status = 504;
+    err.overloaded = true; // treat "unresponsive" the same as "busy" — try the next model
+    throw err;
+  }
 
   if (!geminiRes.ok) {
     const errBody = await geminiRes.json().catch(() => ({}));
