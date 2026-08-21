@@ -106,7 +106,7 @@ router.get('/balance', (req, res) => {
   const breakPct = completed.length ? round1((fullBreaks / completed.length) * 100) : null;
 
   // ── Longest consecutive run ──────────────────────────────────────────────
-  const longestRun = longestConsecutiveRun(workedDates);
+  const longestRun = longestConsecutiveRun(workedDates).length;
 
   const values = {
     rest_days: restDaysPerWeek,

@@ -2,179 +2,235 @@
    GET /api/v3/trophies
 
    Achievements unlocked purely from data the app already holds — nothing to
-   opt into, nothing to tick off by hand. Each trophy declares the stat it
-   watches and the threshold it needs, so progress bars come for free and
-   adding a new one is a single row in TROPHIES.
+   opt into, nothing to tick off by hand.
 
-   Unlock dates are persisted the first time a trophy is earned (v3_trophy_
-   unlocks), so a trophy stays won even if the underlying stat later dips —
-   deleting an old shift shouldn't confiscate a medal.
+   Every trophy is a *family* with four tiers (bronze → platinum) rather than a
+   one-shot award, so a single line here is worth four unlocks and there is
+   always a next target rather than a wall of finished cards.
+
+   Thresholds are calibrated against a real retail rota — a "long shift" is 8
+   paid hours, not 12 — because a target nobody can physically reach isn't an
+   achievement, it's a bug. `dynamic` families compute their thresholds from
+   your own data instead (see The Whole Store).
+
+   Unlock dates are persisted per tier (v3_trophy_unlocks), so a trophy stays
+   won even if the underlying stat later dips.
    ───────────────────────────────────────────────────────────────────────── */
 
 const express = require('express');
 const { db, paidHours, round1 } = require('./helpers');
 const { careerStats } = require('./stats');
+const { bankHolidayDates } = require('./bankHolidays');
 require('./schema');
 
 const router = express.Router();
 
-/* stat: key into the computed stat bag. need: threshold to unlock.
-   tier drives the colour/rarity styling on the client. */
-const TROPHIES = [
-  // ── Getting started ────────────────────────────────────────────────────
-  { code: 'first_shift',     icon: '🌱', name: 'First Day on the Floor', tier: 'bronze',
-    desc: 'Log your very first completed shift.',            stat: 'totalShifts', need: 1 },
-  { code: 'shifts_10',       icon: '📋', name: 'Getting the Hang of It', tier: 'bronze',
-    desc: 'Complete 10 shifts.',                             stat: 'totalShifts', need: 10 },
-  { code: 'shifts_50',       icon: '🔧', name: 'Part of the Furniture',  tier: 'silver',
-    desc: 'Complete 50 shifts.',                             stat: 'totalShifts', need: 50 },
-  { code: 'shifts_100',      icon: '💯', name: 'Century',                tier: 'gold',
-    desc: 'Complete 100 shifts.',                            stat: 'totalShifts', need: 100 },
-  { code: 'shifts_250',      icon: '🗿', name: 'Living Legend',          tier: 'platinum',
-    desc: 'Complete 250 shifts.',                            stat: 'totalShifts', need: 250 },
+const TIERS = ['bronze', 'silver', 'gold', 'platinum'];
+const TIER_LABEL = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold', platinum: 'Platinum' };
 
-  // ── Hours ──────────────────────────────────────────────────────────────
-  { code: 'hours_100',       icon: '⏱️', name: 'Hundred Hour Club',      tier: 'bronze',
-    desc: 'Clock up 100 paid hours.',                        stat: 'totalHours', need: 100 },
-  { code: 'hours_500',       icon: '⏳', name: 'Time Served',            tier: 'silver',
-    desc: 'Clock up 500 paid hours.',                        stat: 'totalHours', need: 500 },
-  { code: 'hours_1000',      icon: '🕰️', name: 'Four Figures',           tier: 'gold',
-    desc: 'Clock up 1,000 paid hours.',                      stat: 'totalHours', need: 1000 },
-  { code: 'long_shift',      icon: '🥵', name: 'The Long Haul',          tier: 'silver',
-    desc: 'Work a single shift of 9 paid hours or more.',    stat: 'longestShiftHours', need: 9 },
-
-  // ── Money ──────────────────────────────────────────────────────────────
-  { code: 'earned_1k',       icon: '💷', name: 'First Grand',            tier: 'bronze',
-    desc: 'Earn £1,000 across your logged shifts.',          stat: 'totalPay', need: 1000 },
-  { code: 'earned_10k',      icon: '💰', name: 'Five Figures',           tier: 'gold',
-    desc: 'Earn £10,000 across your logged shifts.',         stat: 'totalPay', need: 10000 },
-  { code: 'earned_25k',      icon: '🏦', name: 'Vault Keeper',           tier: 'platinum',
-    desc: 'Earn £25,000 across your logged shifts.',         stat: 'totalPay', need: 25000 },
-  { code: 'payslips_12',     icon: '🧾', name: 'A Full Year of Payslips',tier: 'silver',
-    desc: 'Log 12 payslips.',                                stat: 'payslipCount', need: 12 },
-  { code: 'taxman',          icon: '🎩', name: 'Funding the Nation',     tier: 'silver',
-    desc: 'Pay £1,000 in tax and National Insurance.',       stat: 'lifetimeTax', need: 1000 },
+/* stat  — key into the computed stat bag
+   need  — [bronze, silver, gold, platinum] thresholds
+   unit  — how the value reads ('count' | 'hours' | 'money' | 'miles' | 'mins' | 'days' | 'pct')
+   dynamic — thresholds derived from your data at request time                */
+const FAMILIES = [
+  // ── The basics ─────────────────────────────────────────────────────────
+  { code: 'shifts', icon: '📋', name: 'Shifts Worked', unit: 'count',
+    blurb: 'Every shift you have logged.',
+    stat: 'totalShifts', need: [25, 100, 250, 500] },
+  { code: 'hours', icon: '⏱️', name: 'Hours on the Clock', unit: 'hours',
+    blurb: 'Total paid hours across your whole history.',
+    stat: 'totalHours', need: [100, 500, 1000, 2000] },
+  { code: 'earned', icon: '💷', name: 'Total Earned', unit: 'money',
+    blurb: 'Gross pay from every shift you have logged.',
+    stat: 'totalPay', need: [1000, 5000, 15000, 30000] },
+  { code: 'service', icon: '🎂', name: 'Time Served', unit: 'days',
+    blurb: 'Days since your start date.',
+    stat: 'daysEmployed', need: [180, 365, 730, 1825] },
 
   // ── Antisocial hours ───────────────────────────────────────────────────
-  { code: 'early_bird',      icon: '🐦', name: 'Early Bird',             tier: 'bronze',
-    desc: 'Start 10 shifts at or before 07:00.',             stat: 'earlyStarts', need: 10 },
-  { code: 'night_owl',       icon: '🦉', name: 'Night Owl',              tier: 'bronze',
-    desc: 'Finish 10 shifts at or after 20:00.',             stat: 'lateFinishes', need: 10 },
-  { code: 'weekend_warrior', icon: '⚔️', name: 'Weekend Warrior',        tier: 'silver',
-    desc: 'Work 25 weekend shifts.',                         stat: 'weekendShifts', need: 25 },
-  { code: 'bank_holiday',    icon: '🎆', name: 'Someone Has to Do It',   tier: 'gold',
-    desc: 'Work 3 bank holidays.',                           stat: 'bankHolidayShifts', need: 3 },
-  { code: 'streak_7',        icon: '🔁', name: 'Seven Straight',         tier: 'silver',
-    desc: 'Work 7 days in a row.',                           stat: 'longestStreakDays', need: 7 },
-  { code: 'streak_10',       icon: '🧱', name: 'Unbreakable',            tier: 'gold',
-    desc: 'Work 10 days in a row.',                          stat: 'longestStreakDays', need: 10 },
+  { code: 'weekends', icon: '⚔️', name: 'Weekend Warrior', unit: 'count',
+    blurb: 'Shifts worked on a Saturday or Sunday.',
+    stat: 'weekendShifts', need: [10, 40, 100, 200] },
+  { code: 'early_starts', icon: '🌅', name: 'Early Bird', unit: 'count',
+    blurb: 'Shifts starting at or before 07:00.',
+    stat: 'earlyStarts', need: [5, 25, 75, 150] },
+  { code: 'late_finishes', icon: '🦉', name: 'Night Owl', unit: 'count',
+    blurb: 'Shifts finishing at or after 20:00.',
+    stat: 'lateFinishes', need: [5, 25, 75, 150] },
+  { code: 'bank_holidays', icon: '🎆', name: 'Someone Has to Do It', unit: 'count',
+    blurb: 'Bank holidays worked — matched against the real calendar, not just the double-pay flag.',
+    stat: 'bankHolidayShifts', need: [1, 3, 6, 12] },
+  { code: 'long_shift', icon: '🥵', name: 'The Long Haul', unit: 'hours',
+    blurb: 'Your longest single shift, in paid hours.',
+    stat: 'longestShiftHours', need: [6, 7, 8, 9] },
+  { code: 'streak', icon: '🔁', name: 'On the Trot', unit: 'days',
+    blurb: 'Longest run of consecutive days worked.',
+    stat: 'longestStreakDays', need: [4, 6, 8, 10] },
+
+  // ── Clocking ───────────────────────────────────────────────────────────
+  { code: 'clock_ins', icon: '🎯', name: 'Creature of Habit', unit: 'count',
+    blurb: 'Clock-ins recorded.',
+    stat: 'clockIns', need: [25, 100, 250, 500] },
+  { code: 'punctual', icon: '⏰', name: 'Never Late', unit: 'count',
+    blurb: 'Clock-ins at or before your start time, with five minutes grace.',
+    stat: 'punctualCount', need: [10, 50, 150, 300] },
+  { code: 'keen_bean', icon: '🐦', name: 'Keen Bean', unit: 'count',
+    blurb: 'Clock-ins a full 10 minutes or more before your shift started.',
+    stat: 'earlyBy10Count', need: [5, 20, 50, 100] },
+  { code: 'banked_early', icon: '⏳', name: 'Time Donated', unit: 'mins',
+    blurb: 'Every minute you have ever clocked in early, added up.',
+    stat: 'totalEarlyMins', need: [60, 300, 900, 1800] },
 
   // ── People ─────────────────────────────────────────────────────────────
-  { code: 'social_10',       icon: '👥', name: 'Knows Everyone',         tier: 'bronze',
-    desc: 'Share a shift with 10 different colleagues.',     stat: 'distinctColleagues', need: 10 },
-  { code: 'social_25',       icon: '🎪', name: 'The Whole Store',        tier: 'gold',
-    desc: 'Share a shift with 25 different colleagues.',     stat: 'distinctColleagues', need: 25 },
-  { code: 'full_crew',       icon: '🚒', name: 'Full Crew',              tier: 'silver',
-    desc: 'Work alongside 6 or more colleagues in one day.', stat: 'biggestCrewCount', need: 6 },
+  { code: 'colleagues', icon: '👥', name: 'Knows Everyone', unit: 'count',
+    blurb: 'Different colleagues you have shared a shift with.',
+    stat: 'distinctColleagues', need: [5, 15, 30, 50] },
+  // Dynamic: the target is the store itself, so a new starter puts it back out
+  // of reach until you have worked with them too.
+  { code: 'whole_store', icon: '🏪', name: 'The Whole Store', unit: 'pct', dynamic: true,
+    blurb: 'Share of the current team you have worked alongside. A new starter moves the goalposts.',
+    stat: 'storeCoveragePct', need: [50, 75, 90, 100] },
+  { code: 'full_crew', icon: '🚒', name: 'Full Crew', unit: 'count',
+    blurb: 'Most colleagues overlapping a single one of your shifts.',
+    stat: 'biggestCrewCount', need: [3, 5, 7, 10] },
 
-  // ── Discipline ─────────────────────────────────────────────────────────
-  { code: 'breaks_50',       icon: '☕', name: 'Break Taker',            tier: 'bronze',
-    desc: 'Take your full break on 50 shifts.',              stat: 'breaksFull', need: 50 },
-  { code: 'punctual_25',     icon: '⏰', name: 'Never Late',             tier: 'silver',
-    desc: 'Clock in on time 25 times, with 5 minutes grace.',stat: 'punctualCount', need: 25 },
-  { code: 'clock_100',       icon: '🎯', name: 'Creature of Habit',      tier: 'gold',
-    desc: 'Record 100 clock-ins.',                           stat: 'clockIns', need: 100 },
-
-  // ── Road ───────────────────────────────────────────────────────────────
-  { code: 'miles_100',       icon: '🚗', name: 'Commuter',               tier: 'bronze',
-    desc: 'Drive 100 miles to work.',                        stat: 'totalMiles', need: 100 },
-  { code: 'miles_1000',      icon: '🛣️', name: 'Round Britain',          tier: 'gold',
-    desc: 'Drive 1,000 miles to work.',                      stat: 'totalMiles', need: 1000 },
-
-  // ── Service ────────────────────────────────────────────────────────────
-  { code: 'year_one',        icon: '🎂', name: 'One Year Down',          tier: 'silver',
-    desc: 'Reach one year since your start date.',           stat: 'daysEmployed', need: 365 },
-  { code: 'year_two',        icon: '🏅', name: 'Two Years Deep',         tier: 'gold',
-    desc: 'Reach two years since your start date.',          stat: 'daysEmployed', need: 730 },
-  { code: 'holiday_maker',   icon: '🏖️', name: 'Holiday Maker',          tier: 'bronze',
-    desc: 'Take 10 days of leave.',                          stat: 'leaveDays', need: 10 },
+  // ── Discipline & admin ─────────────────────────────────────────────────
+  { code: 'breaks', icon: '☕', name: 'Break Taker', unit: 'count',
+    blurb: 'Shifts where you took your full break.',
+    stat: 'breaksFull', need: [25, 75, 150, 300] },
+  { code: 'payslips', icon: '🧾', name: 'Paper Trail', unit: 'count',
+    blurb: 'Payslips logged.',
+    stat: 'payslipCount', need: [3, 12, 24, 36] },
+  { code: 'taxman', icon: '🎩', name: 'Funding the Nation', unit: 'money',
+    blurb: 'Income tax and National Insurance paid.',
+    stat: 'lifetimeTax', need: [500, 2000, 5000, 10000] },
+  { code: 'miles', icon: '🚗', name: 'Road Warrior', unit: 'miles',
+    blurb: 'Miles driven to work.',
+    stat: 'totalMiles', need: [100, 500, 1500, 3000] },
+  { code: 'holidays', icon: '🏖️', name: 'Holiday Maker', unit: 'days',
+    blurb: 'Days of leave taken.',
+    stat: 'leaveDays', need: [5, 10, 20, 40] },
 ];
 
-const TIER_ORDER = { bronze: 0, silver: 1, gold: 2, platinum: 3 };
-
 /** Flattens careerStats() into the scalar bag the thresholds compare against. */
-function trophyValues() {
-  const s = careerStats();
+function trophyValues(s) {
   return {
     totalShifts: s.totalShifts,
     totalHours: s.totalHours,
     totalPay: s.totalPay,
     totalMiles: s.totalMiles,
-    longestShiftHours: s.longestShift ? round1(paidHours(s.longestShift)) : 0,
-    payslipCount: s.payslipCount,
-    lifetimeTax: s.lifetimeTax,
+    daysEmployed: s.daysEmployed || 0,
+    weekendShifts: s.weekendShifts,
     earlyStarts: s.earlyStarts,
     lateFinishes: s.lateFinishes,
-    weekendShifts: s.weekendShifts,
     bankHolidayShifts: s.bankHolidayShifts,
+    longestShiftHours: s.longestShift ? round1(paidHours(s.longestShift)) : 0,
     longestStreakDays: s.longestStreakDays,
+    clockIns: s.clockIns,
+    punctualCount: s.punctualCount,
+    earlyBy10Count: s.earlyBy10Count,
+    totalEarlyMins: s.totalEarlyMins,
     distinctColleagues: s.distinctColleagues,
+    storeCoveragePct: s.storeCoveragePct,
     biggestCrewCount: s.biggestCrewDay.count,
     breaksFull: s.breaksFull,
-    punctualCount: s.punctualCount,
-    clockIns: s.clockIns,
-    daysEmployed: s.daysEmployed || 0,
+    payslipCount: s.payslipCount,
+    lifetimeTax: s.lifetimeTax,
     leaveDays: s.leaveDays,
   };
 }
 
-router.get('/trophies', (req, res) => {
-  const values = trophyValues();
-
-  const knownUnlocks = {};
-  for (const row of db.prepare('SELECT * FROM v3_trophy_unlocks').all()) {
-    knownUnlocks[row.code] = row.unlocked_at;
+function formatValue(unit, v) {
+  switch (unit) {
+    case 'money': return '£' + Number(v).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+    case 'hours': return round1(v) + 'h';
+    case 'miles': return round1(v) + ' mi';
+    case 'days':  return round1(v) + (Math.abs(v) === 1 ? ' day' : ' days');
+    case 'pct':   return round1(v) + '%';
+    case 'mins':  return v >= 120 ? round1(v / 60) + 'h' : Math.round(v) + ' min';
+    default:      return String(Math.round(v));
   }
+}
+
+router.get('/trophies', async (req, res) => {
+  const bhDates = await bankHolidayDates();
+  const stats = careerStats({ bankHolidayDates: bhDates });
+  const values = trophyValues(stats);
+
+  const unlocks = {};
+  for (const row of db.prepare('SELECT * FROM v3_trophy_unlocks').all()) unlocks[row.code] = row.unlocked_at;
   const remember = db.prepare('INSERT OR IGNORE INTO v3_trophy_unlocks (code) VALUES (?)');
 
-  const results = TROPHIES.map(t => {
-    const value = values[t.stat] || 0;
-    // Once won, always won — a persisted unlock outranks a stat that has since fallen.
-    const nowEarned = value >= t.need;
-    if (nowEarned && !knownUnlocks[t.code]) {
-      remember.run(t.code);
-      knownUnlocks[t.code] = new Date().toISOString();
-    }
+  let earnedTiers = 0, totalTiers = 0;
+  const byTier = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
+
+  const families = FAMILIES.map(f => {
+    const value = values[f.stat] || 0;
+
+    const tiers = f.need.map((need, i) => {
+      const tier = TIERS[i];
+      const code = `${f.code}_${tier}`;
+      const hit = value >= need;
+      if (hit && !unlocks[code]) { remember.run(code); unlocks[code] = new Date().toISOString(); }
+      const earned = hit || !!unlocks[code];
+      totalTiers++;
+      if (earned) { earnedTiers++; byTier[tier]++; }
+      return {
+        tier, label: TIER_LABEL[tier], code, need,
+        need_label: formatValue(f.unit, need),
+        earned,
+        unlocked_at: unlocks[code] || null,
+      };
+    });
+
+    const highest = [...tiers].reverse().find(t => t.earned) || null;
+    const next = tiers.find(t => !t.earned) || null;
+    // Progress is measured within the current tier band, so a bar near the end
+    // means "nearly at the next medal", not "nearly at platinum".
+    const bandFrom = next ? (TIERS.indexOf(next.tier) === 0 ? 0 : f.need[TIERS.indexOf(next.tier) - 1]) : 0;
+    const bandPct = next
+      ? Math.max(0, Math.min(100, ((value - bandFrom) / (next.need - bandFrom)) * 100))
+      : 100;
+
     return {
-      ...t,
+      code: f.code, icon: f.icon, name: f.name, blurb: f.blurb, unit: f.unit,
+      dynamic: !!f.dynamic,
       value: round1(value),
-      earned: nowEarned || !!knownUnlocks[t.code],
-      progress_pct: Math.min(100, Math.round((value / t.need) * 1000) / 10),
-      unlocked_at: knownUnlocks[t.code] || null,
+      value_label: formatValue(f.unit, value),
+      tiers,
+      earned_count: tiers.filter(t => t.earned).length,
+      highest_tier: highest ? highest.tier : null,
+      next_tier: next
+        ? { tier: next.tier, label: next.label, need: next.need, need_label: next.need_label,
+            remaining: round1(Math.max(0, next.need - value)),
+            remaining_label: formatValue(f.unit, Math.max(0, next.need - value)) }
+        : null,
+      progress_pct: Math.round(bandPct * 10) / 10,
+      complete: !next,
     };
   });
 
-  const earned = results.filter(t => t.earned);
-  // Earned first (rarest at the top), then locked ones sorted by how close they are.
-  results.sort((a, b) => {
-    if (a.earned !== b.earned) return a.earned ? -1 : 1;
-    if (a.earned) return TIER_ORDER[b.tier] - TIER_ORDER[a.tier];
+  // Complete families sink; the rest sort by how close the next medal is.
+  const sorted = [...families].sort((a, b) => {
+    if (a.complete !== b.complete) return a.complete ? 1 : -1;
+    if (b.earned_count !== a.earned_count) return b.earned_count - a.earned_count;
     return b.progress_pct - a.progress_pct;
   });
 
   res.json({
-    trophies: results,
-    earned_count: earned.length,
-    total_count: TROPHIES.length,
-    completion_pct: Math.round((earned.length / TROPHIES.length) * 1000) / 10,
-    by_tier: ['bronze', 'silver', 'gold', 'platinum'].map(tier => ({
-      tier,
-      earned: earned.filter(t => t.tier === tier).length,
-      total: TROPHIES.filter(t => t.tier === tier).length,
+    families: sorted,
+    earned_tiers: earnedTiers,
+    total_tiers: totalTiers,
+    completion_pct: totalTiers ? Math.round((earnedTiers / totalTiers) * 1000) / 10 : 0,
+    families_complete: families.filter(f => f.complete).length,
+    family_count: families.length,
+    by_tier: TIERS.map(tier => ({
+      tier, label: TIER_LABEL[tier], earned: byTier[tier], total: FAMILIES.length,
     })),
+    store: { active_colleagues: stats.activeColleagues, worked_with: stats.distinctColleagues },
     stats: values,
   });
 });
 
 module.exports = router;
-module.exports.TROPHIES = TROPHIES;
+module.exports.FAMILIES = FAMILIES;
