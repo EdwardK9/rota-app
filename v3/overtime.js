@@ -13,11 +13,44 @@
 
 const express = require('express');
 const {
-  db, localDateStr, mondayOf, addDays, paidHours, shiftPay,
+  db, getNumSetting, localDateStr, parseDate, mondayOf, addDays, paidHours, shiftPay,
   contractHoursForDate, rateForDate, round1, round2, pct,
 } = require('./helpers');
 
 const router = express.Router();
+
+/** Leave hours falling in each ISO week, spread across the weekdays each entry
+ *  covers.
+ *
+ *  This matters more than it sounds. A week you were on holiday is not a week
+ *  you failed to hit your contract — but without this, a booked fortnight shows
+ *  up as two weeks at -20h and drags the whole picture down. Christmas and
+ *  Easter weeks were the worst offenders. */
+function leaveHoursByWeek(from, to, hoursPerDay) {
+  const rows = db.prepare(
+    'SELECT * FROM leave_entries WHERE end_date >= ? AND start_date <= ?'
+  ).all(from, to);
+
+  const out = {};
+  for (const l of rows) {
+    // Leave is booked in working days, so spread it across weekdays only
+    const days = [];
+    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) {
+      const dow = parseDate(d).getDay();
+      if (dow !== 0 && dow !== 6) days.push(d);
+    }
+    if (!days.length) continue;
+
+    const totalHours = l.hours_taken != null ? l.hours_taken : (l.days_taken || 0) * hoursPerDay;
+    const perDay = totalHours / days.length;
+    for (const day of days) {
+      if (day < from || day > to) continue;
+      const wk = mondayOf(day);
+      out[wk] = (out[wk] || 0) + perDay;
+    }
+  }
+  return out;
+}
 
 router.get('/overtime', (req, res) => {
   const year = req.query.year && req.query.year !== 'all' ? String(req.query.year) : null;
@@ -43,15 +76,35 @@ router.get('/overtime', (req, res) => {
     byWeek[wk].shifts += 1;
   }
 
+  const hoursPerDay = getNumSetting('hours_per_day', 7.4);
+  const leaveByWeek = leaveHoursByWeek(from, to, hoursPerDay);
+
+  // Weeks with leave but no shifts never appear in byWeek, so seed them —
+  // otherwise a full week off is invisible rather than accounted for.
+  for (const wk of Object.keys(leaveByWeek)) {
+    if (wk >= mondayOf(from) && wk <= to) (byWeek[wk] ||= { hours: 0, pay: 0, shifts: 0 });
+  }
+
   const weeks = Object.entries(byWeek).sort((a, b) => a[0].localeCompare(b[0])).map(([week, v]) => {
     const contracted = contractHoursForDate(week) || 0;
-    const extra = round1(v.hours - contracted);
+    const leaveHours = round1(leaveByWeek[week] || 0);
+    // Booked leave reduces what you were expected to work that week. Take a full
+    // week off and the target is zero, not twenty.
+    const target = Math.max(0, round1(contracted - leaveHours));
+    const extra = round1(v.hours - target);
     const rate = rateForDate(week) || 0;
     return {
       week,
       week_end: addDays(week, 6),
       hours: round1(v.hours),
       contracted,
+      leave_hours: leaveHours,
+      target,
+      on_leave: leaveHours > 0,
+      // A week is only written off when leave covers the whole target AND you
+      // genuinely didn't work — booking leave and then working anyway (cancelled
+      // holiday, covering a shift) is real work and has to still count.
+      full_leave: target <= 0.05 && v.hours <= 0.05,
       extra,
       // Only weeks fully in the past are judged — a part-worked current week
       // always looks short and would drag every average down.
@@ -62,7 +115,9 @@ router.get('/overtime', (req, res) => {
     };
   });
 
-  const complete = weeks.filter(w => !w.partial && w.contracted > 0);
+  // Judged weeks: finished, contracted, and not written off entirely by leave.
+  const complete = weeks.filter(w => !w.partial && w.contracted > 0 && !w.full_leave);
+  const leaveWeeks = weeks.filter(w => !w.partial && w.full_leave);
   const over  = complete.filter(w => w.extra > 0.05);
   const under = complete.filter(w => w.extra < -0.05);
   const exact = complete.filter(w => Math.abs(w.extra) <= 0.05);
@@ -79,22 +134,29 @@ router.get('/overtime', (req, res) => {
   const byMonth = {};
   for (const w of complete) {
     const m = w.week.slice(0, 7);
-    (byMonth[m] ||= { extra: 0, hours: 0, contracted: 0 });
+    (byMonth[m] ||= { extra: 0, hours: 0, contracted: 0, leave: 0 });
     byMonth[m].extra += w.extra;
     byMonth[m].hours += w.hours;
-    byMonth[m].contracted += w.contracted;
+    byMonth[m].contracted += w.target;   // leave-adjusted, same basis as `extra`
+    byMonth[m].leave += w.leave_hours;
   }
 
   res.json({
     year: year || 'all',
     range: { from, to },
+    hours_per_day: hoursPerDay,
     weeks: weeks.slice(-104),          // the chart never needs more than two years
     totals: {
       weeks_counted: complete.length,
       weeks_over: over.length,
       weeks_under: under.length,
       weeks_exact: exact.length,
+      weeks_on_leave: leaveWeeks.length,
+      weeks_with_some_leave: complete.filter(w => w.on_leave).length,
       over_pct: pct(over.length, complete.length),
+      // The headline. Netting the short weeks off against this reads as "you
+      // barely went over" when you might have worked 48 extra hours and taken a
+      // fortnight's holiday — two separate facts that shouldn't cancel out.
       extra_hours: totalExtra,
       short_hours: totalShort,
       net_hours: round1(totalExtra - totalShort),
@@ -116,6 +178,7 @@ router.get('/overtime', (req, res) => {
         extra: round1(v.extra),
         hours: round1(v.hours),
         contracted: round1(v.contracted),
+        leave_hours: round1(v.leave),
       })),
     today,
   });
