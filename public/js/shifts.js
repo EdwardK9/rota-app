@@ -190,26 +190,18 @@ const ShiftsView = {
       for (const entry of leaveEntries) {
         const fullStart = new Date(entry.start_date + 'T00:00:00');
         const fullEnd   = new Date(entry.end_date   + 'T00:00:00');
-        // Count working days in the full entry
-        let workingDays = 0;
-        const counter = new Date(fullStart);
-        while (counter <= fullEnd) {
-          if (counter.getDay() >= 1 && counter.getDay() <= 5) workingDays++;
-          counter.setDate(counter.getDate() + 1);
-        }
-        if (workingDays === 0) continue;
+        // Screwfix trades 7 days a week and this rota rotates across all of them,
+        // so there's no such thing as an inherently "non-working" day here — every
+        // calendar day the leave entry covers could have been a rostered shift.
+        // The hours entered for the leave period are spread evenly across every
+        // day it covers, weekend included, rather than only Mon–Fri.
+        const totalDays = Math.round((fullEnd - fullStart) / 86400000) + 1;
+        if (totalDays <= 0) continue;
         const totalHours = entry.hours_taken != null ? entry.hours_taken : (entry.days_taken * hpdSetting);
-        const hoursPerDay = totalHours / workingDays;
+        const hoursPerDay = totalHours / totalDays;
 
-        // Walk every calendar day in the leave range, not just Mon–Fri — a leave
-        // entry that spans a weekend (e.g. a week off that includes a Sat/Sun you'd
-        // otherwise have been rostered) still needs a row for those days, even
-        // though no *paid* hours are attributed to them. Skipping weekend dates
-        // entirely made them vanish from the week view rather than show as leave.
         const cur = new Date(fullStart);
         while (cur <= fullEnd) {
-          const dow = cur.getDay();
-          const isWeekday = dow >= 1 && dow <= 5;
           const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
           // Only include dates in the current month (not adjacent months)
           if (dateStr >= currentMonthStart && dateStr <= currentMonthEnd) {
@@ -217,8 +209,7 @@ const ShiftsView = {
               date: dateStr,
               _isLeave: true,
               _leaveType: entry.leave_type || 'annual',
-              _leaveHours: isWeekday ? hoursPerDay : 0,
-              _nonWorkingDay: !isWeekday,
+              _leaveHours: hoursPerDay,
               _leaveEntryId: entry.id,
             });
           }
@@ -458,9 +449,7 @@ const ShiftsView = {
     // ── Render helper for a leave row ─────────────────────────────────────────
     const leaveRow = (l) => {
       const leaveLabel = l._leaveType === 'annual' ? 'Annual Leave' : (l._leaveType || 'Leave');
-      const detail = l._nonWorkingDay
-        ? `${leaveLabel} &nbsp;·&nbsp; <span style="color:var(--text-muted)">not a working day — no hours deducted</span>`
-        : `${leaveLabel} &nbsp;·&nbsp; ${fmtHours(l._leaveHours)} paid hrs`;
+      const detail = `${leaveLabel} &nbsp;·&nbsp; ${fmtHours(l._leaveHours)} paid hrs`;
       return `
         <tr class="leave-row" style="background:rgba(40,167,69,0.07);border-left:3px solid var(--success);" data-leave-id="${l._leaveEntryId}">
           <td></td>

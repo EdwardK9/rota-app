@@ -13,19 +13,25 @@
 
 const express = require('express');
 const {
-  db, getNumSetting, localDateStr, parseDate, mondayOf, addDays, paidHours, shiftPay,
+  db, getNumSetting, localDateStr, mondayOf, addDays, paidHours, shiftPay,
   contractHoursForDate, rateForDate, round1, round2, pct,
 } = require('./helpers');
 
 const router = express.Router();
 
-/** Leave hours falling in each ISO week, spread across the weekdays each entry
+/** Leave hours falling in each ISO week, spread across every day each entry
  *  covers.
  *
  *  This matters more than it sounds. A week you were on holiday is not a week
  *  you failed to hit your contract — but without this, a booked fortnight shows
  *  up as two weeks at -20h and drags the whole picture down. Christmas and
- *  Easter weeks were the worst offenders. */
+ *  Easter weeks were the worst offenders.
+ *
+ *  Screwfix trades 7 days a week and this rota rotates across all of them, so
+ *  weekends are not skipped here — a Saturday or Sunday is as much a working
+ *  day as any other. Leave that lands entirely on a weekend used to spread
+ *  across zero days and vanish, leaving that week's target untouched and still
+ *  reading as a shortfall. */
 function leaveHoursByWeek(from, to, hoursPerDay) {
   const rows = db.prepare(
     'SELECT * FROM leave_entries WHERE end_date >= ? AND start_date <= ?'
@@ -33,12 +39,8 @@ function leaveHoursByWeek(from, to, hoursPerDay) {
 
   const out = {};
   for (const l of rows) {
-    // Leave is booked in working days, so spread it across weekdays only
     const days = [];
-    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) {
-      const dow = parseDate(d).getDay();
-      if (dow !== 0 && dow !== 6) days.push(d);
-    }
+    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) days.push(d);
     if (!days.length) continue;
 
     const totalHours = l.hours_taken != null ? l.hours_taken : (l.days_taken || 0) * hoursPerDay;
