@@ -13,6 +13,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rota" />
   <link rel="stylesheet" href="/css/style.css?v=20260817b" />
+  <!-- V3.0 feature styles — separate file so the whole feature set stays liftable -->
+  <link rel="stylesheet" href="/css/v3.css?v=20260821a" />
 </head>
 <body>
   <!-- Sidebar -->
@@ -96,6 +98,27 @@
         </ul>
       </li>
 
+      <li class="nav-group" data-group="v3">
+        <button class="nav-group-header" type="button">
+          <span class="nav-icon">✨</span><span class="nav-label">V3.0 Features</span>
+          <span class="nav-chevron">▸</span>
+        </button>
+        <ul class="nav-sublinks">
+          <li><a href="#" class="nav-link" data-view="money-clock"><span class="nav-icon">💸</span><span class="nav-label">Money Clock</span></a></li>
+          <li><a href="#" class="nav-link" data-view="countdowns"><span class="nav-icon">⏳</span><span class="nav-label">Countdown Board</span></a></li>
+          <li><a href="#" class="nav-link" data-view="goals"><span class="nav-icon">🎯</span><span class="nav-label">Goal Tracker</span></a></li>
+          <li><a href="#" class="nav-link" data-view="forecast"><span class="nav-icon">🔮</span><span class="nav-label">Pay Forecast</span></a></li>
+          <li><a href="#" class="nav-link" data-view="trophies"><span class="nav-icon">🏆</span><span class="nav-label">Trophy Cabinet</span></a></li>
+          <li><a href="#" class="nav-link" data-view="records"><span class="nav-icon">📖</span><span class="nav-label">Record Book</span></a></li>
+          <li><a href="#" class="nav-link" data-view="shift-dna"><span class="nav-icon">🧬</span><span class="nav-label">Shift DNA</span></a></li>
+          <li><a href="#" class="nav-link" data-view="balance"><span class="nav-icon">⚖️</span><span class="nav-label">Work-Life Balance</span></a></li>
+          <li><a href="#" class="nav-link" data-view="break-debt"><span class="nav-icon">☕</span><span class="nav-label">Break Debt</span></a></li>
+          <li><a href="#" class="nav-link" data-view="commute-cost"><span class="nav-icon">⛽</span><span class="nav-label">Commute Cost</span></a></li>
+          <li><a href="#" class="nav-link" data-view="on-this-day"><span class="nav-icon">📼</span><span class="nav-label">On This Day</span></a></li>
+          <li><a href="#" class="nav-link" data-view="bingo"><span class="nav-icon">🎲</span><span class="nav-label">Rota Bingo</span></a></li>
+        </ul>
+      </li>
+
       <li class="nav-group" data-group="tools">
         <button class="nav-group-header" type="button">
           <span class="nav-icon">🧰</span><span class="nav-label">Tools</span>
@@ -162,6 +185,20 @@
       <div id="view-whos-in" class="view hidden"></div>
       <div id="view-clock" class="view hidden"></div>
       <div id="view-key" class="view hidden"></div>
+
+      <!-- V3.0 Features -->
+      <div id="view-money-clock" class="view hidden"></div>
+      <div id="view-countdowns" class="view hidden"></div>
+      <div id="view-goals" class="view hidden"></div>
+      <div id="view-forecast" class="view hidden"></div>
+      <div id="view-trophies" class="view hidden"></div>
+      <div id="view-records" class="view hidden"></div>
+      <div id="view-shift-dna" class="view hidden"></div>
+      <div id="view-balance" class="view hidden"></div>
+      <div id="view-break-debt" class="view hidden"></div>
+      <div id="view-commute-cost" class="view hidden"></div>
+      <div id="view-on-this-day" class="view hidden"></div>
+      <div id="view-bingo" class="view hidden"></div>
   </main>
 
   <!-- Modal -->
@@ -216,7 +253,25 @@
   <script src="/js/clockInOut.js?v=20260711a" defer></script>
   <script src="/js/dashboard.js?v=20260817b" defer></script>
   <script src="/js/key.js?v=20260711a" defer></script>
-  <script src="/js/app.js?v=20260817b" defer></script>
+
+  <!-- V3.0 Features. v3core.js must come first — it defines the V3 namespace and
+       the register() each view calls at load time. app.js stays last: it reads
+       V3.views/V3.titles when routing, so everything must already be registered. -->
+  <script src="/js/v3/v3core.js?v=20260821a" defer></script>
+  <script src="/js/v3/moneyClock.js?v=20260821a" defer></script>
+  <script src="/js/v3/countdowns.js?v=20260821a" defer></script>
+  <script src="/js/v3/goals.js?v=20260821a" defer></script>
+  <script src="/js/v3/forecast.js?v=20260821a" defer></script>
+  <script src="/js/v3/trophies.js?v=20260821a" defer></script>
+  <script src="/js/v3/records.js?v=20260821a" defer></script>
+  <script src="/js/v3/shiftDna.js?v=20260821a" defer></script>
+  <script src="/js/v3/balance.js?v=20260821a" defer></script>
+  <script src="/js/v3/breakDebt.js?v=20260821a" defer></script>
+  <script src="/js/v3/commuteCost.js?v=20260821a" defer></script>
+  <script src="/js/v3/onThisDay.js?v=20260821a" defer></script>
+  <script src="/js/v3/bingo.js?v=20260821a" defer></script>
+
+  <script src="/js/app.js?v=20260821a" defer></script>
   <script>
     // PWA: register the (no-cache, passthrough) service worker so the app is installable
     if ('serviceWorker' in navigator) {

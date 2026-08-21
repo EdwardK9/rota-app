@@ -1,0 +1,211 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   V3.0 Features — styles
+   Loaded after style.css and scoped to .v3-* classes so it can be dropped in
+   or pulled out without touching the main stylesheet. Everything here inherits
+   the existing CSS custom properties, so dark mode comes for free; the handful
+   of cases that need an explicit dark rule are grouped at the bottom.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Shared layout ──────────────────────────────────────────────────────── */
+.v3-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.v3-grid-sm { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.v3-grid-lg { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+
+.v3-intro {
+  font-size: 13px; color: var(--text-muted); margin-bottom: 16px;
+  max-width: 680px; line-height: 1.5;
+}
+.v3-section-title {
+  font-size: 15px; font-weight: 700; margin: 24px 0 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.v3-loading { text-align: center; padding: 40px; color: var(--text-muted); }
+.v3-error   { color: var(--danger); padding: 20px; }
+.v3-muted   { color: var(--text-muted); font-size: 12.5px; }
+.v3-note {
+  font-size: 12px; color: var(--text-muted); line-height: 1.5;
+  border-left: 3px solid var(--border); padding-left: 10px; margin-top: 14px;
+}
+
+/* ── Hero panel (Money Clock, Balance, Forecast headline) ───────────────── */
+.v3-hero {
+  border-radius: 16px; padding: 26px 24px; color: #fff;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15); margin-bottom: 18px;
+}
+.v3-hero-label { font-size: 13px; opacity: 0.85; font-weight: 500; letter-spacing: 0.3px; }
+.v3-hero-value { font-size: 44px; font-weight: 800; line-height: 1.05; margin: 6px 0; font-variant-numeric: tabular-nums; }
+.v3-hero-sub   { font-size: 13px; opacity: 0.9; line-height: 1.5; }
+
+/* Thin progress bar drawn on a hero panel */
+.v3-hero-bar {
+  height: 8px; border-radius: 999px; background: rgba(255,255,255,0.25);
+  overflow: hidden; margin-top: 16px;
+}
+.v3-hero-bar > span { display: block; height: 100%; background: #fff; border-radius: 999px; transition: width 0.6s ease; }
+
+/* ── Generic progress bar on a card ─────────────────────────────────────── */
+.v3-bar {
+  height: 8px; border-radius: 999px; background: var(--bg);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.v3-bar > span {
+  display: block; height: 100%; background: var(--primary);
+  border-radius: 999px; transition: width 0.5s ease;
+}
+.v3-bar.success > span { background: var(--success); }
+.v3-bar.danger  > span { background: var(--danger); }
+.v3-bar.warning > span { background: var(--warning); }
+.v3-bar.info    > span { background: var(--info); }
+
+/* ── Stat tiles ─────────────────────────────────────────────────────────── */
+.v3-tile {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; box-shadow: var(--card-shadow);
+}
+.v3-tile-label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.v3-tile-value { font-size: 24px; font-weight: 800; margin-top: 5px; font-variant-numeric: tabular-nums; }
+.v3-tile-sub   { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Trophy Cabinet ─────────────────────────────────────────────────────── */
+.v3-trophy {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; position: relative; overflow: hidden;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.v3-trophy:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
+.v3-trophy-icon { font-size: 34px; line-height: 1; }
+.v3-trophy-name { font-weight: 700; font-size: 14.5px; margin: 8px 0 4px; }
+.v3-trophy-desc { font-size: 12px; color: var(--text-muted); line-height: 1.45; min-height: 34px; }
+.v3-trophy-foot { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; display: flex; justify-content: space-between; gap: 8px; }
+
+.v3-trophy.locked { opacity: 0.62; }
+.v3-trophy.locked .v3-trophy-icon { filter: grayscale(1); }
+.v3-trophy.earned::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 4px;
+}
+.v3-trophy.earned.bronze::before   { background: #C2803B; }
+.v3-trophy.earned.silver::before   { background: #9CA3AF; }
+.v3-trophy.earned.gold::before     { background: #E0B012; }
+.v3-trophy.earned.platinum::before { background: linear-gradient(180deg, #7DD3FC, #C084FC); }
+
+.v3-tier-chip {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted);
+}
+.v3-tier-chip.bronze   { color: #C2803B; border-color: rgba(194,128,59,0.45); }
+.v3-tier-chip.silver   { color: #6B7280; border-color: rgba(156,163,175,0.5); }
+.v3-tier-chip.gold     { color: #B98A05; border-color: rgba(224,176,18,0.5); }
+.v3-tier-chip.platinum { color: #7C3AED; border-color: rgba(192,132,252,0.5); }
+
+/* ── Record Book ────────────────────────────────────────────────────────── */
+.v3-record {
+  display: flex; align-items: center; gap: 14px; padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.v3-record:last-child { border-bottom: none; }
+.v3-record-icon  { font-size: 24px; width: 32px; text-align: center; flex-shrink: 0; }
+.v3-record-body  { flex: 1; min-width: 0; }
+.v3-record-title { font-size: 13px; color: var(--text-muted); }
+.v3-record-value { font-size: 17px; font-weight: 700; margin-top: 1px; }
+.v3-record-meta  { text-align: right; font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+
+/* ── Shift DNA traits ───────────────────────────────────────────────────── */
+.v3-trait { margin-bottom: 14px; }
+.v3-trait-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; margin-bottom: 5px;
+}
+.v3-trait-score { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ── Rota Bingo ─────────────────────────────────────────────────────────── */
+.v3-bingo {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+  max-width: 620px;
+}
+.v3-bingo-cell {
+  aspect-ratio: 1; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card-bg); padding: 6px 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: 3px; transition: all var(--transition);
+}
+.v3-bingo-cell .icon { font-size: 19px; line-height: 1; }
+.v3-bingo-cell .text { font-size: 9.5px; line-height: 1.2; color: var(--text-muted); }
+.v3-bingo-cell.ticked {
+  background: rgba(16,185,129,0.12); border-color: var(--success);
+}
+.v3-bingo-cell.ticked .text { color: var(--text); font-weight: 600; }
+.v3-bingo-cell.winning {
+  background: var(--primary); border-color: var(--primary-dark);
+  box-shadow: 0 0 0 2px rgba(255,214,0,0.35);
+}
+.v3-bingo-cell.winning .text { color: var(--primary-text); }
+.v3-bingo-cell.free { background: rgba(59,130,246,0.12); border-color: var(--info); }
+
+/* ── Countdown Board ────────────────────────────────────────────────────── */
+.v3-countdown {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; display: flex; gap: 14px; align-items: flex-start;
+}
+.v3-countdown-icon  { font-size: 26px; line-height: 1; flex-shrink: 0; }
+.v3-countdown-title { font-weight: 700; font-size: 14px; }
+.v3-countdown-clock {
+  font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
+  margin: 4px 0 2px; color: var(--primary-dark);
+}
+.v3-countdown-detail { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+.v3-countdown.imminent .v3-countdown-clock { color: var(--success); }
+.v3-countdown.past .v3-countdown-clock { color: var(--text-muted); }
+
+/* ── Bar chart (Commute Cost, Break Debt, Balance trend) ────────────────── */
+.v3-chart {
+  display: flex; align-items: flex-end; gap: 4px; height: 150px;
+  padding: 10px 0 0; overflow-x: auto;
+}
+.v3-chart-col {
+  flex: 1 0 22px; display: flex; flex-direction: column; justify-content: flex-end;
+  align-items: center; height: 100%; gap: 4px;
+}
+.v3-chart-bar {
+  width: 100%; max-width: 34px; background: var(--info); border-radius: 4px 4px 0 0;
+  min-height: 2px; transition: height 0.5s ease;
+}
+.v3-chart-bar.warning { background: var(--warning); }
+.v3-chart-bar.danger  { background: var(--danger); }
+.v3-chart-bar.success { background: var(--success); }
+.v3-chart-label { font-size: 9.5px; color: var(--text-muted); white-space: nowrap; }
+
+/* ── Goal cards ─────────────────────────────────────────────────────────── */
+.v3-goal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.v3-goal-figures {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin: 12px 0 8px; font-variant-numeric: tabular-nums;
+}
+.v3-goal-progress { font-size: 26px; font-weight: 800; }
+
+/* ── Hour histogram (Shift DNA) ─────────────────────────────────────────── */
+.v3-hours { display: flex; align-items: flex-end; gap: 2px; height: 90px; }
+.v3-hour-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+.v3-hour-bar { width: 100%; background: var(--primary); border-radius: 3px 3px 0 0; min-height: 2px; }
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .v3-hero-value { font-size: 34px; }
+  .v3-bingo { gap: 5px; }
+  .v3-bingo-cell { border-radius: 8px; padding: 3px 2px; }
+  .v3-bingo-cell .icon { font-size: 15px; }
+  .v3-bingo-cell .text { font-size: 7.5px; }
+  .v3-record { padding: 11px 12px; gap: 10px; }
+}
+
+/* ── Dark mode touch-ups ────────────────────────────────────────────────── */
+[data-theme="dark"] .v3-bingo-cell.ticked { background: rgba(16,185,129,0.16); }
+[data-theme="dark"] .v3-bingo-cell.free   { background: rgba(59,130,246,0.16); }
+[data-theme="dark"] .v3-countdown-clock   { color: var(--primary); }
+[data-theme="dark"] .v3-tier-chip.silver  { color: #9CA3AF; }
+[data-theme="dark"] .v3-tier-chip.gold    { color: #E0B012; }
+[data-theme="dark"] .v3-tier-chip.platinum{ color: #C084FC; }
+[data-theme="dark"] .v3-trophy:hover      { box-shadow: 0 6px 16px rgba(0,0,0,0.4); }

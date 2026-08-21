@@ -18,6 +18,8 @@ const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
 const webhooksRouter = require('./webhooks');
 const exportsV2Router = require('./exportsV2');
+// V3.0 feature set — self-contained under v3/, mounted as a single router.
+const v3Router = require('./v3');
 const gcal = require('./google-calendar');
 
 const app = express();
@@ -47,6 +49,7 @@ app.use('/api', teamMetricsRouter);
 app.use('/api', fatigueAuditRouter);
 app.use('/api', webhooksRouter);
 app.use('/api', exportsV2Router);
+app.use('/api/v3', v3Router);
 
 // Version readout — lets the running app be identified at a glance (sidebar footer),
 // so it's obvious whether the latest push has actually deployed.

@@ -21,6 +21,7 @@ A self-hosted Node.js web application for tracking your work shifts, pay, leave,
    - [Settings](#settings)
    - [Backup & Restore](#backup--restore)
    - [Notifications (ntfy)](#notifications-ntfy)
+   - [V3.0 Features](#v30-features)
 5. [Deployment on TrueNAS](#deployment-on-truenas)
    - [File Structure](#file-structure)
    - [How to Update the App](#how-to-update-the-app)
@@ -387,6 +388,46 @@ The app can send push notifications to your phone using [ntfy](https://ntfy.sh) 
 
 ---
 
+### V3.0 Features
+
+Twelve extra views under the **✨ V3.0 Features** section of the sidebar. They are all
+read-only lenses on data the app already holds — apart from the Goal Tracker, none of
+them ask you to enter anything new, and nothing here changes an existing shift.
+
+| Feature | What it does |
+|---------|--------------|
+| 💸 **Money Clock** | Live earnings ticker for the shift you're currently on, plus today/week/month/year/lifetime totals and a countdown to payday (inferred from your real payslip dates). |
+| ⏳ **Countdown Board** | Next shift, home time, next day off, payday, booked leave, bank holiday, birthdays and work anniversary — all ticking live on one board. |
+| 🎯 **Goal Tracker** | Set a money, hours or shifts target. Tracks progress from real shifts, projects a finish date from your actual pace, and tells you whether the rota you've already got booked gets you there. |
+| 🔮 **Pay Forecast** | Projects the tax year to 5 April — gross, income tax, NI and take-home — built from banked payslips, worked-but-unpaid shifts, booked rota and a contracted-hours estimate for the rest. Includes your "tax freedom day". |
+| 🏆 **Trophy Cabinet** | 31 achievements that unlock automatically from your history, across four rarity tiers, with progress bars on the locked ones. |
+| 📖 **Record Book** | Personal bests: longest shift, earliest start, latest finish, biggest week, biggest payslip, longest run of days worked, and lifetime totals. |
+| 🧬 **Shift DNA** | Six traits scored from the shape of your rota (Early Bird, Night Owl, Endurance, Consistency, Variety, Sociability) resolving to an archetype like "The Closer" or "The Weekend Warrior". |
+| ⚖️ **Work-Life Balance** | A 0–100 sustainability score over the last N weeks, broken into rest days, weekends off, turnaround time, breaks and longest run — plus an hours-vs-contract trend. |
+| ☕ **Break Debt** | Pay always deducts the *scheduled* break, so any break you skipped is unpaid time. This totals those minutes, prices them, and tracks whether it's getting better or worse. |
+| ⛽ **Commute Cost** | Fuel, wear and parking for the drive to work, and how many minutes of every shift you work purely to cover it. Car settings live in the view itself. |
+| 📼 **On This Day** | What you were doing on this date in previous years — the shift, the crew, the pay, any note — plus milestones landing today. |
+| 🎲 **Rota Bingo** | A 5×5 card for the week whose squares tick themselves from real shifts. The card is dealt from the week's date, so it's the same card every time you look at that week. |
+
+**Where the code lives.** V3 is deliberately self-contained so it can be changed or removed
+without disturbing the rest of the app:
+
+```
+v3/                    server: one router per feature, mounted at /api/v3
+  index.js             mounts every feature; the FEATURES list is the single source of truth
+  helpers.js           shared date/pay/number helpers
+  stats.js             one-pass career stats shared by trophies/records/DNA
+  schema.js            V3-owned tables only, all prefixed v3_
+public/js/v3/          client: one view per feature
+  v3core.js            V3 namespace, API surface, shared render helpers, view registry
+public/css/v3.css      V3 styles, all scoped to .v3-*
+```
+
+`server.js` gains one `require` and one `app.use('/api/v3', v3Router)`. `app.js` looks V3 views
+up in the registry rather than naming them, so adding a thirteenth feature needs no router change.
+
+---
+
 ## Deployment on TrueNAS
 
 ### File Structure
@@ -649,6 +690,27 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 | DELETE | `/api/calendar-notes/:id` | Delete a note |
 | GET | `/api/backup` | Download full backup as JSON |
 | POST | `/api/restore` | Restore from a backup JSON |
+
+### V3.0 Features
+| Method | Endpoint | Description |
+|--------|---------|-------------|
+| GET | `/api/v3/features` | List the V3 feature set |
+| GET | `/api/v3/money-clock` | Live earnings state, totals and payday countdown |
+| GET | `/api/v3/countdowns` | Every upcoming date with a live ISO target |
+| GET | `/api/v3/goals` | Goals with live progress |
+| POST | `/api/v3/goals` | Create a goal |
+| PUT | `/api/v3/goals/:id` | Update a goal |
+| DELETE | `/api/v3/goals/:id` | Delete a goal |
+| GET | `/api/v3/forecast` | Tax-year projection — optional `?tax_year=YYYY` |
+| GET | `/api/v3/trophies` | Achievements with progress and unlock dates |
+| GET | `/api/v3/records` | Personal bests and lifetime totals |
+| GET | `/api/v3/shift-dna` | Trait scores and archetype — optional `?year=YYYY\|all` |
+| GET | `/api/v3/balance` | Work-life balance score — optional `?weeks=N` |
+| GET | `/api/v3/break-debt` | Unpaid break time — optional `?year=YYYY\|all` |
+| GET | `/api/v3/commute-cost` | Commute cost — optional `?year=YYYY\|all` |
+| POST | `/api/v3/commute-cost/settings` | Save MPG / fuel price / parking / wear |
+| GET | `/api/v3/on-this-day` | Same date in previous years — optional `?date=YYYY-MM-DD` |
+| GET | `/api/v3/bingo` | Weekly bingo card — optional `?week=YYYY-MM-DD` |
 
 ---
 

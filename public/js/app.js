@@ -128,7 +128,10 @@ const App = {
     // Stop the outgoing view's timers/polls before switching — without this they
     // keep running in the background for the rest of the session (accumulating one
     // more set of intervals every time that view is revisited).
-    const outgoingView = { dashboard: DashboardView, 'whos-in': WhosInView, clock: ClockInOutView }[this.currentView];
+    // V3 views register themselves, so the router looks them up rather than
+    // naming each one — a new V3 feature needs no change here.
+    const outgoingView = { dashboard: DashboardView, 'whos-in': WhosInView, clock: ClockInOutView }[this.currentView]
+      || (typeof V3 !== 'undefined' ? V3.views[this.currentView] : null);
     outgoingView?.destroy?.();
 
     // Hide all views
@@ -173,6 +176,8 @@ const App = {
       'clock': '🕐 Clock In/Out',
       'key': '🔑 Key'
     };
+    // V3 views supply their own titles at registration time
+    if (typeof V3 !== 'undefined') Object.assign(titles, V3.titles);
     document.getElementById('topbarTitle').textContent = titles[view] || view;
     this.currentView = view;
 
@@ -212,6 +217,10 @@ const App = {
       case 'whos-in':       await WhosInView.init(); break;
       case 'clock':         await ClockInOutView.init(); break;
       case 'key':           await KeyView.init(); break;
+      default:
+        // V3.0 features — resolved from the registry rather than a case each
+        if (typeof V3 !== 'undefined' && V3.views[view]) await V3.views[view].init();
+        break;
     }
     } catch(navErr) {
       console.error('[navigate] error in view "' + view + '":', navErr);
