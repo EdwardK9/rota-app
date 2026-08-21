@@ -10,15 +10,23 @@
 
    Thresholds are calibrated against a real retail rota — a "long shift" is 8
    paid hours, not 12 — because a target nobody can physically reach isn't an
-   achievement, it's a bug. `dynamic` families compute their thresholds from
-   your own data instead (see The Whole Store).
+   achievement, it's a bug.
+
+   `monthly` families measure the current calendar month rather than a
+   lifetime total, so their headline value can go back down on the 1st — but
+   any medal already won stays won (see the unlock table below).
+
+   Once all four medals in a family are won, `capped` decides what happens
+   next: capped families (a hard physical ceiling — a shift can only be so
+   long) just sit at platinum; everything else keeps issuing further
+   "Platinum ×N" targets forever, so a card never goes stale.
 
    Unlock dates are persisted per tier (v3_trophy_unlocks), so a trophy stays
    won even if the underlying stat later dips.
    ───────────────────────────────────────────────────────────────────────── */
 
 const express = require('express');
-const { db, paidHours, round1 } = require('./helpers');
+const { db, round1 } = require('./helpers');
 const { careerStats } = require('./stats');
 const { bankHolidayDates } = require('./bankHolidays');
 require('./schema');
@@ -28,10 +36,14 @@ const router = express.Router();
 const TIERS = ['bronze', 'silver', 'gold', 'platinum'];
 const TIER_LABEL = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold', platinum: 'Platinum' };
 
-/* stat  — key into the computed stat bag
-   need  — [bronze, silver, gold, platinum] thresholds
-   unit  — how the value reads ('count' | 'hours' | 'money' | 'miles' | 'mins' | 'days' | 'pct')
-   dynamic — thresholds derived from your data at request time                */
+/* stat    — key into the computed stat bag
+   need    — [bronze, silver, gold, platinum] thresholds
+   unit    — how the value reads ('count' | 'hours' | 'money' | 'miles' | 'mins' | 'days')
+   monthly — the underlying stat is a "this calendar month" value rather than a
+             lifetime total, so it can go back down — medals already earned still
+             stay earned (see the unlock table), but the headline value resets.
+   capped  — the stat has a real physical ceiling (a shift can only be so long,
+             a crew can only be so big), so there's no "platinum ×2" rollover.  */
 const FAMILIES = [
   // ── The basics ─────────────────────────────────────────────────────────
   { code: 'shifts', icon: '📋', name: 'Shifts Worked', unit: 'count',
@@ -55,14 +67,14 @@ const FAMILIES = [
     blurb: 'Shifts starting at or before 07:00.',
     stat: 'earlyStarts', need: [5, 25, 75, 150] },
   { code: 'late_finishes', icon: '🦉', name: 'Night Owl', unit: 'count',
-    blurb: 'Shifts finishing at or after 20:00.',
+    blurb: 'Shifts finishing at or after 19:00.',
     stat: 'lateFinishes', need: [5, 25, 75, 150] },
   { code: 'bank_holidays', icon: '🎆', name: 'Someone Has to Do It', unit: 'count',
     blurb: 'Bank holidays worked — matched against the real calendar, not just the double-pay flag.',
     stat: 'bankHolidayShifts', need: [1, 3, 6, 12] },
-  { code: 'long_shift', icon: '🥵', name: 'The Long Haul', unit: 'hours',
-    blurb: 'Your longest single shift, in paid hours.',
-    stat: 'longestShiftHours', need: [6, 7, 8, 9] },
+  { code: 'long_shift', icon: '🥵', name: 'The Long Haul', unit: 'hours', monthly: true, capped: true,
+    blurb: 'Your longest single shift this month, in paid hours. Resets on the 1st — every month is a fresh shot at it.',
+    stat: 'longestShiftHoursThisMonth', need: [5, 6, 7, 8] },
   { code: 'streak', icon: '🔁', name: 'On the Trot', unit: 'days',
     blurb: 'Longest run of consecutive days worked.',
     stat: 'longestStreakDays', need: [4, 6, 8, 10] },
@@ -74,6 +86,9 @@ const FAMILIES = [
   { code: 'punctual', icon: '⏰', name: 'Never Late', unit: 'count',
     blurb: 'Clock-ins at or before your start time, with five minutes grace.',
     stat: 'punctualCount', need: [10, 50, 150, 300] },
+  { code: 'stays_late', icon: '🚪', name: 'Sees It Through', unit: 'count',
+    blurb: 'Clock-outs at or after your shift end time, with five minutes grace.',
+    stat: 'punctualOutCount', need: [10, 50, 150, 300] },
   { code: 'keen_bean', icon: '🐦', name: 'Keen Bean', unit: 'count',
     blurb: 'Clock-ins a full 10 minutes or more before your shift started.',
     stat: 'earlyBy10Count', need: [5, 20, 50, 100] },
@@ -82,28 +97,23 @@ const FAMILIES = [
     stat: 'totalEarlyMins', need: [60, 300, 900, 1800] },
 
   // ── People ─────────────────────────────────────────────────────────────
-  { code: 'colleagues', icon: '👥', name: 'Knows Everyone', unit: 'count',
-    blurb: 'Different colleagues you have shared a shift with.',
-    stat: 'distinctColleagues', need: [5, 15, 30, 50] },
-  // Dynamic: the target is the store itself, so a new starter puts it back out
-  // of reach until you have worked with them too.
-  { code: 'whole_store', icon: '🏪', name: 'The Whole Store', unit: 'pct', dynamic: true,
-    blurb: 'Share of the current team you have worked alongside. A new starter moves the goalposts.',
-    stat: 'storeCoveragePct', need: [50, 75, 90, 100] },
-  { code: 'full_crew', icon: '🚒', name: 'Full Crew', unit: 'count',
-    blurb: 'Most colleagues overlapping a single one of your shifts.',
-    stat: 'biggestCrewCount', need: [3, 5, 7, 10] },
+  { code: 'crew_month', icon: '👥', name: 'Most Colleagues on a Shift', unit: 'count', monthly: true, capped: true,
+    blurb: 'Most colleagues sharing a single shift with you this month. Resets on the 1st — a small team means this is always close.',
+    stat: 'biggestCrewThisMonth', need: [3, 5, 7, 10] },
 
   // ── Discipline & admin ─────────────────────────────────────────────────
   { code: 'breaks', icon: '☕', name: 'Break Taker', unit: 'count',
     blurb: 'Shifts where you took your full break.',
     stat: 'breaksFull', need: [25, 75, 150, 300] },
+  { code: 'no_break', icon: '⚡', name: 'No Time to Stop', unit: 'count',
+    blurb: 'Shifts where you skipped your break entirely.',
+    stat: 'breaksSkipped', need: [10, 30, 75, 150] },
   { code: 'payslips', icon: '🧾', name: 'Paper Trail', unit: 'count',
     blurb: 'Payslips logged.',
     stat: 'payslipCount', need: [3, 12, 24, 36] },
   { code: 'taxman', icon: '🎩', name: 'Funding the Nation', unit: 'money',
     blurb: 'Income tax and National Insurance paid.',
-    stat: 'lifetimeTax', need: [500, 2000, 5000, 10000] },
+    stat: 'lifetimeTax', need: [100, 300, 600, 1000] },
   { code: 'miles', icon: '🚗', name: 'Road Warrior', unit: 'miles',
     blurb: 'Miles driven to work.',
     stat: 'totalMiles', need: [100, 500, 1500, 3000] },
@@ -124,31 +134,35 @@ function trophyValues(s) {
     earlyStarts: s.earlyStarts,
     lateFinishes: s.lateFinishes,
     bankHolidayShifts: s.bankHolidayShifts,
-    longestShiftHours: s.longestShift ? round1(paidHours(s.longestShift)) : 0,
+    longestShiftHoursThisMonth: s.longestShiftHoursThisMonth,
     longestStreakDays: s.longestStreakDays,
     clockIns: s.clockIns,
     punctualCount: s.punctualCount,
+    punctualOutCount: s.punctualOutCount,
     earlyBy10Count: s.earlyBy10Count,
     totalEarlyMins: s.totalEarlyMins,
-    distinctColleagues: s.distinctColleagues,
-    storeCoveragePct: s.storeCoveragePct,
-    biggestCrewCount: s.biggestCrewDay.count,
+    biggestCrewThisMonth: s.biggestCrewThisMonth,
     breaksFull: s.breaksFull,
+    breaksSkipped: s.breaksSkipped,
     payslipCount: s.payslipCount,
     lifetimeTax: s.lifetimeTax,
     leaveDays: s.leaveDays,
   };
 }
 
+// Rounds *down* to one decimal place. Displayed values must never round up
+// past a medal's threshold — 4.97h showing as "5h" made Time Donated look
+// like silver (5h) was already earned when it wasn't.
+const floor1 = v => Math.floor(v * 10) / 10;
+
 function formatValue(unit, v) {
   switch (unit) {
-    case 'money': return '£' + Number(v).toLocaleString('en-GB', { maximumFractionDigits: 0 });
-    case 'hours': return round1(v) + 'h';
-    case 'miles': return round1(v) + ' mi';
-    case 'days':  return round1(v) + (Math.abs(v) === 1 ? ' day' : ' days');
-    case 'pct':   return round1(v) + '%';
-    case 'mins':  return v >= 120 ? round1(v / 60) + 'h' : Math.round(v) + ' min';
-    default:      return String(Math.round(v));
+    case 'money': return '£' + Math.floor(v).toLocaleString('en-GB');
+    case 'hours': return floor1(v) + 'h';
+    case 'miles': return floor1(v) + ' mi';
+    case 'days':  return floor1(v) + (Math.abs(v) === 1 ? ' day' : ' days');
+    case 'mins':  return v >= 120 ? floor1(v / 60) + 'h' : Math.floor(v) + ' min';
+    default:      return String(Math.floor(v));
   }
 }
 
@@ -184,22 +198,48 @@ router.get('/trophies', async (req, res) => {
     });
 
     const highest = [...tiers].reverse().find(t => t.earned) || null;
-    const next = tiers.find(t => !t.earned) || null;
+    let next = tiers.find(t => !t.earned) || null;
     // Progress is measured within the current tier band, so a bar near the end
     // means "nearly at the next medal", not "nearly at platinum".
-    const bandFrom = next ? (TIERS.indexOf(next.tier) === 0 ? 0 : f.need[TIERS.indexOf(next.tier) - 1]) : 0;
+    let bandFrom = next ? (TIERS.indexOf(next.tier) === 0 ? 0 : f.need[TIERS.indexOf(next.tier) - 1]) : 0;
+
+    // All four medals are already in the cabinet. For anything without a hard
+    // physical ceiling, that's not the end — keep issuing further platinum
+    // targets (each one another step of the gold→platinum gap) so there's
+    // always something to chase, rather than the card going stale forever.
+    let platinumLevel = 0;
+    if (!next && !f.capped) {
+      const increment = Math.max(1, f.need[3] - f.need[2]);
+      let lvl = 0;
+      while (true) {
+        lvl++;
+        const code = `${f.code}_platinum_${lvl}`;
+        const need = f.need[3] + lvl * increment;
+        const hit = value >= need;
+        if (hit && !unlocks[code]) { remember.run(code); unlocks[code] = new Date().toISOString(); }
+        if (hit || unlocks[code]) { platinumLevel = lvl; continue; }
+        next = {
+          tier: 'platinum', label: `Platinum ×${lvl + 1}`, code, need,
+          need_label: formatValue(f.unit, need), earned: false, unlocked_at: null,
+        };
+        bandFrom = f.need[3] + (lvl - 1) * increment;
+        break;
+      }
+    }
+
     const bandPct = next
       ? Math.max(0, Math.min(100, ((value - bandFrom) / (next.need - bandFrom)) * 100))
       : 100;
 
     return {
       code: f.code, icon: f.icon, name: f.name, blurb: f.blurb, unit: f.unit,
-      dynamic: !!f.dynamic,
+      dynamic: !!f.dynamic, monthly: !!f.monthly,
       value: round1(value),
       value_label: formatValue(f.unit, value),
       tiers,
       earned_count: tiers.filter(t => t.earned).length,
       highest_tier: highest ? highest.tier : null,
+      platinum_level: platinumLevel,
       next_tier: next
         ? { tier: next.tier, label: next.label, need: next.need, need_label: next.need_label,
             remaining: round1(Math.max(0, next.need - value)),
@@ -227,7 +267,6 @@ router.get('/trophies', async (req, res) => {
     by_tier: TIERS.map(tier => ({
       tier, label: TIER_LABEL[tier], earned: byTier[tier], total: FAMILIES.length,
     })),
-    store: { active_colleagues: stats.activeColleagues, worked_with: stats.distinctColleagues },
     stats: values,
   });
 });

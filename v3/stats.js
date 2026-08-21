@@ -61,6 +61,7 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
   // start_time, so "latest finish" ranks them by span rather than clock value.
   const finishMinsOf = s => toMins(s.start_time) + spanMins(s.start_time, s.end_time);
   let longestShift = null, shortestShift = null, earliestStart = null, latestFinish = null, bestPaidShift = null;
+  const shiftHoursByMonth = {};
   for (const s of shifts) {
     const hrs = paidHours(s);
     if (!longestShift  || hrs > paidHours(longestShift))  longestShift  = s;
@@ -68,7 +69,10 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
     if (!earliestStart || toMins(s.start_time) < toMins(earliestStart.start_time)) earliestStart = s;
     if (!latestFinish || finishMinsOf(s) > finishMinsOf(latestFinish)) latestFinish = s;
     if (!bestPaidShift || (shiftPay(s) || 0) > (shiftPay(bestPaidShift) || 0)) bestPaidShift = s;
+    const shMo = s.date.slice(0, 7);
+    if (!shiftHoursByMonth[shMo] || hrs > shiftHoursByMonth[shMo]) shiftHoursByMonth[shMo] = hrs;
   }
+  const longestShiftHoursThisMonth = round1(shiftHoursByMonth[today.slice(0, 7)] || 0);
 
   // Weekly / monthly aggregates
   const byWeek = {}, byMonth = {}, byDow = [0, 0, 0, 0, 0, 0, 0], byStartHour = {};
@@ -101,6 +105,7 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
   for (const cs of colShifts) (colByDate[cs.date] ||= []).push(cs);
   const colleagueIds = new Set();
   let biggestCrewDay = { date: null, count: 0 };
+  const crewByMonth = {};
   for (const s of shifts) {
     const crew = new Set();
     for (const cs of colByDate[s.date] || []) {
@@ -110,7 +115,10 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
       }
     }
     if (crew.size > biggestCrewDay.count) biggestCrewDay = { date: s.date, count: crew.size };
+    const crMo = s.date.slice(0, 7);
+    if (!crewByMonth[crMo] || crew.size > crewByMonth[crMo]) crewByMonth[crMo] = crew.size;
   }
+  const biggestCrewThisMonth = crewByMonth[today.slice(0, 7)] || 0;
 
   // Store size, for the "worked with everyone" trophy. Counts colleagues who
   // haven't left, so a new starter genuinely moves the goalposts.
@@ -136,6 +144,7 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
   `).all();
 
   let punctualCount = 0, earlyBy10Count = 0, totalEarlyMins = 0, totalLateMins = 0;
+  let punctualOutCount = 0;
   let earliestClockIn = null, biggestEarly = null, biggestLate = null, longestOnSite = null;
   const clockDetail = [];
   for (const r of clockRows) {
@@ -154,6 +163,11 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
       if (mins < 0) mins += 1440;
       if (!longestOnSite || mins > longestOnSite.mins) longestOnSite = { ...r, mins };
       clockDetail.push({ date: r.date, mins, diff });
+
+      // Mirrors the arrival grace: leaving at or after your end time (or up to
+      // 5 minutes before it) counts as seeing the shift through.
+      const diffOut = toMins(r.clocked_out) - toMins(r.end_time);
+      if (diffOut >= -5) punctualOutCount++;
     }
   }
 
@@ -180,8 +194,11 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
     bankHolidayShifts: shifts.filter(isBH).length,
     bankHolidayList: shifts.filter(isBH).map(s => s.date),
     earlyStarts: shifts.filter(s => toMins(s.start_time) <= 7 * 60).length,
-    lateFinishes: shifts.filter(s => finishMinsOf(s) >= 20 * 60).length,
+    // 19:00, not 20:00 — the store now closes at 19:15, so nothing finishes as
+    // late as the old 8pm bar any more.
+    lateFinishes: shifts.filter(s => finishMinsOf(s) >= 19 * 60).length,
     longestShift, shortestShift, earliestStart, latestFinish, bestPaidShift,
+    longestShiftHoursThisMonth,
     bestWeekByHours:  topBy(byWeek, 'hours'),
     bestWeekByPay:    topBy(byWeek, 'pay'),
     bestWeekByShifts: topBy(byWeek, 'shifts'),
@@ -193,11 +210,11 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
     runs,
     distinctColleagues: colleagueIds.size,
     activeColleagues, storeCoveragePct,
-    biggestCrewDay,
+    biggestCrewDay, biggestCrewThisMonth,
     breaksFull, breaksPartial, breaksSkipped,
     clockIns: clockRows.length,
     clockRows,
-    punctualCount, earlyBy10Count,
+    punctualCount, punctualOutCount, earlyBy10Count,
     totalEarlyMins: Math.round(totalEarlyMins),
     totalLateMins: Math.round(totalLateMins),
     earliestClockIn, biggestEarly, biggestLate, longestOnSite,

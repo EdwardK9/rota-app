@@ -76,11 +76,14 @@ V3.register('trophies', '🏆 Trophy Cabinet', {
       <div class="v3-note">
         Every trophy has four medals — bronze, silver, gold and platinum — so there is always a next
         target. They unlock automatically from your shifts, clock-ins, payslips and colleagues;
-        once earned a medal stays earned.
+        once earned a medal stays earned, even if the stat behind it later dips.
         <br><br>
-        🏪 <strong>The Whole Store</strong> is measured against your current team
-        (${d.store.worked_with} of ${d.store.active_colleagues} worked with), so when someone new
-        starts it drops back until you have worked a shift with them too.
+        🗓️ A few (marked <em>resets monthly</em>) track the current calendar month rather than your
+        whole history, so their headline number goes back to zero on the 1st — any medal already won
+        stays in the cabinet regardless.
+        <br><br>
+        💎 Medals earned platinum and beyond keep going — ×2, ×3 and so on — for anything without a
+        hard physical ceiling, so a trophy never just sits there finished.
       </div>
     `;
 
@@ -106,6 +109,7 @@ V3.register('trophies', '🏆 Trophy Cabinet', {
           <div class="v3-trophy-icon">${f.icon}</div>
           <div style="text-align:right">
             <div style="font-size:19px;font-weight:800">${f.value_label}</div>
+            ${f.monthly ? '<div class="v3-muted" style="font-size:10.5px">resets monthly</div>' : ''}
             ${f.dynamic ? '<div class="v3-muted" style="font-size:10.5px">moves with the team</div>' : ''}
           </div>
         </div>
@@ -118,7 +122,8 @@ V3.register('trophies', '🏆 Trophy Cabinet', {
                  title="${esc(t.label)} — ${t.earned ? 'earned at' : 'needs'} ${esc(t.need_label)}${
                    t.earned && t.unlocked_at ? ' · unlocked ' + fmtDate(String(t.unlocked_at).slice(0, 10)) : ''}">
               <span class="v3-medal-icon">${t.earned ? MEDAL[t.tier] : '🔒'}</span>
-              <span class="v3-medal-need">${esc(t.need_label)}</span>
+              <span class="v3-medal-need">${esc(t.need_label)}${
+                t.tier === 'platinum' && t.earned && f.platinum_level > 0 ? ` ×${f.platinum_level + 1}` : ''}</span>
             </div>`).join('')}
         </div>
 
