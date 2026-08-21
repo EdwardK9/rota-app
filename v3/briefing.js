@@ -81,7 +81,7 @@ router.get('/briefing', async (req, res) => {
       hours: round1(hours),
       from: prev.date, finished: prev.end_time,
       tight: hours < 12,
-      clopening: hours < 12 && prevEnd >= 20 * 60 && startMins <= 8 * 60,
+      clopening: hours < 12 && prevEnd >= 19 * 60 && startMins <= 8 * 60,
     };
   }
 
@@ -134,7 +134,7 @@ router.get('/briefing', async (req, res) => {
       completed: !!shift.completed,
       notes: shift.notes || null,
       opening: startMins <= 7 * 60,
-      closing: startMins + lengthMins >= 20 * 60,
+      closing: startMins + lengthMins >= 19 * 60,
     },
     crew,
     crew_summary: {

@@ -40,7 +40,7 @@ function profileOf(entries) {
     avg_shift_hours: entries.length ? round1(totalMins / 60 / entries.length) : 0,
     weekend_shifts: entries.filter(e => isWeekend(e.date)).length,
     early_starts: starts.filter(m => m <= 7 * 60).length,
-    late_finishes: finishes.filter(m => m >= 20 * 60).length,
+    late_finishes: finishes.filter(m => m >= 19 * 60).length,
     earliest_start: starts.length ? Math.min(...starts) : null,
     latest_finish: finishes.length ? Math.max(...finishes) : null,
     longest_shift: spans.length ? round1(Math.max(...spans) / 60) : 0,
@@ -97,7 +97,7 @@ router.get('/head-to-head', (req, res) => {
     { key: 'longest',       label: 'Longest shift',      icon: '🥵', mine: me.longest_shift,   theirs: them.longest_shift, unit: 'h' },
     { key: 'weekends',      label: 'Weekend shifts',     icon: '⚔️', mine: me.weekend_shifts,  theirs: them.weekend_shifts },
     { key: 'early',         label: 'Early starts (≤07:00)', icon: '🌅', mine: me.early_starts, theirs: them.early_starts },
-    { key: 'late',          label: 'Late finishes (≥20:00)', icon: '🌙', mine: me.late_finishes, theirs: them.late_finishes },
+    { key: 'late',          label: 'Late finishes (≥19:00)', icon: '🌙', mine: me.late_finishes, theirs: them.late_finishes },
   ].map(r => ({
     ...r,
     leader: Math.abs(r.mine - r.theirs) < 0.05 ? 'tie' : (r.mine > r.theirs ? 'me' : 'them'),

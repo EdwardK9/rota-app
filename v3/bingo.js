@@ -25,7 +25,7 @@ const SQUARES = [
   { code: 'saturday',    icon: '🛒', text: 'Worked a Saturday',          test: f => f.dows.includes(6) },
   { code: 'both_weekend',icon: '😤', text: 'Worked the whole weekend',   test: f => f.dows.includes(0) && f.dows.includes(6) },
   { code: 'opener',      icon: '🌅', text: 'Opened the store',           test: f => f.earliestStart != null && f.earliestStart <= 7 * 60 },
-  { code: 'closer',      icon: '🌙', text: 'Closed the store',           test: f => f.latestFinish != null && f.latestFinish >= 20 * 60 },
+  { code: 'closer',      icon: '🌙', text: 'Closed the store',           test: f => f.latestFinish != null && f.latestFinish >= 19 * 60 },
   { code: 'clopen',      icon: '🔄', text: 'Closed then opened the next day', test: f => f.clopening },
   { code: 'long_shift',  icon: '🥵', text: 'An 8-hour-plus shift',       test: f => f.longestShift >= 8 },
   { code: 'short_shift', icon: '🐁', text: 'A shift under 4 hours',      test: f => f.shortestShift != null && f.shortestShift < 4 },
@@ -107,7 +107,7 @@ function weekFacts(monday) {
     const a = shifts[i - 1], b = shifts[i];
     if (Math.round((parseDate(b.date) - parseDate(a.date)) / 86400000) !== 1) continue;
     const aEnd = toMins(a.start_time) + spanMins(a.start_time, a.end_time);
-    if (aEnd >= 20 * 60 && toMins(b.start_time) <= 8 * 60) clopening = true;
+    if (aEnd >= 19 * 60 && toMins(b.start_time) <= 8 * 60) clopening = true;
   }
 
   // Crew overlap

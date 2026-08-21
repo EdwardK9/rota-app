@@ -76,7 +76,7 @@ router.get('/year-in-numbers', (req, res) => {
       weekend_shifts: rows.filter(s => isWeekend(s.date)).length,
       bank_holidays: rows.filter(s => s.is_bank_holiday).length,
       early_starts: rows.filter(s => toMins(s.start_time) <= 7 * 60).length,
-      late_finishes: rows.filter(s => toMins(s.start_time) + spanMins(s.start_time, s.end_time) >= 20 * 60).length,
+      late_finishes: rows.filter(s => toMins(s.start_time) + spanMins(s.start_time, s.end_time) >= 19 * 60).length,
       breaks_skipped: rows.filter(s => s.break_taken === 'none').length,
       avg_shift: rows.length ? round1(hours / rows.length) : 0,
       colleagues: people.size,
