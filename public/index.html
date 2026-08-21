@@ -104,6 +104,7 @@
           <span class="nav-chevron">▸</span>
         </button>
         <ul class="nav-sublinks">
+          <li><a href="#" class="nav-link" data-view="v3-hub"><span class="nav-icon">✨</span><span class="nav-label">All V3 Features</span></a></li>
           <li><a href="#" class="nav-link" data-view="briefing"><span class="nav-icon">🎒</span><span class="nav-label">Shift Briefing</span></a></li>
           <li><a href="#" class="nav-link" data-view="money-clock"><span class="nav-icon">💸</span><span class="nav-label">Money Clock</span></a></li>
           <li><a href="#" class="nav-link" data-view="countdowns"><span class="nav-icon">⏳</span><span class="nav-label">Countdown Board</span></a></li>
@@ -205,6 +206,7 @@
       <div id="view-commute-cost" class="view hidden"></div>
       <div id="view-on-this-day" class="view hidden"></div>
       <div id="view-bingo" class="view hidden"></div>
+      <div id="view-v3-hub" class="view hidden"></div>
       <div id="view-briefing" class="view hidden"></div>
       <div id="view-overtime" class="view hidden"></div>
       <div id="view-pay-rises" class="view hidden"></div>
@@ -270,6 +272,7 @@
        the register() each view calls at load time. app.js stays last: it reads
        V3.views/V3.titles when routing, so everything must already be registered. -->
   <script src="/js/v3/v3core.js?v=20260821c" defer></script>
+  <script src="/js/v3/hub.js?v=20260821c" defer></script>
   <script src="/js/v3/moneyClock.js?v=20260821c" defer></script>
   <script src="/js/v3/countdowns.js?v=20260821c" defer></script>
   <script src="/js/v3/goals.js?v=20260821c" defer></script>

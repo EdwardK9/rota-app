@@ -49,7 +49,8 @@ V3.register('money-clock', '💸 Money Clock', {
   },
 
   tick() {
-    const live = this.data.live;
+    const d = this.data;
+    const live = d.live;
     const earned = Math.min(live.shift_pay, live.earned_so_far + live.pay_per_second * this._elapsedSinceLoad());
     const elapsedMins = live.elapsed_mins + this._elapsedSinceLoad() / 60;
     const remaining = Math.max(0, live.total_mins - elapsedMins);
@@ -62,8 +63,43 @@ V3.register('money-clock', '💸 Money Clock', {
     const bar = document.getElementById('mcLiveBar');
     if (bar) bar.style.width = pctDone.toFixed(2) + '%';
 
+    // Every total that contains today's shift ticks along with it. The server
+    // counts an in-progress shift at its FULL value, so swap that out for what
+    // has actually been earned so far — otherwise the headline would say £25
+    // while "today" already claimed the whole £60.
+    const accrued = earned - live.shift_pay;                  // negative until the shift ends
+    const hoursAccrued = (live.paid_hours * (Math.min(1, elapsedMins / live.total_mins))) - live.paid_hours;
+
+    set('mcToday',    fmtCurrency(d.totals.today + accrued));
+    set('mcWeek',     fmtCurrency(d.totals.week + accrued));
+    set('mcMonth',    fmtCurrency(d.totals.month + accrued));
+    set('mcYear',     fmtCurrency(d.totals.year + accrued));
+    set('mcLifetime', fmtCurrency(d.totals.lifetime + accrued));
+    set('mcLifetimeHours', (Math.round((d.totals.lifetime_hours + hoursAccrued) * 100) / 100).toFixed(2) + 'h');
+    set('mcAccrued',  fmtCurrency(d.payday.accrued_since_last + accrued));
+
+    const perShift = d.totals.lifetime_shifts
+      ? (d.totals.lifetime + accrued) / d.totals.lifetime_shifts : 0;
+    set('mcPerShift', fmtCurrency(perShift));
+
     // Shift finished while the page was open — refresh so the totals catch up.
     if (remaining <= 0) { this.destroy(); this.load(); }
+  },
+
+  /** Value as it should read right now: mid-shift the server's totals overstate
+   *  today's shift, so the first paint matches what the ticker will show. */
+  _now(total) {
+    const live = this.data.live;
+    if (!live) return total;
+    return total - live.shift_pay + live.earned_so_far;
+  },
+
+  /** Same idea for hours: an in-progress shift only counts pro-rata. */
+  _nowHours(total) {
+    const live = this.data.live;
+    if (!live || !live.total_mins) return total;
+    const done = Math.min(1, live.elapsed_mins / live.total_mins);
+    return total - live.paid_hours + (live.paid_hours * done);
   },
 
   _hm(mins) {
@@ -104,10 +140,12 @@ V3.register('money-clock', '💸 Money Clock', {
       ${hero}
 
       <div class="v3-grid v3-grid-sm" style="margin-bottom:18px">
-        ${V3.tile('This week',  fmtCurrency(d.totals.week))}
-        ${V3.tile('This month', fmtCurrency(d.totals.month))}
-        ${V3.tile('This year',  fmtCurrency(d.totals.year))}
-        ${V3.tile('Current rate', d.current_rate ? fmtCurrency(d.current_rate) + '/hr' : '—')}
+        ${V3.tile('Today',      `<span id="mcToday">${fmtCurrency(this._now(d.totals.today))}</span>`)}
+        ${V3.tile('This week',  `<span id="mcWeek">${fmtCurrency(this._now(d.totals.week))}</span>`)}
+        ${V3.tile('This month', `<span id="mcMonth">${fmtCurrency(this._now(d.totals.month))}</span>`)}
+        ${V3.tile('This year',  `<span id="mcYear">${fmtCurrency(this._now(d.totals.year))}</span>`)}
+        ${V3.tile('Current rate', d.current_rate ? fmtCurrency(d.current_rate) + '/hr' : '—',
+          d.live ? `+${fmtCurrency(d.live.pay_per_second * 60)}/min right now` : '')}
       </div>
 
       <div class="v3-grid v3-grid-lg">
@@ -130,7 +168,7 @@ V3.register('money-clock', '💸 Money Clock', {
                 Earned since last payday (${fmtDate(payday.last_payday)})
                 ${payday.accrued_shifts ? `<br><span style="font-size:11.5px">${payday.accrued_shifts} shift${payday.accrued_shifts === 1 ? '' : 's'} from ${fmtDate(payday.accrued_from)}</span>` : ''}
               </span>
-              <strong>${fmtCurrency(payday.accrued_since_last)}</strong>
+              <strong id="mcAccrued">${fmtCurrency(this._now(payday.accrued_since_last))}</strong>
             </div>
             ${payday.last_net != null ? `
               <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:13px">
@@ -154,11 +192,12 @@ V3.register('money-clock', '💸 Money Clock', {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
               <div>
                 <div class="v3-tile-label">Total earned</div>
-                <div style="font-size:26px;font-weight:800;color:var(--success)">${fmtCurrency(d.totals.lifetime)}</div>
+                <div style="font-size:26px;font-weight:800;color:var(--success)"
+                     id="mcLifetime">${fmtCurrency(this._now(d.totals.lifetime))}</div>
               </div>
               <div>
                 <div class="v3-tile-label">Total hours</div>
-                <div style="font-size:26px;font-weight:800">${d.totals.lifetime_hours}h</div>
+                <div style="font-size:26px;font-weight:800" id="mcLifetimeHours">${this._nowHours(d.totals.lifetime_hours).toFixed(2)}h</div>
               </div>
               <div>
                 <div class="v3-tile-label">Shifts logged</div>
@@ -166,8 +205,8 @@ V3.register('money-clock', '💸 Money Clock', {
               </div>
               <div>
                 <div class="v3-tile-label">Average per shift</div>
-                <div style="font-size:20px;font-weight:700">
-                  ${d.totals.lifetime_shifts ? fmtCurrency(d.totals.lifetime / d.totals.lifetime_shifts) : '—'}
+                <div style="font-size:20px;font-weight:700" id="mcPerShift">
+                  ${d.totals.lifetime_shifts ? fmtCurrency(this._now(d.totals.lifetime) / d.totals.lifetime_shifts) : '—'}
                 </div>
               </div>
             </div>

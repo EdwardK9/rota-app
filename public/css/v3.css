@@ -217,6 +217,33 @@
 }
 .v3-goal-progress { font-size: 26px; font-weight: 800; }
 
+/* ── V3 hub cards ───────────────────────────────────────────────────────── */
+.v3-hub-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  text-align: left; width: 100%; cursor: pointer; font: inherit;
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; color: var(--text);
+  box-shadow: var(--card-shadow);
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+.v3-hub-card:hover {
+  transform: translateY(-2px); border-color: var(--primary);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+}
+.v3-hub-icon  { font-size: 26px; line-height: 1; }
+.v3-hub-name  { font-weight: 700; font-size: 14.5px; margin-top: 4px; }
+.v3-hub-blurb { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+
+/* The sidebar nav scrolls once enough groups are open. Without a hint, items
+   below the fold look like they don't exist — this fades the last few pixels
+   so it reads as "there is more down here". */
+.sidebar-footer { position: relative; }
+.sidebar-footer::before {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 100%;
+  height: 22px; pointer-events: none;
+  background: linear-gradient(to top, var(--sidebar-bg), rgba(0, 0, 0, 0));
+}
+
 /* ── Head to Head ───────────────────────────────────────────────────────── */
 .v3-h2h-row { margin-bottom: 12px; }
 .v3-h2h-label { font-size: 12.5px; color: var(--text-muted); margin-bottom: 4px; }
