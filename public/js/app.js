@@ -21,13 +21,17 @@ const App = {
       document.querySelector('#darkModeToggle .dark-mode-icon').textContent = '☀️';
     }
 
-    // Version readout — shows which deploy is actually running (non-blocking)
+    // Version readout — shows which deploy is actually running (non-blocking).
+    // Clickable through to the changelog rather than adding it as its own
+    // sidebar row — it's already always visible, so it doubles as the entry
+    // point without costing any extra space.
     API.get('/api/version').then(v => {
       const el = document.getElementById('sidebarVersion');
       if (!el) return;
       el.textContent = 'v' + v.version + (v.commit ? ' · ' + v.commit : '');
-      el.title = 'Server started ' + new Date(v.startedAt).toLocaleString('en-GB');
+      el.title = 'Server started ' + new Date(v.startedAt).toLocaleString('en-GB') + ' — click for what\'s new';
     }).catch(() => {});
+    document.getElementById('sidebarVersion')?.addEventListener('click', () => this.navigate('changelog'));
 
     // Load settings first (needed by other views)
     try {
@@ -187,7 +191,7 @@ const App = {
       notes: 'Notes', settings: 'Settings',
       leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
       notifications: '🔔 Notifications',
-      'team-calendar': '🗓️ Team Calendar', 'v2-hub': '🚀 V2.0 Features', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
+      'team-calendar': '🗓️ Team Calendar', 'v2-hub': '🚀 V2.0 Features', 'changelog': '📜 What\'s New', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
       'shift-heatmap': '🔥 Shift Heatmap', 'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
       'streaks': '🏅 Streaks & Badges', 'wrapped': '🎁 Rota Wrapped',
       'manage-people': '👤 Manage People',
@@ -228,6 +232,7 @@ const App = {
       case 'people':        await PeopleView.init(); break;
       case 'team-calendar': await TeamCalendarView.init(); break;
       case 'v2-hub':        V2Hub.init(); break;
+      case 'changelog':     await ChangelogView.init(); break;
       case 'synergy':       await SynergyView.init(); break;
       case 'fatigue-audit': await FatigueAuditView.init(); break;
       case 'shift-heatmap': await ShiftHeatmapView.init(); break;

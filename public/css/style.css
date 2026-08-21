@@ -1072,7 +1072,9 @@ textarea { resize: vertical; min-height: 72px; }
   color: rgba(255,255,255,0.35);
   text-align: center;
   user-select: text;
+  cursor: pointer;
 }
+.sidebar-version:hover { color: rgba(255,255,255,0.65); }
 
 /* ─────────────────────────────────────────
    Bank Holiday Badges

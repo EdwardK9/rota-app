@@ -47,6 +47,9 @@ const API = {
   getSettings:  ()     => API.get('/api/settings'),
   saveSettings: (data) => API.post('/api/settings', data),
 
+  // Changelog
+  getChangelog: () => API.get('/api/changelog'),
+
   // Commute & weather (V2.0 Phase 2.1)
   geocodePostcode:    (postcode) => API.post('/api/commute/geocode', { postcode }),
   getCommuteWeather:  (date, start, end) => API.get(`/api/commute/weather?${new URLSearchParams({ date, start, end })}`),

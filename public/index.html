@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rota" />
-  <link rel="stylesheet" href="/css/style.css?v=20260817b" />
+  <link rel="stylesheet" href="/css/style.css?v=20260821a" />
   <!-- V3.0 feature styles — separate file so the whole feature set stays liftable -->
   <link rel="stylesheet" href="/css/v3.css?v=20260821d" />
 </head>
@@ -145,6 +145,7 @@
     <div id="view-leaderboard" class="view hidden"></div>
     <div id="view-people" class="view hidden"></div>
     <div id="view-team-calendar" class="view hidden"></div>
+    <div id="view-changelog" class="view hidden"></div>
     <div id="view-v2-hub" class="view hidden"></div>
     <div id="view-synergy" class="view hidden"></div>
     <div id="view-team-metrics" class="view hidden"></div>
@@ -204,7 +205,7 @@
   <!-- defer lets the browser fetch all of these in parallel instead of one at a time
        (no attribute = strictly sequential fetch+execute per file); execution still
        happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
-  <script src="/js/api.js?v=20260817c" defer></script>
+  <script src="/js/api.js?v=20260821a" defer></script>
   <script src="/js/utils.js?v=20260821a" defer></script>
   <script src="/js/shifts.js?v=20260708a" defer></script>
   <script src="/js/calendar.js?v=20260629a" defer></script>
@@ -219,6 +220,7 @@
   <script src="/js/people.js?v=20260624d" defer></script>
   <script src="/js/teamcalendar.js?v=20260821a" defer></script>
   <script src="/js/v2hub.js?v=20260821a" defer></script>
+  <script src="/js/changelog.js?v=20260821a" defer></script>
   <script src="/js/synergyScore.js?v=20260821a" defer></script>
   <script src="/js/teamMetrics.js?v=20260821a" defer></script>
   <script src="/js/fatigueAudit.js?v=20260821a" defer></script>
@@ -262,7 +264,7 @@
   <script src="/js/v3/yearInNumbers.js?v=20260821d" defer></script>
   <script src="/js/v3/didYouKnow.js?v=20260821e" defer></script>
 
-  <script src="/js/app.js?v=20260821c" defer></script>
+  <script src="/js/app.js?v=20260821d" defer></script>
   <script>
     // PWA: register the (no-cache, passthrough) service worker so the app is installable
     if ('serviceWorker' in navigator) {
