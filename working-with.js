@@ -445,10 +445,11 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
 
 // A stuck/slow model is functionally the same problem as an overloaded one
 // from the caller's point of view — either way, waiting on it isn't worth it
-// when there are other models to try. 10s is generous for a ~150-token reply;
-// a healthy model answers in 1-3s, so this only ever bites when something's
+// when there are other models to try. 15s is generous even allowing for a
+// "thinking" model's reasoning tokens ahead of the visible reply; a healthy
+// model answers well within that, so this only ever bites when something's
 // genuinely wrong with that specific model right now.
-const GEMINI_TEXT_TIMEOUT_MS = 10000;
+const GEMINI_TEXT_TIMEOUT_MS = 15000;
 
 async function callGeminiOnceText(prompt, apiKey, model) {
   let geminiRes;
@@ -460,7 +461,15 @@ async function callGeminiOnceText(prompt, apiKey, model) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.9, maxOutputTokens: 150 },
+          // maxOutputTokens has to cover more than just the visible reply: several
+          // current Gemini models spend "thinking" tokens out of the same budget
+          // before writing anything visible, so a tight budget here doesn't shorten
+          // the fact — it just eats the whole allowance on reasoning and cuts the
+          // response off after a few words (seen in practice: "You've spent" and
+          // nothing else). 150 was sized for the reply alone; this leaves headroom
+          // for thinking too. The prompt's own "under 220 characters" instruction
+          // is still what actually keeps the fact short.
+          generationConfig: { temperature: 0.9, maxOutputTokens: 800 },
         }),
         signal: AbortSignal.timeout(GEMINI_TEXT_TIMEOUT_MS),
       }

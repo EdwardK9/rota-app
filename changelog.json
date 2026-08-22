@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-21T20:10:06.260Z",
-  "commit": "9855c73",
+  "generated_at": "2026-08-22T08:48:35.100Z",
+  "commit": "dee5b50",
   "entries": [
+    {
+      "version": "4.0.0",
+      "date": "2026-08-21",
+      "summary": "Fix intermittent Dashboard/Shifts slowness, AI-fact loading feedback, two review-found bugs",
+      "details": "Performance — root cause of \"sometimes slow\" on Dashboard and Shifts:\n- The Dashboard hero card awaited a live Open-Meteo call with no timeout,\n  sitting directly on the render path — a slow/flaky response there\n  stalled the whole dashboard, not just the weather badges. Weather is\n  now fetched in the background after the hero paints, filled in if/when\n  it resolves, and the underlying fetch is bounded to 6s.\n- Shifts awaited a gov.uk bank-holidays call with no timeout as part of\n  the same Promise.all as the actual shift data — also bounded to 6s now,\n  so a cold cache can't hang the table indefinitely.\n\nAI fact button: the loading state now says something after 6s/16s (the\nserver may be retrying a busy model) instead of sitting on an unchanging\n\"Thinking of something…\" that reads as stuck.\n\nTwo bugs found and fixed during a self-review pass:\n- On This Day's \"past leave\" query bound the same date to three\n  placeholders, making two of its WHERE clauses mutually exclusive —\n  it never returned a single row, ever. Simplified to the one clause\n  that's actually needed (the JS-side MM-DD filter already does the\n  real \"same calendar day, any year\" matching).\n- Team Calendar's shift-search cache was only invalidated on 3 of the\n  10 mutation paths that can change shift data (bulk delete, delete\n  month/all/colleague variants) — a stale search result's Edit button\n  could point at an already-deleted shift. Now invalidated everywhere."
+    },
     {
       "version": "3.5.3",
       "date": "2026-08-21",
