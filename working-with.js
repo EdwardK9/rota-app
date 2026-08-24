@@ -1093,19 +1093,42 @@ router.post('/colleague-shifts/bulk-set-time', (req, res) => {
   const newEnd = end_time || null;
   if (!newStart && !newEnd) return res.status(400).json({ error: 'start_time and/or end_time required' });
 
-  try {
-    const placeholders = ids.map(() => '?').join(',');
-    const sets = [];
-    const params = [];
-    if (newStart) { sets.push('start_time = ?'); params.push(newStart); }
-    if (newEnd)   { sets.push('end_time = ?');   params.push(newEnd); }
-    const info = db.prepare(
-      `UPDATE colleague_shifts SET ${sets.join(', ')} WHERE shift_type = 'shift' AND id IN (${placeholders})`
-    ).run(...params, ...ids);
-    res.json({ updated: info.changes });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  // One UPDATE covering every id would abort entirely the moment any single
+  // row collides with the (colleague_id, date, start_time) unique index —
+  // e.g. that colleague already has another shift the same day at the new
+  // time — which is exactly the kind of pre-existing data mess this bulk
+  // action tends to get used to clean up. Applying row by row inside a
+  // transaction means one collision only skips that row; everything else
+  // still goes through, and the skipped ones are reported back by name.
+  const sets = [];
+  if (newStart) sets.push('start_time = ?');
+  if (newEnd)   sets.push('end_time = ?');
+  const updateStmt = db.prepare(
+    `UPDATE colleague_shifts SET ${sets.join(', ')} WHERE id = ? AND shift_type = 'shift'`
+  );
+  const lookupStmt = db.prepare(
+    `SELECT cs.date, c.name FROM colleague_shifts cs JOIN colleagues c ON c.id = cs.colleague_id WHERE cs.id = ?`
+  );
+
+  let updated = 0;
+  const conflicts = [];
+  db.transaction(() => {
+    for (const id of ids) {
+      const params = [];
+      if (newStart) params.push(newStart);
+      if (newEnd)   params.push(newEnd);
+      params.push(id);
+      try {
+        const info = updateStmt.run(...params);
+        if (info.changes > 0) updated++;
+      } catch (e) {
+        const row = lookupStmt.get(id);
+        conflicts.push(row ? `${row.name} on ${row.date}` : `shift ${id}`);
+      }
+    }
+  })();
+
+  res.json({ updated, conflicts });
 });
 
 router.post('/colleague-shifts', (req, res) => {

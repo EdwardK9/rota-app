@@ -448,8 +448,15 @@ const TeamCalendarView = {
     if (!confirm(`Change ${ids.length} shift${ids.length !== 1 ? 's' : ''} to ${start || '(unchanged)'}–${end || '(unchanged)'}?`)) return;
 
     try {
-      const { updated } = await API.bulkSetColleagueShiftTime(ids, start || undefined, end || undefined);
-      showToast(`Updated ${updated} shift${updated !== 1 ? 's' : ''}`);
+      const { updated, conflicts } = await API.bulkSetColleagueShiftTime(ids, start || undefined, end || undefined);
+      if (conflicts && conflicts.length) {
+        showToast(
+          `Updated ${updated} shift${updated !== 1 ? 's' : ''} — skipped ${conflicts.length} (already have a shift at that time): ${conflicts.join(', ')}`,
+          'warning'
+        );
+      } else {
+        showToast(`Updated ${updated} shift${updated !== 1 ? 's' : ''}`);
+      }
       this._allShiftsCache = null;
       await this._runSearch();
     } catch (e) {
