@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-24T17:49:45.474Z",
-  "commit": "3839a08",
+  "generated_at": "2026-08-24T18:26:29.986Z",
+  "commit": "f49602d",
   "entries": [
+    {
+      "version": "4.2.0",
+      "date": "2026-08-24",
+      "summary": "Add bulk time-edit to Team Calendar search results",
+      "details": "Search results now have the same checkbox multi-select the Person View\nlist already had, plus a new \"Edit time\" bulk action alongside delete —\nselect every row a mistyped time turned up (e.g. searching \"05:45\") and\ncorrect them all to the right start/end time in one go, instead of\nopening the edit modal on each one individually.\n\nNew POST /api/colleague-shifts/bulk-set-time endpoint updates start\nand/or end time across a set of ids, restricted to shift_type='shift'\nrows so a mixed selection with leave/all_day entries doesn't error."
+    },
     {
       "version": "4.1.0",
       "date": "2026-08-24",
