@@ -1,7 +1,19 @@
 {
-  "generated_at": "2026-08-22T08:48:35.100Z",
-  "commit": "dee5b50",
+  "generated_at": "2026-08-24T17:49:45.474Z",
+  "commit": "3839a08",
   "entries": [
+    {
+      "version": "4.1.0",
+      "date": "2026-08-24",
+      "summary": "Fix team import store-conflict bug, add electric car commute cost, add Weather sidebar link, fix Chameleon archetype bias, fix AI fact reasoning leak, add shift echoes to On This Day",
+      "details": "- Team screenshot import compared incoming shifts against ALL of a\n  colleague's existing shifts for the day regardless of store, so a\n  legitimate different-store shift alongside a home-store one got\n  flagged as a duplicate/conflict instead of coexisting. Existing-shift\n  comparisons are now scoped to the same store context.\n- Commute Cost and the Shift Briefing card only ever modelled a petrol\n  car (MPG + pence/litre), so an electric car's cost was nonsense.\n  Added a fuel type toggle (petrol/electric, miles-per-kWh + pence/kWh)\n  shared by both views via a single costPerMileFor() helper — briefing\n  previously duplicated a petrol-only calc with its own bug.\n- Weather had no sidebar entry, only reachable via V2.0 Features hub.\n  Added a direct link under My Rota.\n- Shift DNA's archetype picker took the first array-declared match\n  among a person's top traits rather than the best one — since variety\n  and social both saturate near 100 for anyone on a busy, varied rota,\n  almost everyone's top three included that pair and The Chameleon (5th\n  in the list) won by default regardless of fit. Now ranks every\n  qualifying archetype by its weaker trait's score and picks the\n  strongest match.\n- The AI fact button could show a truncated reasoning trace instead of\n  the finished fact (thinking models spending the token budget on\n  reasoning before writing anything visible). Thinking is now disabled\n  for 2.5+ models, and a truncated/reasoning-shaped response triggers\n  the existing fallback-model retry instead of reaching the user.\n- On This Day gets a new \"Same shift, other years\" section: any past\n  shift (regardless of calendar date) whose start and end time both\n  land within 30 minutes of today's, grouped exact vs near-miss —\n  doubles as a way to spot a mistyped time (an exact echo across\n  several years next to one 15 minutes off is worth a look)."
+    },
+    {
+      "version": "4.0.1",
+      "date": "2026-08-22",
+      "summary": "Fix AI Bonus Fact getting cut off to a few words",
+      "details": "Several current Gemini models spend \"thinking\" tokens out of the same\nmaxOutputTokens budget before writing anything visible. The fact route's\nbudget of 150 was sized for the reply alone, so on a model that thinks\nfirst, the whole allowance got burned on reasoning and the response was\ncut off after a few words (\"You've spent\", \"Did you know\", nothing else).\nRaised to 800 — the prompt's own \"under 220 characters\" instruction is\nstill what keeps the actual fact short, this just stops truncation eating\nit before it's written. Bumped the per-attempt timeout from 10s to 15s\nto match."
+    },
     {
       "version": "4.0.0",
       "date": "2026-08-21",
