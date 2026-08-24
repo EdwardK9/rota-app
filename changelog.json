@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-24T18:26:29.986Z",
-  "commit": "f49602d",
+  "generated_at": "2026-08-24T18:34:42.855Z",
+  "commit": "8ca35c1",
   "entries": [
+    {
+      "version": "4.2.1",
+      "date": "2026-08-24",
+      "summary": "Fix bulk time-edit failing entirely on one UNIQUE-constraint collision",
+      "details": "The bulk-set-time endpoint ran a single UPDATE across every selected id —\nif any one shift's new time collided with the (colleague_id, date,\nstart_time) unique index (that colleague already has another shift the\nsame day at the new time), SQLite aborted the whole statement and every\nrow failed, not just the conflicting one. That's exactly the kind of\nmessy pre-existing data this bulk action tends to get used to fix.\n\nNow applies row by row inside a transaction: a collision skips just that\nrow, everything else still goes through, and the skipped shifts are\nreported back by name/date instead of a raw SQLite error."
+    },
     {
       "version": "4.2.0",
       "date": "2026-08-24",
