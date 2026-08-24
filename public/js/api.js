@@ -166,6 +166,7 @@ const API = {
   getWhosIn:            (date)      => API.get(date ? `/api/whos-in?date=${date}` : '/api/whos-in'),
   deleteColleagueShift:      (id)   => API.delete(`/api/colleague-shifts/${id}`),
   bulkDeleteColleagueShifts:  (ids)        => API.post('/api/colleague-shifts/bulk-delete', { ids }),
+  bulkSetColleagueShiftTime: (ids, start_time, end_time) => API.post('/api/colleague-shifts/bulk-set-time', { ids, start_time, end_time }),
   deleteAllColleagueShifts:    (colleagueId)         => API.delete(`/api/colleague-shifts/by-colleague/${colleagueId}`),
   deleteColleagueShiftsByMonth: (colleagueId, month) => API.delete(`/api/colleague-shifts/by-colleague/${colleagueId}/month/${month}`),
   deleteAllShiftsByMonth:       (month)               => API.delete(`/api/colleague-shifts/by-month/${month}`),

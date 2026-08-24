@@ -1073,6 +1073,41 @@ router.post('/colleague-shifts/bulk-delete', (req, res) => {
   }
 });
 
+// Bulk-correct a start and/or end time across many shifts at once — e.g. a
+// screenshot that consistently misread "06:45" as "05:45" for a whole batch
+// of people. Only touches shift_type='shift' rows among the given ids (leave
+// and all_day have no meaningful time to correct); anything else is silently
+// left alone rather than erroring, since a mixed selection is easy to make
+// from a search results list.
+router.post('/colleague-shifts/bulk-set-time', (req, res) => {
+  const { ids, start_time, end_time } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array required' });
+  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (start_time !== undefined && start_time !== null && start_time !== '' && !timePattern.test(start_time)) {
+    return res.status(400).json({ error: 'start_time must be HH:MM' });
+  }
+  if (end_time !== undefined && end_time !== null && end_time !== '' && !timePattern.test(end_time)) {
+    return res.status(400).json({ error: 'end_time must be HH:MM' });
+  }
+  const newStart = start_time || null;
+  const newEnd = end_time || null;
+  if (!newStart && !newEnd) return res.status(400).json({ error: 'start_time and/or end_time required' });
+
+  try {
+    const placeholders = ids.map(() => '?').join(',');
+    const sets = [];
+    const params = [];
+    if (newStart) { sets.push('start_time = ?'); params.push(newStart); }
+    if (newEnd)   { sets.push('end_time = ?');   params.push(newEnd); }
+    const info = db.prepare(
+      `UPDATE colleague_shifts SET ${sets.join(', ')} WHERE shift_type = 'shift' AND id IN (${placeholders})`
+    ).run(...params, ...ids);
+    res.json({ updated: info.changes });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/colleague-shifts', (req, res) => {
   const { colleague_id, date, shift_type, start_time, end_time, store } = req.body;
   if (!colleague_id || !date) return res.status(400).json({ error: 'colleague_id and date are required' });

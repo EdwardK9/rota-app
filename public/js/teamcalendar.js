@@ -372,7 +372,31 @@ const TeamCalendarView = {
     }
     const MAX = 150;
     const shown = matches.slice(0, MAX);
+    // Same bulk-selection bar/classes as the Person View list, so one flow
+    // (select rows, act on all of them) works the same way everywhere in
+    // Team Calendar. A "✎ Edit time" action sits alongside delete here —
+    // this is exactly where you land after searching for a mistyped time
+    // like "05:45" across several people, and the fix is the same for all
+    // of them at once.
+    const bulkBar = `
+      <div id="tcBulkBar" style="display:none;align-items:center;gap:10px;padding:10px 12px;
+        background:var(--primary);border-radius:8px;margin-bottom:12px;color:var(--primary-text)">
+        <span id="tcBulkCount" style="font-size:13px;font-weight:600"></span>
+        <button onclick="TeamCalendarView._bulkEditTime()" class="btn btn-ghost"
+          style="background:rgba(255,255,255,0.15);color:var(--primary-text);font-size:12px;padding:4px 10px">
+          ✎ Edit time
+        </button>
+        <button onclick="TeamCalendarView._bulkDeleteSelected()" class="btn btn-ghost"
+          style="background:rgba(255,255,255,0.15);color:var(--primary-text);font-size:12px;padding:4px 10px">
+          🗑 Delete selected
+        </button>
+        <button onclick="TeamCalendarView._clearBulkSelection()" class="btn btn-ghost"
+          style="background:none;color:var(--primary-text);font-size:12px;padding:4px 8px;margin-left:auto">
+          ✕ Clear selection
+        </button>
+      </div>`;
     results.innerHTML = `
+      ${bulkBar}
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px">
         <div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted)">
           ${matches.length} match${matches.length === 1 ? '' : 'es'}${matches.length > MAX ? ` — showing the first ${MAX}, newest first` : ''}
@@ -382,6 +406,12 @@ const TeamCalendarView = {
             <tbody>
               ${shown.map(s => `
                 <tr style="border-bottom:1px solid var(--border)">
+                  <td style="padding:8px 10px;white-space:nowrap">
+                    ${s.shift_type === 'shift'
+                      ? `<input type="checkbox" class="tc-shift-cb" data-id="${s.id}"
+                           style="cursor:pointer;accent-color:var(--primary)" onchange="TeamCalendarView._onBulkCbChange()" />`
+                      : ''}
+                  </td>
                   <td style="padding:8px 10px;white-space:nowrap;font-weight:600">${esc(s.name)}</td>
                   <td style="padding:8px 10px;white-space:nowrap;color:var(--text-muted)">${fmtDate(s.date)}</td>
                   <td style="padding:8px 10px;white-space:nowrap">${
@@ -398,6 +428,33 @@ const TeamCalendarView = {
           </table>
         </div>
       </div>`;
+  },
+
+  async _bulkEditTime() {
+    const checked = [...document.querySelectorAll('.tc-shift-cb:checked')];
+    if (!checked.length) return showToast('No shifts selected', 'error');
+    const ids = checked.map(cb => parseInt(cb.dataset.id, 10));
+
+    const newStart = prompt(`New start time for ${ids.length} shift${ids.length !== 1 ? 's' : ''} (HH:MM, leave blank to keep unchanged):`);
+    if (newStart === null) return; // cancelled
+    const newEnd = prompt(`New end time for ${ids.length} shift${ids.length !== 1 ? 's' : ''} (HH:MM, leave blank to keep unchanged):`);
+    if (newEnd === null) return; // cancelled
+
+    const start = newStart.trim(), end = newEnd.trim();
+    if (!start && !end) return showToast('Enter a start and/or end time', 'error');
+    const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (start && !timeRe.test(start)) return showToast('Start time must be HH:MM', 'error');
+    if (end && !timeRe.test(end)) return showToast('End time must be HH:MM', 'error');
+    if (!confirm(`Change ${ids.length} shift${ids.length !== 1 ? 's' : ''} to ${start || '(unchanged)'}–${end || '(unchanged)'}?`)) return;
+
+    try {
+      const { updated } = await API.bulkSetColleagueShiftTime(ids, start || undefined, end || undefined);
+      showToast(`Updated ${updated} shift${updated !== 1 ? 's' : ''}`);
+      this._allShiftsCache = null;
+      await this._runSearch();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
   },
 
   async _deleteShift(id) {
