@@ -70,6 +70,28 @@ V3.register('on-this-day', '📼 On This Day', {
          </div>`
       : '';
 
+    const shiftEchoes = (d.shift_echoes || []).length ? `
+      <div class="v3-section-title">🔁 Same shift, other years</div>
+      ${d.shift_echoes.map(se => `
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-header">
+            <h2 style="font-size:14px">Today's ${se.shift.start_time}–${se.shift.end_time}
+              — ${se.exact_count} exact match${se.exact_count === 1 ? '' : 'es'}${se.near_count ? `, ${se.near_count} within 30 min` : ''}</h2>
+          </div>
+          <div class="card-body" style="padding:0">
+            ${se.echoes.map(e => `
+              <div class="v3-record">
+                <div class="v3-record-icon">${e.exact ? '🎯' : '🕰️'}</div>
+                <div class="v3-record-body">
+                  <div class="v3-record-title">${esc(e.day_name)} ${fmtDate(e.date)} · ${e.years_ago} year${e.years_ago === 1 ? '' : 's'} ago</div>
+                  <div class="v3-record-value">${e.start_time}–${e.end_time}${e.exact ? '' :
+                    ` <span class="v3-muted" style="font-weight:400">(${e.start_diff_mins}m / ${e.end_diff_mins}m off)</span>`}</div>
+                </div>
+                <div class="v3-record-meta"><div>${e.hours}h</div><div>${fmtCurrency(e.pay)}</div></div>
+              </div>`).join('')}
+          </div>
+        </div>`).join('')}` : '';
+
     const flashbacks = d.flashbacks.length ? `
       <div class="v3-grid v3-grid-lg">
         ${d.flashbacks.map(f => `
@@ -134,7 +156,7 @@ V3.register('on-this-day', '📼 On This Day', {
         this date has cost you ${d.summary.total_hours} hours and earned you ${fmtCurrency(d.summary.total_pay)}.
       </div>` : '';
 
-    el.innerHTML = V3.backButton() + toolbar + milestones + todayLine + flashbacks + pastLeave + summary;
+    el.innerHTML = V3.backButton() + toolbar + milestones + todayLine + shiftEchoes + flashbacks + pastLeave + summary;
 
     const go = date => { this.date = date; this.load(); };
     document.getElementById('otdDate').addEventListener('change', e => go(e.target.value));

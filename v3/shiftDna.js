@@ -200,8 +200,24 @@ router.get('/shift-dna', (req, res) => {
 
   const topKeys = traits.slice(0, 3).map(t => t.key);
   const strong = traits.filter(t => t.score >= 40).map(t => t.key);
-  const def = ARCHETYPES.find(a => a.traits.every(t => topKeys.includes(t) && strong.includes(t)))
-           || ARCHETYPES.find(a => a.traits.every(t => topKeys.includes(t)));
+
+  // Pick the BEST-matching archetype, not the first one declared in the list.
+  // Variety and social both tend to saturate near 100 for anyone on a busy,
+  // varied rota — real retail data — so "variety, social" is in nearly
+  // everyone's top three, and taking the first array match meant almost the
+  // whole team landed on The Chameleon regardless of how well any other pair
+  // actually fit. Ranking every qualifying pair by its weaker trait's score
+  // and taking the strongest one lets a tighter-fitting archetype (Opener,
+  // Workhorse, Anchor, ...) win when the data backs it more convincingly.
+  const bestOf = candidates => candidates.reduce((best, a) => {
+    const strength = Math.min(...a.traits.map(t => scores[t]));
+    return (!best || strength > best.strength) ? { def: a, strength } : best;
+  }, null);
+
+  const strongCandidates = ARCHETYPES.filter(a => a.traits.every(t => topKeys.includes(t) && strong.includes(t)));
+  const anyCandidates = ARCHETYPES.filter(a => a.traits.every(t => topKeys.includes(t)));
+  const picked = bestOf(strongCandidates.length ? strongCandidates : anyCandidates);
+  const def = picked ? picked.def : null;
 
   const archetype = def
     ? { icon: def.icon, name: def.name, blurb: def.blurb, based_on: def.traits.map(t => TRAIT_META[t].label) }

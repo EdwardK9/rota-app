@@ -13,7 +13,7 @@
 
 const express = require('express');
 const {
-  db, getNumSetting, setSetting, localDateStr, paidHours, shiftPay, round1, round2, pct,
+  db, getSetting, getNumSetting, setSetting, localDateStr, paidHours, shiftPay, round1, round2, pct,
 } = require('./helpers');
 
 const router = express.Router();
@@ -22,10 +22,15 @@ const LITRES_PER_GALLON = 4.54609;   // imperial gallon — UK MPG figures
 const HMRC_RATE_PER_MILE = 0.45;     // approved mileage allowance, first 10k miles
 
 /* Editable in the view itself so V3 doesn't need to reach into the Settings
-   screen. Defaults are UK-typical for a small petrol car in 2026. */
+   screen. Defaults are UK-typical for a small petrol car in 2026. Electric
+   fields sit alongside the petrol ones rather than replacing them, so
+   switching fuel_type back and forth doesn't lose whichever you're not
+   currently using. */
 const COST_DEFAULTS = {
   mpg: 45,
   fuel_price_ppl: 139.9,             // pence per litre
+  miles_per_kwh: 3.5,                // typical small-medium EV efficiency
+  elec_price_per_kwh: 27,            // pence per kWh, home charging
   parking_per_shift: 0,
   wear_per_mile: 0.06,               // tyres, servicing, depreciation
 };
@@ -35,22 +40,37 @@ function costSettings() {
   for (const [key, fallback] of Object.entries(COST_DEFAULTS)) {
     cfg[key] = getNumSetting('v3_commute_' + key, fallback);
   }
+  cfg.fuel_type = getSetting('v3_commute_fuel_type', 'petrol') === 'electric' ? 'electric' : 'petrol';
   return cfg;
 }
 
 router.post('/commute-cost/settings', (req, res) => {
   const body = req.body || {};
+  if (body.fuel_type !== undefined) {
+    setSetting('v3_commute_fuel_type', body.fuel_type === 'electric' ? 'electric' : 'petrol');
+  }
   for (const key of Object.keys(COST_DEFAULTS)) {
     if (body[key] === undefined) continue;
     const value = parseFloat(body[key]);
     if (!Number.isFinite(value) || value < 0) {
       return res.status(400).json({ error: `${key} must be a number of 0 or more` });
     }
-    if (key === 'mpg' && value === 0) return res.status(400).json({ error: 'mpg must be greater than 0' });
+    if ((key === 'mpg' || key === 'miles_per_kwh') && value === 0) {
+      return res.status(400).json({ error: `${key} must be greater than 0` });
+    }
     setSetting('v3_commute_' + key, value);
   }
   res.json(costSettings());
 });
+
+/** Cost per mile in £, for whichever fuel type is configured. */
+function costPerMileFor(cfg) {
+  if (cfg.fuel_type === 'electric') {
+    return cfg.miles_per_kwh > 0 ? (cfg.elec_price_per_kwh / 100) / cfg.miles_per_kwh : 0;
+  }
+  const pricePerLitre = cfg.fuel_price_ppl / 100;
+  return cfg.mpg > 0 ? (pricePerLitre * LITRES_PER_GALLON) / cfg.mpg : 0;
+}
 
 router.get('/commute-cost', (req, res) => {
   const year = req.query.year && req.query.year !== 'all' ? String(req.query.year) : null;
@@ -66,8 +86,7 @@ router.get('/commute-cost', (req, res) => {
   const totalHours = round1(shifts.reduce((t, s) => t + paidHours(s), 0));
   const totalPay   = round2(shifts.reduce((t, s) => t + (shiftPay(s) || 0), 0));
 
-  const pricePerLitre = cfg.fuel_price_ppl / 100;
-  const costPerMile   = cfg.mpg > 0 ? (pricePerLitre * LITRES_PER_GALLON) / cfg.mpg : 0;
+  const costPerMile   = costPerMileFor(cfg);
   const fuelCost      = round2(totalMiles * costPerMile);
   const wearCost      = round2(totalMiles * cfg.wear_per_mile);
   const parkingCost   = round2(shifts.length * cfg.parking_per_shift);
@@ -102,7 +121,8 @@ router.get('/commute-cost', (req, res) => {
     };
   });
 
-  const litres = cfg.mpg > 0 ? round1(totalMiles / cfg.mpg * LITRES_PER_GALLON) : 0;
+  const litres = cfg.fuel_type !== 'electric' && cfg.mpg > 0 ? round1(totalMiles / cfg.mpg * LITRES_PER_GALLON) : 0;
+  const kwh    = cfg.fuel_type === 'electric' && cfg.miles_per_kwh > 0 ? round1(totalMiles / cfg.miles_per_kwh) : 0;
 
   res.json({
     year: year || 'all',
@@ -120,6 +140,7 @@ router.get('/commute-cost', (req, res) => {
       per_shift: round2(costPerShift),
       litres_burned: litres,
       tank_fills: litres > 0 ? round1(litres / 45) : 0,   // a typical 45-litre tank
+      kwh_used: kwh,
     },
     impact: {
       pct_of_pay: pct(totalCost, totalPay),
@@ -142,3 +163,7 @@ router.get('/commute-cost', (req, res) => {
 });
 
 module.exports = router;
+// Reused by briefing.js so a single shift's commute cost (fuel or electricity,
+// plus wear) matches this page's numbers instead of a separate petrol-only calc.
+module.exports.costSettings = costSettings;
+module.exports.costPerMileFor = costPerMileFor;

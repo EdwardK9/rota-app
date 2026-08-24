@@ -452,6 +452,17 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
 const GEMINI_TEXT_TIMEOUT_MS = 15000;
 
 async function callGeminiOnceText(prompt, apiKey, model) {
+  // 2.5-series models think by default, spending part of the same maxOutputTokens
+  // budget on an internal reasoning pass before writing anything visible — with a
+  // tight budget that reasoning can run out of room and get cut off mid-thought,
+  // which is what leaked into the fact text once ("Let's use `total_commute_miles`
+  // ... or `total_"). Explicitly turning thinking off routes the whole budget to
+  // the actual answer instead. Non-thinking models (2.0 and earlier) ignore the
+  // field harmlessly.
+  const isThinkingModel = /(\d+)\.(\d+)/.test(model) && parseFloat(model.match(/(\d+)\.(\d+)/).slice(1).join('.')) >= 2.5;
+  const generationConfig = { temperature: 0.9, maxOutputTokens: 800 };
+  if (isThinkingModel) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
   let geminiRes;
   try {
     geminiRes = await fetch(
@@ -469,7 +480,7 @@ async function callGeminiOnceText(prompt, apiKey, model) {
           // nothing else). 150 was sized for the reply alone; this leaves headroom
           // for thinking too. The prompt's own "under 220 characters" instruction
           // is still what actually keeps the fact short.
-          generationConfig: { temperature: 0.9, maxOutputTokens: 800 },
+          generationConfig,
         }),
         signal: AbortSignal.timeout(GEMINI_TEXT_TIMEOUT_MS),
       }
@@ -499,6 +510,16 @@ async function callGeminiOnceText(prompt, apiKey, model) {
   if (!text) {
     const err = new Error('Gemini returned an empty response.');
     err.status = 502;
+    throw err;
+  }
+  // A truncated reasoning trace ("Let's use `total_commute_miles` ... or `total_")
+  // rather than a finished fact — happens when the model runs out of budget
+  // mid-thought. Treat it the same as an overloaded model so the caller retries
+  // with a fallback rather than showing the raw reasoning fragment to the user.
+  if (geminiData?.candidates?.[0]?.finishReason === 'MAX_TOKENS' && /[`*]|^\s*Let'?s\b/i.test(text)) {
+    const err = new Error(`${model} cut off mid-thought before writing the fact.`);
+    err.status = 502;
+    err.overloaded = true;
     throw err;
   }
   return { text, modelUsed: model };
@@ -1325,7 +1346,7 @@ router.post('/colleagues/import-json', (req, res) => {
   `);
   const deleteShiftById = db.prepare('DELETE FROM colleague_shifts WHERE id = ?');
   const existingForDayStmt = db.prepare(
-    'SELECT id, start_time, end_time, shift_type FROM colleague_shifts WHERE colleague_id=? AND date=?'
+    'SELECT id, start_time, end_time, shift_type, store FROM colleague_shifts WHERE colleague_id=? AND date=?'
   );
 
   const batchId = createImportBatch('json', schedule_data.date_range || 'Team schedule JSON import');
@@ -1400,7 +1421,12 @@ router.post('/colleagues/import-json', (req, res) => {
         const overrideKey = `${col.id}|${dayDate}|${start_time}`;
         const override    = overrideMap.get(overrideKey);
 
-        const existingForDay = existingForDayStmt.all(col.id, dayDate);
+        // Only compare against existing rows in the *same* store context — a
+        // home-store shift and a different-store shift on the same day for the
+        // same colleague are legitimately both real (that's what "store" is
+        // for), not a duplicate or a conflict to resolve.
+        const existingForDay = existingForDayStmt.all(col.id, dayDate)
+          .filter(e => (e.store || null) === store);
         const exactMatch = existingForDay.find(e =>
           e.start_time === start_time && e.end_time === end_time && e.shift_type === shift_type
         );

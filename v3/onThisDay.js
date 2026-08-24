@@ -10,8 +10,13 @@
 const express = require('express');
 const {
   db, DAYS, MONTHS, getSetting, localDateStr, parseDate, addDays, daysBetween,
-  overlapMins, paidHours, shiftPay, round1, round2,
+  overlapMins, paidHours, shiftPay, round1, round2, toMins,
 } = require('./helpers');
+
+// How close a start/end time has to be to count as "the same shift" for the
+// echo feature below — close enough to catch a slot that's drifted a little
+// (06:45 vs 07:00) without matching every early shift you've ever worked.
+const ECHO_WINDOW_MINS = 30;
 
 const router = express.Router();
 
@@ -178,6 +183,50 @@ router.get('/on-this-day', (req, res) => {
       ).all(date)
     : [];
 
+  // ── Shift echoes ─────────────────────────────────────────────────────────
+  // Not "same calendar date" like the flashbacks above, but "same shift" —
+  // any past shift, on any date, in a different year, whose start and end
+  // time both land within ECHO_WINDOW_MINS of today's. Two people asked for
+  // this independently in the same breath: a way to spot "I've worked this
+  // exact slot before" even when the calendar date doesn't line up, and it
+  // doubles as a light data-quality net — a shift that's an exact-minute
+  // echo of several others but sits 15 minutes off them all is worth a look.
+  const shiftEchoes = todayShifts.map(shift => {
+    const startMin = toMins(shift.start_time), endMin = toMins(shift.end_time);
+    const candidates = db.prepare(
+      "SELECT * FROM shifts WHERE date != ? AND substr(date,1,4) != ? ORDER BY date DESC"
+    ).all(shift.date, shift.date.slice(0, 4));
+
+    const echoes = candidates
+      .map(c => ({
+        c,
+        startDiff: Math.abs(toMins(c.start_time) - startMin),
+        endDiff: Math.abs(toMins(c.end_time) - endMin),
+      }))
+      .filter(({ startDiff, endDiff }) => startDiff <= ECHO_WINDOW_MINS && endDiff <= ECHO_WINDOW_MINS)
+      .sort((a, b) => (a.startDiff + a.endDiff) - (b.startDiff + b.endDiff) || b.c.date.localeCompare(a.c.date))
+      .map(({ c, startDiff, endDiff }) => ({
+        date: c.date,
+        year: parseInt(c.date.slice(0, 4), 10),
+        years_ago: year - parseInt(c.date.slice(0, 4), 10),
+        day_name: DAYS[parseDate(c.date).getDay()],
+        start_time: c.start_time,
+        end_time: c.end_time,
+        exact: startDiff === 0 && endDiff === 0,
+        start_diff_mins: startDiff,
+        end_diff_mins: endDiff,
+        hours: round1(paidHours(c)),
+        pay: round2(shiftPay(c) || 0),
+      }));
+
+    return {
+      shift: { start_time: shift.start_time, end_time: shift.end_time },
+      exact_count: echoes.filter(e => e.exact).length,
+      near_count: echoes.filter(e => !e.exact).length,
+      echoes: echoes.slice(0, 20),
+    };
+  }).filter(e => e.echoes.length > 0);
+
   res.json({
     date,
     day_name: DAYS[parseDate(date).getDay()],
@@ -193,6 +242,7 @@ router.get('/on-this-day', (req, res) => {
     })),
     flashbacks,
     past_leave: pastLeave,
+    shift_echoes: shiftEchoes,
     milestones,
     summary: {
       years_with_data: flashbacks.length,

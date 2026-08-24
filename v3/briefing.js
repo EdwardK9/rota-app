@@ -12,10 +12,11 @@
 
 const express = require('express');
 const {
-  db, DAYS, getSetting, getNumSetting, localDateStr, parseDate, addDays, daysBetween, mondayOf,
+  db, DAYS, getSetting, localDateStr, parseDate, addDays, daysBetween, mondayOf,
   toMins, spanMins, overlapMins, paidHours, shiftPay, contractHoursForDate, round1, round2,
 } = require('./helpers');
 const { bankHolidayDates } = require('./bankHolidays');
+const { costSettings, costPerMileFor } = require('./commuteCost');
 
 const router = express.Router();
 
@@ -111,9 +112,11 @@ router.get('/briefing', async (req, res) => {
 
   const isBH = !!shift.is_bank_holiday || bhDates.has(shift.date);
   const miles = (shift.distance_miles || 0) * 2;
-  const mpg = getNumSetting('v3_commute_mpg', 45);
-  const ppl = getNumSetting('v3_commute_fuel_price_ppl', 139.9);
-  const fuelCost = mpg > 0 ? round2(miles * ((ppl / 100) * 4.54609) / mpg) : 0;
+  // Same fuel/electric + wear-per-mile settings as the Commute Cost view, so
+  // the two numbers agree instead of this card doing its own petrol-only sum
+  // that ignored electric cars and wear entirely.
+  const commuteCfg = costSettings();
+  const fuelCost = round2(miles * costPerMileFor(commuteCfg));
 
   res.json({
     today,

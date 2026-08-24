@@ -23,13 +23,18 @@ V3.register('commute-cost', '⛽ Commute Cost', {
 
   async saveSettings() {
     const read = id => parseFloat(document.getElementById(id).value);
+    const fuelType = document.getElementById('ccFuelType').value === 'electric' ? 'electric' : 'petrol';
     const payload = {
+      fuel_type: fuelType,
       mpg: read('ccMpg'),
       fuel_price_ppl: read('ccPrice'),
+      miles_per_kwh: read('ccMilesPerKwh'),
+      elec_price_per_kwh: read('ccKwhPrice'),
       parking_per_shift: read('ccParking'),
       wear_per_mile: read('ccWear'),
     };
-    if (!payload.mpg || payload.mpg <= 0) return showToast('MPG must be greater than zero', 'warning');
+    if (fuelType === 'petrol' && (!payload.mpg || payload.mpg <= 0)) return showToast('MPG must be greater than zero', 'warning');
+    if (fuelType === 'electric' && (!payload.miles_per_kwh || payload.miles_per_kwh <= 0)) return showToast('Miles/kWh must be greater than zero', 'warning');
 
     try {
       await V3.api.saveCommuteSettings(payload);
@@ -69,7 +74,9 @@ V3.register('commute-cost', '⛽ Commute Cost', {
       <div class="v3-grid v3-grid-sm" style="margin-bottom:18px">
         ${V3.tile('Per shift',   fmtCurrency(d.cost.per_shift), 'Round trip')}
         ${V3.tile('Per mile',    fmtCurrency(d.cost.per_mile), 'Fuel + wear')}
-        ${V3.tile('Fuel burned', d.cost.litres_burned + ' L', `~${d.cost.tank_fills} tank fills`)}
+        ${s.fuel_type === 'electric'
+          ? V3.tile('Electricity used', d.cost.kwh_used + ' kWh', 'At the wall')
+          : V3.tile('Fuel burned', d.cost.litres_burned + ' L', `~${d.cost.tank_fills} tank fills`)}
         ${V3.tile('Real hourly rate', fmtCurrency(d.impact.net_hourly),
                   `${fmtCurrency(d.impact.gross_hourly)} before travel`, 'warning')}
       </div>
@@ -78,7 +85,7 @@ V3.register('commute-cost', '⛽ Commute Cost', {
         <div class="card">
           <div class="card-header"><h2>🧾 The breakdown</h2></div>
           <div class="card-body">
-            <div style="display:flex;justify-content:space-between;padding:7px 0"><span>⛽ Fuel</span><strong>${fmtCurrency(d.cost.fuel)}</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:7px 0"><span>${s.fuel_type === 'electric' ? '🔌 Electricity' : '⛽ Fuel'}</span><strong>${fmtCurrency(d.cost.fuel)}</strong></div>
             <div style="display:flex;justify-content:space-between;padding:7px 0"><span>🔧 Wear &amp; tear</span><strong>${fmtCurrency(d.cost.wear)}</strong></div>
             <div style="display:flex;justify-content:space-between;padding:7px 0"><span>🅿️ Parking</span><strong>${fmtCurrency(d.cost.parking)}</strong></div>
             <div style="display:flex;justify-content:space-between;padding:10px 0 0;border-top:1px solid var(--border);margin-top:6px">
@@ -100,12 +107,35 @@ V3.register('commute-cost', '⛽ Commute Cost', {
           <div class="card-body">
             <div class="form-row">
               <div class="form-group">
-                <label>Fuel economy (MPG)</label>
-                <input type="number" id="ccMpg" step="0.1" min="1" value="${s.mpg}" />
+                <label>Fuel type</label>
+                <select id="ccFuelType">
+                  <option value="petrol" ${s.fuel_type !== 'electric' ? 'selected' : ''}>⛽ Petrol / diesel</option>
+                  <option value="electric" ${s.fuel_type === 'electric' ? 'selected' : ''}>🔌 Electric</option>
+                </select>
               </div>
-              <div class="form-group">
-                <label>Fuel price (pence/litre)</label>
-                <input type="number" id="ccPrice" step="0.1" min="0" value="${s.fuel_price_ppl}" />
+            </div>
+            <div id="ccPetrolFields" style="${s.fuel_type === 'electric' ? 'display:none' : ''}">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Fuel economy (MPG)</label>
+                  <input type="number" id="ccMpg" step="0.1" min="1" value="${s.mpg}" />
+                </div>
+                <div class="form-group">
+                  <label>Fuel price (pence/litre)</label>
+                  <input type="number" id="ccPrice" step="0.1" min="0" value="${s.fuel_price_ppl}" />
+                </div>
+              </div>
+            </div>
+            <div id="ccElectricFields" style="${s.fuel_type === 'electric' ? '' : 'display:none'}">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Efficiency (miles/kWh)</label>
+                  <input type="number" id="ccMilesPerKwh" step="0.1" min="0.1" value="${s.miles_per_kwh}" />
+                </div>
+                <div class="form-group">
+                  <label>Electricity price (pence/kWh)</label>
+                  <input type="number" id="ccKwhPrice" step="0.1" min="0" value="${s.elec_price_per_kwh}" />
+                </div>
               </div>
             </div>
             <div class="form-row">
@@ -140,5 +170,10 @@ V3.register('commute-cost', '⛽ Commute Cost', {
 
     document.getElementById('ccYear').addEventListener('change', e => { this.year = e.target.value; this.load(); });
     document.getElementById('ccSave').addEventListener('click', () => this.saveSettings());
+    document.getElementById('ccFuelType').addEventListener('change', e => {
+      const isElectric = e.target.value === 'electric';
+      document.getElementById('ccPetrolFields').style.display = isElectric ? 'none' : '';
+      document.getElementById('ccElectricFields').style.display = isElectric ? '' : 'none';
+    });
   },
 });
