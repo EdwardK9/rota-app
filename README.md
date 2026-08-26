@@ -109,6 +109,22 @@ The core of the app. Every shift you work is stored here.
 **Bulk mileage update:**
 - Select multiple shifts and set the same mileage for all of them at once
 
+**Break policy (what the scheduled break should be):**
+
+The break a shift is entitled to depends on its length. The boundaries are strict — an
+exactly 8h00 shift gets 30 minutes, not 45.
+
+| Shift length | Scheduled break |
+|--------------|-----------------|
+| 4h30 or less | none |
+| over 4h30, up to 6h | 15 min |
+| over 6h, up to 8h | 30 min |
+| over 8h | 45 min |
+
+This is what `autoBreakMinutes()` in `server.js` implements, what the break audit on the
+Shifts tab compares against, and what the Data Doctor uses to work out whether a shift's
+hours or its break field is the one that has gone stale.
+
 **Break unused pay:**
 When you take `none` as your break, the app adds the scheduled break minutes back as paid time. The monthly report shows how much extra pay this generates.
 
@@ -409,7 +425,7 @@ The app can send push notifications to your phone using [ntfy](https://ntfy.sh) 
 
 ### V3.0 Features
 
-Twenty-one extra views under the **✨ V3.0 Features** section of the sidebar. They are all
+Twenty-four extra views under the **✨ V3.0 Features** section of the sidebar. They are all
 read-only lenses on data the app already holds — apart from the Goal Tracker, none of
 them ask you to enter anything new, and nothing here changes an existing shift.
 
@@ -435,6 +451,9 @@ them ask you to enter anything new, and nothing here changes an existing shift.
 | 🎲 **Rota Bingo** | A 5×5 card for the week whose squares tick themselves from real shifts. The card is dealt from the week's date, so it's the same card every time you look at that week. |
 | 🏖️ **Leave Optimiser** | Ranks possible leave bookings by how many days off each one actually buys — a day that bridges two rest weekends is worth several. Reads the published rota where it exists and your own weekday pattern past that, labelling which is which, and flags a bank holiday you'd be giving up double pay on. |
 | 🔁 **Cover Finder** | Pick a shift and see who could realistically take it, in the order worth asking: free that day, works that slot anyway, has room under their contract, still active on the rota. Every score shows its reasoning, and it also finds shifts of theirs you could take in exchange. |
+| 🧾 **Pay Audit** | Hours worked against hours paid, as running totals from the start of the tax year so the month-in-arrears timing can't hide a gap. Models the real pay rules — fixed monthly basic, extra hours counted per week — and carries a margin, so only a shortfall that clears it is called one. |
+| 💷 **Tax Check** | Every payslip against what cumulative PAYE should have deducted, plus NI checked per period. Works the allowance back out of the deductions to say what tax code they imply, which is how an emergency code shows itself. Not tax advice. |
+| 🩺 **Data Doctor** | Thirteen integrity checks in one pass: duplicate shifts, bank holidays left unflagged and paying single time, weeks that never imported, hours left stale by an edit, clock records that don't match the rota. Read-only — it points, the existing tools fix. |
 | 🔮 **Rota Crystal Ball** | Projects a week the rota hasn't reached yet — which days, which half of the day, roughly what hours and pay. Backtested on six months of real weeks and reported next to what you'd score by just assuming you work every day (70% vs 58% on the author's data). |
 
 **Where the code lives.** V3 is deliberately self-contained so it can be changed or removed
@@ -756,6 +775,9 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 | GET | `/api/v3/leave-planner` | Leave bookings ranked by days off per day booked — optional `?from=`, `?to=`, `?max_span=N` |
 | GET | `/api/v3/cover-finder` | Who could cover a shift, plus swap options — optional `?date=YYYY-MM-DD` |
 | GET | `/api/v3/crystal-ball` | Projected week with backtested accuracy — optional `?week=YYYY-MM-DD` |
+| GET | `/api/v3/pay-audit` | Hours owed vs hours paid, cumulative — optional `?tax_year=YYYY` (the April it starts in) |
+| GET | `/api/v3/tax-check` | PAYE and NI checked against the standard bands — optional `?tax_year=YYYY` |
+| GET | `/api/v3/health-check` | Data integrity findings, with the offending rows attached |
 
 ---
 

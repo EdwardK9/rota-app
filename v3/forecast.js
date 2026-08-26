@@ -234,3 +234,11 @@ router.get('/forecast', (req, res) => {
 });
 
 module.exports = router;
+// Reused by taxCheck.js so the audit of what you were *actually* taxed uses the
+// same bands, thresholds and settings overrides as the forecast of what you
+// will be. Two copies of the tax tables would drift the first time a Budget
+// changed one of them.
+module.exports.taxConfig = taxConfig;
+module.exports.incomeTax = incomeTax;
+module.exports.nationalInsurance = nationalInsurance;
+module.exports.taxYearFor = taxYearFor;

@@ -15,10 +15,11 @@ V3.register('v3-hub', '✨ All V3 Features', {
 
   /* Grouping is presentational only — the server list stays a flat registry. */
   GROUPS: [
-    { key: 'money',  label: '💷 Money',        views: ['money-clock', 'forecast', 'overtime', 'pay-rises', 'goals', 'commute-cost', 'break-debt'] },
+    { key: 'money',  label: '💷 Money',        views: ['money-clock', 'forecast', 'pay-audit', 'tax-check', 'overtime', 'pay-rises', 'goals', 'commute-cost', 'break-debt'] },
     { key: 'stats',  label: '📊 Stats & records', views: ['records', 'trophies', 'shift-dna', 'balance', 'year-numbers', 'head-to-head'] },
     { key: 'daily',  label: '🗓️ Day to day',   views: ['briefing', 'countdowns', 'crystal-ball', 'leave-planner', 'cover-finder'] },
     { key: 'fun',    label: '🎉 For fun',      views: ['on-this-day', 'bingo', 'did-you-know'] },
+    { key: 'upkeep', label: '🔧 Upkeep',       views: ['health-check'] },
   ],
 
   async init() {

@@ -58,6 +58,12 @@ const FEATURES = [
     blurb: 'Who could realistically cover a shift, and what you could swap them for.' },
   { view: 'crystal-ball', icon: '🔮', name: 'Rota Crystal Ball',module: './crystalBall',
     blurb: 'Projects a week the rota has not reached yet, and grades its own accuracy.' },
+  { view: 'pay-audit',    icon: '🧾', name: 'Pay Audit',        module: './payAudit',
+    blurb: 'Hours worked against hours paid, totalled so arrears timing cannot hide a gap.' },
+  { view: 'tax-check',    icon: '💷', name: 'Tax Check',        module: './taxCheck',
+    blurb: 'Checks the tax and NI actually deducted against what PAYE should have taken.' },
+  { view: 'health-check', icon: '🩺', name: 'Data Doctor',      module: './healthCheck',
+    blurb: 'Finds duplicate shifts, missed bank holidays, failed imports and stale figures.' },
 ];
 
 for (const feature of FEATURES) {
