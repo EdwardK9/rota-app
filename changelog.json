@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-24T18:34:42.855Z",
-  "commit": "8ca35c1",
+  "generated_at": "2026-08-26T13:07:25.516Z",
+  "commit": "9a54315",
   "entries": [
+    {
+      "version": "4.3.0",
+      "date": "2026-08-26",
+      "summary": "Add optional GitHub offsite backup for nightly DB snapshots",
+      "details": "Pushes each nightly SQLite backup to a GitHub repo via env-configured\nPAT (GITHUB_BACKUP_REPO/TOKEN/BRANCH/PATH), mirroring the existing\n14-file local retention. Settings page shows configured/unconfigured\nstatus."
+    },
     {
       "version": "4.2.1",
       "date": "2026-08-24",
