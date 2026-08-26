@@ -409,7 +409,7 @@ The app can send push notifications to your phone using [ntfy](https://ntfy.sh) 
 
 ### V3.0 Features
 
-Eighteen extra views under the **✨ V3.0 Features** section of the sidebar. They are all
+Twenty-one extra views under the **✨ V3.0 Features** section of the sidebar. They are all
 read-only lenses on data the app already holds — apart from the Goal Tracker, none of
 them ask you to enter anything new, and nothing here changes an existing shift.
 
@@ -433,6 +433,9 @@ them ask you to enter anything new, and nothing here changes an existing shift.
 | 📊 **Year in Numbers** | Every year side by side with the change on the year before. The current year is compared on its projection, not its part-year total. |
 | 💡 **Did You Know** | Oddball facts dug out of your own data — the day you've never worked, who you've only ever shared a Tuesday with, your mileage in laps of the M25. |
 | 🎲 **Rota Bingo** | A 5×5 card for the week whose squares tick themselves from real shifts. The card is dealt from the week's date, so it's the same card every time you look at that week. |
+| 🏖️ **Leave Optimiser** | Ranks possible leave bookings by how many days off each one actually buys — a day that bridges two rest weekends is worth several. Reads the published rota where it exists and your own weekday pattern past that, labelling which is which, and flags a bank holiday you'd be giving up double pay on. |
+| 🔁 **Cover Finder** | Pick a shift and see who could realistically take it, in the order worth asking: free that day, works that slot anyway, has room under their contract, still active on the rota. Every score shows its reasoning, and it also finds shifts of theirs you could take in exchange. |
+| 🔮 **Rota Crystal Ball** | Projects a week the rota hasn't reached yet — which days, which half of the day, roughly what hours and pay. Backtested on six months of real weeks and reported next to what you'd score by just assuming you work every day (70% vs 58% on the author's data). |
 
 **Where the code lives.** V3 is deliberately self-contained so it can be changed or removed
 without disturbing the rest of the app:
@@ -750,6 +753,9 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 | GET | `/api/v3/year-in-numbers` | Every year side by side with year-on-year change |
 | GET | `/api/v3/did-you-know` | Derived fun facts — optional `?seed=N` |
 | GET | `/api/v3/shift-dna/people` | Who can be profiled or compared |
+| GET | `/api/v3/leave-planner` | Leave bookings ranked by days off per day booked — optional `?from=`, `?to=`, `?max_span=N` |
+| GET | `/api/v3/cover-finder` | Who could cover a shift, plus swap options — optional `?date=YYYY-MM-DD` |
+| GET | `/api/v3/crystal-ball` | Projected week with backtested accuracy — optional `?week=YYYY-MM-DD` |
 
 ---
 

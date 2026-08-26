@@ -270,8 +270,65 @@
 .v3-hour-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
 .v3-hour-bar { width: 100%; background: var(--primary); border-radius: 3px 3px 0 0; min-height: 2px; }
 
+/* ── Day strip (Leave Optimiser, Rota Crystal Ball) ─────────────────────────
+   One small box per date. Colour carries the meaning, a dashed border marks a
+   day the app is guessing at rather than reading off the published rota. */
+.v3-strip { display: flex; flex-wrap: wrap; gap: 4px; }
+.v3-strip-day {
+  min-width: 40px; flex: 0 0 auto; text-align: center; padding: 5px 3px;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
+  line-height: 1.25;
+}
+.v3-strip-dow { font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
+.v3-strip-num { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.v3-strip-day.off     { background: rgba(16,185,129,0.13); border-color: rgba(16,185,129,0.45); }
+.v3-strip-day.leave   { background: rgba(59,130,246,0.13); border-color: rgba(59,130,246,0.5); }
+.v3-strip-day.booked  { background: rgba(245,158,11,0.18); border-color: var(--warning); font-weight: 700; }
+.v3-strip-day.working { background: rgba(148,163,184,0.16); }
+.v3-strip-day.guess   { border-style: dashed; }
+.v3-strip-day.bh      { box-shadow: inset 0 -3px 0 var(--info); }
+.v3-strip-key { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11.5px; color: var(--text-muted); margin-top: 10px; }
+.v3-strip-key span { display: flex; align-items: center; gap: 5px; }
+.v3-strip-swatch {
+  display: inline-block; width: 12px; height: 12px; flex-shrink: 0;
+  border-radius: 3px; border: 1px solid var(--border);
+}
+
+/* ── Plan card (Leave Optimiser candidate) ──────────────────────────────── */
+.v3-plan-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.v3-plan-ratio { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.v3-plan-dates { font-size: 12.5px; color: var(--text-muted); }
+
+/* ── Person row (Cover Finder) ──────────────────────────────────────────── */
+.v3-person {
+  display: flex; gap: 13px; align-items: flex-start;
+  padding: 13px 15px; border-bottom: 1px solid var(--border);
+}
+.v3-person:last-child { border-bottom: none; }
+.v3-person-score {
+  width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums;
+  background: rgba(148,163,184,0.16); color: var(--text-muted);
+}
+.v3-person-score.strong    { background: rgba(16,185,129,0.18); color: var(--success); }
+.v3-person-score.possible  { background: rgba(245,158,11,0.18); color: var(--warning); }
+.v3-person-body { flex: 1; min-width: 0; }
+.v3-person-name { font-weight: 700; font-size: 14.5px; }
+.v3-person-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.v3-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.v3-chip {
+  font-size: 11.5px; padding: 2px 9px; border-radius: 999px; line-height: 1.6;
+  background: rgba(16,185,129,0.13); color: var(--success);
+}
+.v3-chip.flag { background: rgba(239,68,68,0.12); color: var(--danger); }
+.v3-chip.plain { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  .v3-strip-day { min-width: 34px; padding: 4px 2px; }
+  .v3-person { padding: 11px 12px; gap: 10px; }
+  .v3-person-score { width: 40px; height: 40px; font-size: 13.5px; }
   .v3-hero-value { font-size: 34px; }
   .v3-bingo { gap: 5px; }
   .v3-bingo-cell { border-radius: 8px; padding: 3px 2px; }

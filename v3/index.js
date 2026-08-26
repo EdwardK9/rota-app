@@ -52,6 +52,12 @@ const FEATURES = [
     blurb: 'Every year side by side, with the change on the year before.' },
   { view: 'did-you-know', icon: '🎲', name: 'Did You Know',     module: './didYouKnow',
     blurb: 'Oddball facts dug out of your own data.' },
+  { view: 'leave-planner',icon: '🏖️', name: 'Leave Optimiser',  module: './leavePlanner',
+    blurb: 'Which leave days buy the most time off, worked out against your real rota.' },
+  { view: 'cover-finder', icon: '🔁', name: 'Cover Finder',     module: './coverFinder',
+    blurb: 'Who could realistically cover a shift, and what you could swap them for.' },
+  { view: 'crystal-ball', icon: '🔮', name: 'Rota Crystal Ball',module: './crystalBall',
+    blurb: 'Projects a week the rota has not reached yet, and grades its own accuracy.' },
 ];
 
 for (const feature of FEATURES) {
