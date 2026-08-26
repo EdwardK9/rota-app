@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-26T13:19:35.873Z",
-  "commit": "4d0dc9f",
+  "generated_at": "2026-08-26T17:59:47.586Z",
+  "commit": "85b6483",
   "entries": [
+    {
+      "version": "4.5.0",
+      "date": "2026-08-26",
+      "summary": "Add Leave Optimiser, Cover Finder and Rota Crystal Ball to V3",
+      "details": "Three new V3 views, all read-only against existing tables and mounted the\nusual way — one entry each in v3/index.js FEATURES, one client file, no\nrouter changes.\n\n- 🏖️ Leave Optimiser (/api/v3/leave-planner). Ranks every possible leave\n  booking by days off gained per day booked, so the ones that bridge two\n  rest weekends float to the top. The rota only runs a fortnight out, so\n  days past the last rostered shift are classed from your own weekday\n  pattern and labelled as predictions rather than quietly mixed in with\n  the published rota. Flags a rostered bank holiday inside a plan, since\n  booking leave there gives up the double time as well as the day.\n  Near-identical plans are collapsed — shifting a break by one day scores\n  almost the same, and the raw ranking was a dozen copies of one fortnight.\n\n- 🔁 Cover Finder (/api/v3/cover-finder). For any upcoming shift, ranks the\n  team on whether they're free that day, how often they work that slot,\n  what room they have left under contract that week and how recently\n  they've been on the rota, with the reasoning shown next to each score.\n  Also lists shifts of theirs you're free for, so it can be a swap rather\n  than a favour. Rates are measured over the last year only — over all\n  time they went stale and, against a one-year denominator, produced\n  weekday percentages above 100.\n\n- 🔮 Rota Crystal Ball (/api/v3/crystal-ball). Projects an unpublished week.\n  The model was picked by measuring: backtested over 26 real weeks, a\n  16-week weekday rate blended 35/65 with the last known week scores 70%\n  against the 58% you'd get by simply assuming you work every day, and\n  that comparison is reported in the UI. Exact start times are much\n  weaker (24% within an hour) so the view leads with the half of the day\n  instead and says so. Where the last-week term flips a call, the card\n  explains that rather than just showing a number that contradicts the\n  history underneath it.\n\nVerified end to end against a copy of the live database."
+    },
     {
       "version": "4.4.0",
       "date": "2026-08-26",
