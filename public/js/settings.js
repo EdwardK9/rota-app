@@ -239,13 +239,14 @@ const SettingsView = {
                 <p style="font-size:13px;font-weight:600;margin-bottom:8px">Automatic backups</p>
                 <p style="color:var(--text-muted);font-size:12.5px;margin-bottom:12px">
                   The server saves a copy of the whole database every night (after 3am) into
-                  <code>data/backups</code>, keeping the last 14. Nothing to configure.
+                  <code>data/backups</code>, keeping the last 14.
                 </p>
                 <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
                   <button class="btn btn-ghost" id="dbBackupRunBtn">💾 Back up now</button>
                   <span id="dbBackupStatus" style="font-size:13px;color:var(--text-muted)"></span>
                 </div>
                 <div id="dbBackupList" style="font-size:13px;color:var(--text-muted)">Loading…</div>
+                <div id="githubBackupStatus" style="font-size:12.5px;color:var(--text-muted);margin-top:10px"></div>
               </div>
             </div>
           </div>
@@ -611,9 +612,15 @@ const SettingsView = {
 
   async renderDbBackups() {
     const el = document.getElementById('dbBackupList');
+    const ghEl = document.getElementById('githubBackupStatus');
     if (!el) return;
     try {
       const data = await API.get('/api/db-backups');
+      if (ghEl) {
+        ghEl.textContent = data.github?.configured
+          ? `☁️ Offsite GitHub backup enabled → ${data.github.repo} (${data.github.branch})`
+          : '☁️ Offsite GitHub backup not configured — set GITHUB_BACKUP_REPO and GITHUB_BACKUP_TOKEN on the server to enable it.';
+      }
       if (!data.backups.length) {
         el.innerHTML = 'No automatic backups yet — the first runs tonight after 3am, or click "Back up now".';
         return;
@@ -635,7 +642,11 @@ const SettingsView = {
     if (status) status.textContent = 'Backing up…';
     try {
       const r = await API.post('/api/db-backups/run', {});
-      if (status) status.textContent = `✓ Saved ${r.file}`;
+      if (status) {
+        status.textContent = r.github
+          ? (r.github.ok ? `✓ Saved ${r.file} (pushed to GitHub)` : `✓ Saved ${r.file} (GitHub push failed: ${r.github.error})`)
+          : `✓ Saved ${r.file}`;
+      }
       this.renderDbBackups();
     } catch (e) {
       if (status) status.textContent = 'Backup failed: ' + e.message;

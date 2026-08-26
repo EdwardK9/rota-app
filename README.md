@@ -371,6 +371,19 @@ The backup includes: all shifts, payslips, pay rates, leave entries, settings, a
 
 It is recommended to take a backup before any major import or change.
 
+#### Automatic offsite backup (GitHub)
+
+The server already snapshots the whole SQLite database every night into `data/backups` (kept for 14 days). To also push each nightly snapshot to a GitHub repo — so you have an offsite copy if the host disk is lost — set these environment variables (see the commented-out example in `docker-compose.yml`):
+
+| Variable | Required | Description |
+|---|---|---|
+| `GITHUB_BACKUP_REPO` | yes | `owner/repo` to push into |
+| `GITHUB_BACKUP_TOKEN` | yes | A GitHub personal access token with `contents: write` on that repo (fine-grained tokens work) |
+| `GITHUB_BACKUP_BRANCH` | no | Branch to commit to (default `main`) |
+| `GITHUB_BACKUP_PATH` | no | Folder within the repo (default `backups`) |
+
+Once set, restart the container. The **Settings → Backup & Restore** page shows whether GitHub backup is enabled, and "Back up now" pushes immediately. The repo folder mirrors the same 14-backup retention as the local copy — older files are deleted automatically. Use a **private** repo, since the pushed files are full database dumps.
+
 ---
 
 ### Notifications (ntfy)

@@ -1986,7 +1986,75 @@ async function runDbBackup(reason) {
   const files = fs.readdirSync(BACKUP_DIR).filter(f => BACKUP_NAME_RE.test(f)).sort();
   while (files.length > BACKUP_KEEP) fs.unlinkSync(path.join(BACKUP_DIR, files.shift()));
   console.log(`[Backup] ${reason} backup saved: ${name}`);
-  return name;
+
+  let github = null;
+  if (githubBackupConfigured()) {
+    try {
+      await pushDbBackupToGitHub(path.join(BACKUP_DIR, name), name);
+      github = { ok: true };
+      console.log(`[Backup] ${reason} backup pushed to GitHub: ${name}`);
+    } catch (e) {
+      github = { ok: false, error: e.message };
+      console.error(`[Backup] GitHub push failed:`, e.message);
+    }
+  }
+  return { name, github };
+}
+
+// ── Offsite copy: push the same .db backup to a GitHub repo ─────────────────
+// Configure via env vars (see docker-compose.yml):
+//   GITHUB_BACKUP_REPO   "owner/repo" to push into (required)
+//   GITHUB_BACKUP_TOKEN  a PAT with `contents:write` on that repo (required)
+//   GITHUB_BACKUP_BRANCH branch to commit to (default "main")
+//   GITHUB_BACKUP_PATH   folder within the repo (default "backups")
+function githubBackupConfigured() {
+  return !!(process.env.GITHUB_BACKUP_REPO && process.env.GITHUB_BACKUP_TOKEN);
+}
+
+function githubBackupHeaders() {
+  return {
+    Authorization: `Bearer ${process.env.GITHUB_BACKUP_TOKEN}`,
+    'User-Agent': 'rota-app-backup',
+    Accept: 'application/vnd.github+json',
+  };
+}
+
+async function pushDbBackupToGitHub(localFilePath, name) {
+  const repo = process.env.GITHUB_BACKUP_REPO;
+  const branch = process.env.GITHUB_BACKUP_BRANCH || 'main';
+  const dir = (process.env.GITHUB_BACKUP_PATH || 'backups').replace(/^\/+|\/+$/g, '');
+  const repoPath = `${dir}/${name}`;
+  const apiBase = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(repoPath).replace(/%2F/g, '/')}`;
+  const headers = githubBackupHeaders();
+
+  // Look up the existing file's sha (needed to update rather than create)
+  let sha;
+  const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(branch)}`, { headers });
+  if (getRes.ok) sha = (await getRes.json()).sha;
+  else if (getRes.status !== 404) throw new Error(`GitHub lookup failed: ${getRes.status} ${await getRes.text()}`);
+
+  const content = fs.readFileSync(localFilePath).toString('base64');
+  const putRes = await fetch(apiBase, {
+    method: 'PUT',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: `Backup ${name}`, content, branch, sha }),
+  });
+  if (!putRes.ok) throw new Error(`GitHub push failed: ${putRes.status} ${await putRes.text()}`);
+
+  // Mirror local retention: keep only the newest BACKUP_KEEP files in the repo folder
+  const listRes = await fetch(`https://api.github.com/repos/${repo}/contents/${dir}?ref=${encodeURIComponent(branch)}`, { headers });
+  if (!listRes.ok) return;
+  const remoteFiles = (await listRes.json())
+    .filter(f => f.type === 'file' && BACKUP_NAME_RE.test(f.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  while (remoteFiles.length > BACKUP_KEEP) {
+    const old = remoteFiles.shift();
+    await fetch(`https://api.github.com/repos/${repo}/contents/${dir}/${old.name}`, {
+      method: 'DELETE',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `Prune old backup ${old.name}`, sha: old.sha, branch }),
+    });
+  }
 }
 
 let dbBackupTimer = null;
@@ -2004,13 +2072,22 @@ function startDbBackupSync() {
 
 // GET /api/db-backups — list stored automatic backups
 app.get('/api/db-backups', (req, res) => {
-  res.json({ keep: BACKUP_KEEP, hour: BACKUP_HOUR, backups: listDbBackups() });
+  res.json({
+    keep: BACKUP_KEEP,
+    hour: BACKUP_HOUR,
+    backups: listDbBackups(),
+    github: githubBackupConfigured()
+      ? { configured: true, repo: process.env.GITHUB_BACKUP_REPO, branch: process.env.GITHUB_BACKUP_BRANCH || 'main' }
+      : { configured: false },
+  });
 });
 
 // POST /api/db-backups/run — take a backup right now (overwrites today's if present)
 app.post('/api/db-backups/run', async (req, res) => {
-  try { res.json({ ok: true, file: await runDbBackup('manual') }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const result = await runDbBackup('manual');
+    res.json({ ok: true, file: result.name, github: result.github });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/db-backups/:file — download one backup (filename strictly validated)
