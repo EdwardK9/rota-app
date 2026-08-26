@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-26T13:07:25.516Z",
-  "commit": "9a54315",
+  "generated_at": "2026-08-26T13:19:35.873Z",
+  "commit": "4d0dc9f",
   "entries": [
+    {
+      "version": "4.4.0",
+      "date": "2026-08-26",
+      "summary": "Configure GitHub offsite backup from Settings instead of env vars only",
+      "details": "Adds repo/token/branch/folder fields under Settings > Backup & Restore,\nbacked by new GET/POST/DELETE /api/db-backups/github-settings endpoints.\nValues are stored in the settings table (token never echoed back) and\ntake priority over the matching GITHUB_BACKUP_* env var, so it can be\nconfigured without editing docker-compose.yml or restarting."
+    },
     {
       "version": "4.3.0",
       "date": "2026-08-26",
