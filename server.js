@@ -2002,27 +2002,35 @@ async function runDbBackup(reason) {
 }
 
 // ── Offsite copy: push the same .db backup to a GitHub repo ─────────────────
-// Configure via env vars (see docker-compose.yml):
+// Configurable two ways — a value entered in Settings (stored in the `settings`
+// table) always wins; otherwise falls back to the matching env var (see
+// docker-compose.yml):
 //   GITHUB_BACKUP_REPO   "owner/repo" to push into (required)
 //   GITHUB_BACKUP_TOKEN  a PAT with `contents:write` on that repo (required)
 //   GITHUB_BACKUP_BRANCH branch to commit to (default "main")
 //   GITHUB_BACKUP_PATH   folder within the repo (default "backups")
+function ghBackupSetting(key, envVar, fallback) {
+  const row = db.prepare('SELECT value FROM settings WHERE key=?').get(`github_backup_${key}`);
+  if (row && row.value) return row.value;
+  return process.env[envVar] || fallback || '';
+}
+
 function githubBackupConfigured() {
-  return !!(process.env.GITHUB_BACKUP_REPO && process.env.GITHUB_BACKUP_TOKEN);
+  return !!(ghBackupSetting('repo', 'GITHUB_BACKUP_REPO') && ghBackupSetting('token', 'GITHUB_BACKUP_TOKEN'));
 }
 
 function githubBackupHeaders() {
   return {
-    Authorization: `Bearer ${process.env.GITHUB_BACKUP_TOKEN}`,
+    Authorization: `Bearer ${ghBackupSetting('token', 'GITHUB_BACKUP_TOKEN')}`,
     'User-Agent': 'rota-app-backup',
     Accept: 'application/vnd.github+json',
   };
 }
 
 async function pushDbBackupToGitHub(localFilePath, name) {
-  const repo = process.env.GITHUB_BACKUP_REPO;
-  const branch = process.env.GITHUB_BACKUP_BRANCH || 'main';
-  const dir = (process.env.GITHUB_BACKUP_PATH || 'backups').replace(/^\/+|\/+$/g, '');
+  const repo = ghBackupSetting('repo', 'GITHUB_BACKUP_REPO');
+  const branch = ghBackupSetting('branch', 'GITHUB_BACKUP_BRANCH', 'main');
+  const dir = ghBackupSetting('path', 'GITHUB_BACKUP_PATH', 'backups').replace(/^\/+|\/+$/g, '');
   const repoPath = `${dir}/${name}`;
   const apiBase = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(repoPath).replace(/%2F/g, '/')}`;
   const headers = githubBackupHeaders();
@@ -2077,9 +2085,38 @@ app.get('/api/db-backups', (req, res) => {
     hour: BACKUP_HOUR,
     backups: listDbBackups(),
     github: githubBackupConfigured()
-      ? { configured: true, repo: process.env.GITHUB_BACKUP_REPO, branch: process.env.GITHUB_BACKUP_BRANCH || 'main' }
+      ? { configured: true, repo: ghBackupSetting('repo', 'GITHUB_BACKUP_REPO'), branch: ghBackupSetting('branch', 'GITHUB_BACKUP_BRANCH', 'main') }
       : { configured: false },
   });
+});
+
+// GET /api/db-backups/github-settings — current GitHub backup config (token never returned)
+app.get('/api/db-backups/github-settings', (req, res) => {
+  res.json({
+    repo: ghBackupSetting('repo', 'GITHUB_BACKUP_REPO'),
+    branch: ghBackupSetting('branch', 'GITHUB_BACKUP_BRANCH', 'main'),
+    path: ghBackupSetting('path', 'GITHUB_BACKUP_PATH', 'backups'),
+    hasToken: !!ghBackupSetting('token', 'GITHUB_BACKUP_TOKEN'),
+  });
+});
+
+// POST /api/db-backups/github-settings — save GitHub backup config from Settings
+// Blank/omitted token leaves the currently stored token untouched.
+app.post('/api/db-backups/github-settings', (req, res) => {
+  const { repo, token, branch, path: repoPath } = req.body || {};
+  const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  upsert.run('github_backup_repo', String(repo || ''));
+  upsert.run('github_backup_branch', String(branch || ''));
+  upsert.run('github_backup_path', String(repoPath || ''));
+  if (token) upsert.run('github_backup_token', String(token));
+  res.json({ ok: true });
+});
+
+// DELETE /api/db-backups/github-settings — clear GitHub backup config (including token)
+app.delete('/api/db-backups/github-settings', (req, res) => {
+  const del = db.prepare('DELETE FROM settings WHERE key=?');
+  ['repo', 'token', 'branch', 'path'].forEach(k => del.run(`github_backup_${k}`));
+  res.json({ ok: true });
 });
 
 // POST /api/db-backups/run — take a backup right now (overwrites today's if present)

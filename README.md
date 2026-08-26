@@ -373,14 +373,20 @@ It is recommended to take a backup before any major import or change.
 
 #### Automatic offsite backup (GitHub)
 
-The server already snapshots the whole SQLite database every night into `data/backups` (kept for 14 days). To also push each nightly snapshot to a GitHub repo — so you have an offsite copy if the host disk is lost — set these environment variables (see the commented-out example in `docker-compose.yml`):
+The server already snapshots the whole SQLite database every night into `data/backups` (kept for 14 days). It can also push each nightly snapshot to a GitHub repo — so you have an offsite copy if the host disk is lost.
 
-| Variable | Required | Description |
+Easiest way: go to **Settings → Backup & Restore → Offsite backup (GitHub)** and fill in:
+
+| Field | Required | Description |
 |---|---|---|
-| `GITHUB_BACKUP_REPO` | yes | `owner/repo` to push into |
-| `GITHUB_BACKUP_TOKEN` | yes | A GitHub personal access token with `contents: write` on that repo (fine-grained tokens work) |
-| `GITHUB_BACKUP_BRANCH` | no | Branch to commit to (default `main`) |
-| `GITHUB_BACKUP_PATH` | no | Folder within the repo (default `backups`) |
+| Repo | yes | `owner/repo` to push into (use a **private** repo — the pushed files are full database dumps) |
+| Personal access token | yes | A GitHub PAT with `contents: write` on that repo (fine-grained tokens work). Stored in the database, never shown back to you |
+| Branch | no | Branch to commit to (default `main`) |
+| Folder | no | Folder within the repo (default `backups`) |
+
+Click **Save** — no restart needed. "Back up now" will push immediately, and the repo folder mirrors the same 14-backup retention as the local copy.
+
+Alternatively, the same four values can be set as environment variables (`GITHUB_BACKUP_REPO`, `GITHUB_BACKUP_TOKEN`, `GITHUB_BACKUP_BRANCH`, `GITHUB_BACKUP_PATH` — see the commented-out example in `docker-compose.yml`); a value entered in Settings always takes priority over the matching env var.
 
 Once set, restart the container. The **Settings → Backup & Restore** page shows whether GitHub backup is enabled, and "Back up now" pushes immediately. The repo folder mirrors the same 14-backup retention as the local copy — older files are deleted automatically. Use a **private** repo, since the pushed files are full database dumps.
 

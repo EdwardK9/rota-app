@@ -246,7 +246,40 @@ const SettingsView = {
                   <span id="dbBackupStatus" style="font-size:13px;color:var(--text-muted)"></span>
                 </div>
                 <div id="dbBackupList" style="font-size:13px;color:var(--text-muted)">Loading…</div>
-                <div id="githubBackupStatus" style="font-size:12.5px;color:var(--text-muted);margin-top:10px"></div>
+              </div>
+
+              <!-- GitHub offsite backup -->
+              <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
+                <p style="font-size:13px;font-weight:600;margin-bottom:8px">Offsite backup (GitHub)</p>
+                <p style="color:var(--text-muted);font-size:12.5px;margin-bottom:12px">
+                  Also push each nightly backup to a GitHub repo, so a copy survives even if this server's disk is lost.
+                  Use a <strong>private</strong> repo — the pushed files are full database dumps.
+                </p>
+                <div id="githubBackupStatus" style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px"></div>
+                <div class="form-group" style="margin-bottom:12px">
+                  <label>Repo</label>
+                  <input type="text" id="ghBackupRepo" placeholder="your-username/rota-backups" />
+                </div>
+                <div class="form-group" style="margin-bottom:12px">
+                  <label>Personal access token</label>
+                  <input type="password" id="ghBackupToken" placeholder="Leave blank to keep the saved token" autocomplete="new-password" />
+                  <div class="form-hint">Needs <code>contents: write</code> on that repo. Only re-enter this if you're changing it — it's never shown back to you.</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Branch</label>
+                    <input type="text" id="ghBackupBranch" placeholder="main" />
+                  </div>
+                  <div class="form-group">
+                    <label>Folder</label>
+                    <input type="text" id="ghBackupPath" placeholder="backups" />
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                  <button class="btn btn-primary" id="ghBackupSaveBtn">Save</button>
+                  <button class="btn btn-ghost" id="ghBackupClearBtn">Clear</button>
+                  <span id="ghBackupSaveStatus" style="font-size:13px;color:var(--text-muted)"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -518,6 +551,8 @@ const SettingsView = {
     // Backup
     document.getElementById('backupDownloadBtn').addEventListener('click', () => this.downloadBackup());
     document.getElementById('dbBackupRunBtn')?.addEventListener('click', () => this.runDbBackup());
+    document.getElementById('ghBackupSaveBtn')?.addEventListener('click', () => this.saveGithubBackupSettings());
+    document.getElementById('ghBackupClearBtn')?.addEventListener('click', () => this.clearGithubBackupSettings());
 
     // Restore — file picker
     document.getElementById('restoreFileInput').addEventListener('change', e => {
@@ -595,6 +630,7 @@ const SettingsView = {
     this.populateGemini();
     this.populateNfc();
     this.renderDbBackups();
+    this.populateGithubBackupSettings();
     this.populateWebhook();
     this.renderWebhookLog();
     // Show a toast if we just came back from the Google OAuth flow
@@ -618,8 +654,8 @@ const SettingsView = {
       const data = await API.get('/api/db-backups');
       if (ghEl) {
         ghEl.textContent = data.github?.configured
-          ? `☁️ Offsite GitHub backup enabled → ${data.github.repo} (${data.github.branch})`
-          : '☁️ Offsite GitHub backup not configured — set GITHUB_BACKUP_REPO and GITHUB_BACKUP_TOKEN on the server to enable it.';
+          ? `☁️ Enabled → pushing to ${data.github.repo} (${data.github.branch})`
+          : '☁️ Not configured — fill in the fields below to enable it.';
       }
       if (!data.backups.length) {
         el.innerHTML = 'No automatic backups yet — the first runs tonight after 3am, or click "Back up now".';
@@ -650,6 +686,52 @@ const SettingsView = {
       this.renderDbBackups();
     } catch (e) {
       if (status) status.textContent = 'Backup failed: ' + e.message;
+    }
+  },
+
+  async populateGithubBackupSettings() {
+    try {
+      const s = await API.get('/api/db-backups/github-settings');
+      const repoEl = document.getElementById('ghBackupRepo');
+      const branchEl = document.getElementById('ghBackupBranch');
+      const pathEl = document.getElementById('ghBackupPath');
+      const tokenEl = document.getElementById('ghBackupToken');
+      if (repoEl) repoEl.value = s.repo || '';
+      if (branchEl) branchEl.value = s.branch || '';
+      if (pathEl) pathEl.value = s.path || '';
+      if (tokenEl) tokenEl.placeholder = s.hasToken ? 'Leave blank to keep the saved token' : 'ghp_...';
+    } catch (_) { /* leave fields empty */ }
+  },
+
+  async saveGithubBackupSettings() {
+    const status = document.getElementById('ghBackupSaveStatus');
+    const repo = document.getElementById('ghBackupRepo').value.trim();
+    const token = document.getElementById('ghBackupToken').value.trim();
+    const branch = document.getElementById('ghBackupBranch').value.trim();
+    const path = document.getElementById('ghBackupPath').value.trim();
+    if (status) status.textContent = 'Saving…';
+    try {
+      await API.post('/api/db-backups/github-settings', { repo, token, branch, path });
+      document.getElementById('ghBackupToken').value = '';
+      if (status) status.textContent = '✓ Saved';
+      this.renderDbBackups();
+      this.populateGithubBackupSettings();
+    } catch (e) {
+      if (status) status.textContent = 'Save failed: ' + e.message;
+    }
+  },
+
+  async clearGithubBackupSettings() {
+    if (!confirmAction('Remove the saved GitHub repo and token? Offsite backup will be disabled.')) return;
+    const status = document.getElementById('ghBackupSaveStatus');
+    try {
+      await API.delete('/api/db-backups/github-settings');
+      ['ghBackupRepo', 'ghBackupBranch', 'ghBackupPath', 'ghBackupToken'].forEach(id => { document.getElementById(id).value = ''; });
+      if (status) status.textContent = 'Cleared';
+      this.renderDbBackups();
+      this.populateGithubBackupSettings();
+    } catch (e) {
+      if (status) status.textContent = 'Clear failed: ' + e.message;
     }
   },
 

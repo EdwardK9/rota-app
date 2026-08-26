@@ -11,7 +11,9 @@ services:
       - TZ=Europe/London
       - DATA_DIR=/app/data
       # - ICAL_TOKEN=your-token-here
-      # Offsite GitHub backup — pushes the nightly .db backup to a repo (see README)
+      # Offsite GitHub backup — pushes the nightly .db backup to a repo (see README).
+      # Easier to configure from Settings > Backup & Restore in the app itself;
+      # these env vars are only a fallback for values not set there.
       # - GITHUB_BACKUP_REPO=your-username/rota-backups
       # - GITHUB_BACKUP_TOKEN=ghp_your_token_here
       # - GITHUB_BACKUP_BRANCH=main
