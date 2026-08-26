@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-26T17:59:47.586Z",
-  "commit": "85b6483",
+  "generated_at": "2026-08-26T19:06:05.915Z",
+  "commit": "627cddf",
   "entries": [
+    {
+      "version": "4.6.0",
+      "date": "2026-08-26",
+      "summary": "Add Pay Audit, Tax Check and Data Doctor to V3",
+      "details": "Three checking tools rather than three more lenses — each one exists to\nanswer \"is this actually right?\" about data the app already holds.\n\n- 🧾 Pay Audit (/api/v3/pay-audit). Hours worked against hours paid, as\n  running totals across a tax year so the month-in-arrears timing can't\n  hide a gap: late pay closes its own gap next month, genuinely missing\n  hours don't.\n\n  The pay model was read off 22 real payslips rather than assumed, and\n  the assumption would have been wrong. Basic is contracted weekly hours\n  × 52 ÷ 12 × rate, a constant that doesn't move when you work less.\n  Additional hours are counted PER WEEK, with no credit for a quiet week\n  either side. Totalling weekly excess predicts the additional hours\n  actually paid to within 5% (263.75 vs 250.5 across all payslips);\n  totalling monthly, where a light week cancels a heavy one, predicts\n  174 and is nowhere near. The first implementation used the monthly\n  rule and understated what was owed by roughly 90 hours.\n\n  Because the model is good to ~5% and no better, the headline carries a\n  proportional margin and only reports a shortfall that clears it. A\n  month 0.25h light is not a finding.\n\n- 💷 Tax Check (/api/v3/tax-check). Every payslip against what cumulative\n  PAYE should have deducted, with NI checked per period since it works\n  the opposite way. A refund through the payroll after a quiet month is\n  marked as the system self-correcting rather than flagged as an error.\n\n  The useful part is inverting the arithmetic: while earnings stay in the\n  basic band the allowance the payroll is really using can be solved for,\n  which turns \"£32 more than expected\" into \"that's a code around 1240L\".\n  On the 2025/26 data it reports a £32.06 overpayment and an implied\n  1240L against the standard 1257L — and the app has a real £32.20 PAYE\n  refund recorded for that year, which the check reproduces without\n  being told about it. Reuses forecast.js's bands so the two can't drift.\n\n- 🩺 Data Doctor (/api/v3/health-check). Thirteen integrity checks in one\n  pass, each finding carrying the actual rows. On the live data it finds\n  5 bank holidays left unflagged and paying single time, 87 shifts whose\n  stored hours were left behind by an edit, a week that never imported\n  and 6 past shifts never completed. Stale-hours rows show the break\n  their hours imply next to the break the policy gives, so it's obvious\n  which of the two fields went stale. Read-only throughout — it points,\n  and Shifts/the break audit/Recalculate do the changing.\n\nAlso documents the break policy in the README, which the Data Doctor\ndepends on and which was only written down in code.\n\nVerified end to end against a copy of the live database."
+    },
     {
       "version": "4.5.0",
       "date": "2026-08-26",
