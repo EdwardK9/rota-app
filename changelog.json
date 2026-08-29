@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-29T21:03:48.957Z",
-  "commit": "937ecbe",
+  "generated_at": "2026-08-29T21:20:51.040Z",
+  "commit": "45f76eb",
   "entries": [
+    {
+      "version": "4.10.0",
+      "date": "2026-08-29",
+      "summary": "One rule for leave hours, instead of three — holidays no longer read as shortfalls",
+      "details": "Reported as \"Hours vs Contract doesn't include holiday hours\". It didn't, but\nthat was the smaller half of the problem.\n\nThe monthly report grouped leave with strftime('%Y-%m', start_date), so an\nentry was booked entirely to the month it began in. A holiday running\n30 Mar → 11 Apr counted wholly as March, and April — where nine of its days\nactually fell — showed 22.25h under contract and an implied £299.93 missing.\nFive of the eleven annual-leave entries on record cross a month boundary, and\nthe same applied at year boundaries, since the query also filtered on the\nstart date's year.\n\nUnderneath that, three places each spread a leave entry across its days their\nown way:\n\n  server.js weekly (Insights)   over Mon–Fri working days\n  v3/overtime.js                over every calendar day\n  server.js monthly report      not at all\n\nAll three now call leaveHours.js. V3's rule won, and the reasoning was already\nwritten down in its docblock: this rota trades seven days and rotates across\nall of them. Measured over the last twelve months 38% of shifts fall on a\nweekend and Saturday is the single biggest day by hours, so confining leave to\nweekdays would pile it onto days often not worked — and an entry falling\nentirely on a weekend divided by zero and vanished, leaving that week still\nreading as a shortfall. Entries are now selected by overlap rather than by\nstart date, so a range crossing a boundary contributes to both sides.\n\nHours vs Contract and the Reports monthly table gain a Leave column and\ncompare logged + leave against contracted, rather than logged alone. Hours vs\nContract also gains a Covered Hrs column so the arithmetic is visible instead\nof the numbers just quietly changing, and says which months include leave.\n\nOn the live data April 2026 goes from 22.25h under (−£299.93) to 15.60h over,\nwhich matches the 10.5 additional hours actually paid that month. March, June\nand August move similarly. The 27 Oct → 2 Nov 2025 entry now splits 10h/4h\nacross the two months instead of dumping all 14h in October.\n\nAlso fixes a display bug the Leave column made obvious: a negative Over/Under\nin Reports rendered without its sign, so September's −51.50h read as \"51.50h\".\nColour was carrying the whole meaning.\n\nVerified against a copy of the live database: monthly, weekly and V3 Overtime\nendpoints all agree on leave per period, and both tables render correctly."
+    },
     {
       "version": "4.9.0",
       "date": "2026-08-29",
