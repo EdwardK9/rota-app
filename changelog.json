@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-29T21:34:42.151Z",
-  "commit": "ca4cba3",
+  "generated_at": "2026-08-29T21:48:51.488Z",
+  "commit": "65c1d48",
   "entries": [
+    {
+      "version": "4.11.1",
+      "date": "2026-08-29",
+      "summary": "Keep the original payslip PDFs — a Payslip Documents section that stores files and reads nothing",
+      "details": "Somewhere to put the actual payslip, so the real document is safe rather than\nonly the figures typed off it. Deliberately inert: nothing reads these files,\nnothing extracts from them, and no figure anywhere on the Payslips page comes\nfrom one. The Gemini photo import at the top of the view is the thing that reads\na payslip and it stores nothing — the two never meet.\n\n- New Payslip Documents card at the bottom of the Payslips view: pick a month,\n  choose files or drag them onto the box, with an optional note. The list shows\n  month, name, size and upload time; each row opens in a new tab, saves a copy,\n  or can be retagged, renamed and deleted. Documents follow the year selector at\n  the top of the page, and a line says how many are filed under other years so\n  an empty list never reads as \"nothing was ever uploaded\".\n\n- PDFs and images only, 25MB and 20 files a go. Anything else is refused by name\n  rather than silently dropped.\n\n- Storage follows the photo library's split, for the same reason: metadata in a\n  new payslip_files table, the file itself on disk under\n  DATA_DIR/payslip-files/<month>/. Keeping PDFs in the database would bloat the\n  file that gets snapshotted nightly. Retagging a document's month moves the file\n  between month directories so disk and database stay in agreement, and a\n  half-finished upload cleans up after itself rather than leaving files on disk\n  that no row points at.\n\n- The flip side of that choice is stated where it matters — in the card, and in\n  the README's backup section: uploaded files ride on whatever backs up the data\n  volume, because the nightly GitHub backup carries rota.db alone. That already\n  applied to the rota screenshots in photo-library and was nowhere in the docs.\n\nServer-side lives in its own root-level payslipFiles.js router, mounted like the\nothers; root-level .js is already copied by the Dockerfile, so no image change.\n\nVerified against a copy of the live database in the running app: a PDF uploaded\nthrough the form comes back byte-identical from the download endpoint (387\nbytes in, 387 out, %PDF header intact), served inline as application/pdf and as\nan attachment with ?download=1. Dropping a file on the box files it under the\nselected month. Retagging July to June moved the file on disk and the download\nstill works. Deleting removes both the row and the file. A .txt is refused with\n\"Only PDFs and images can be stored — notes.txt is neither\", and a malformed\nmonth with \"A month (YYYY-MM) is required\"."
+    },
     {
       "version": "4.11.0",
       "date": "2026-08-29",
