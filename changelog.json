@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-29T11:53:18.636Z",
-  "commit": "7ea05cc",
+  "generated_at": "2026-08-29T13:03:35.379Z",
+  "commit": "3555a6c",
   "entries": [
+    {
+      "version": "4.8.0",
+      "date": "2026-08-29",
+      "summary": "Keep Settings cards in place when collapsing; token-protect the iCal feed",
+      "details": "Two unrelated fixes from using v4.7.0.\n\nSettings cards no longer shuffle when you collapse one. The masonry layout\nwas CSS multi-column, which re-balances its columns whenever any content\nchanges height — so collapsing a single card moved every other card on the\npage, often to a different column. Sections are now dealt across real column\nelements, left to right, and stay dealt. Collapsing a card moves only the\ncards below it in its own column; measured on the live page, collapsing one\nsection left 10 of the 15 exactly where they were, and the other column\nuntouched.\n\nColumn count still follows the width (one below ~950px of content, three\nabove ~1440px), recomputed on window resize and when a search narrows the\nlist, so a lone match isn't stranded in column two.\n\nThe live calendar subscription can now carry a token:\n\n- /calendar.ics accepts a token from the settings table (ical_token) as well\n  as the ICAL_TOKEN env var, settings winning — same precedence as the GitHub\n  backup credentials. With neither set the feed is open, exactly as before.\n\n- Export > Live calendar subscription grows a Generate/Remove control, and\n  the URL it displays now includes the token. Previously setting ICAL_TOKEN\n  did work, but the page still showed a tokenless URL that would 403, so the\n  option was effectively unusable.\n\nThis is groundwork for the actual blocker, which is not in the app: Cloudflare\nAccess intercepts the feed and answers with its sign-in page, and a calendar\nclient can't complete an interactive login. That needs a Bypass policy scoped\nto the /calendar.ics path in Cloudflare Zero Trust — documented in the README,\nalong with why the token matters once that path is public, and the same\ntreatment for /clock-tap if the NFC tag should work off-network.\n\nVerified: feed returns 200 with no token configured, 403 without or with a\nwrong token once one is set, 200 with the right one; generate/remove round\ntrips from the Export page and updates the displayed URL live."
+    },
     {
       "version": "4.7.0",
       "date": "2026-08-29",
