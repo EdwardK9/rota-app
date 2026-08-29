@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-29T21:57:47.507Z",
-  "commit": "bc1c9ba",
+  "generated_at": "2026-08-29T22:00:56.020Z",
+  "commit": "f43db55",
   "entries": [
+    {
+      "version": "4.12.1",
+      "date": "2026-08-29",
+      "summary": "Drop the now-unused callGeminiVision export",
+      "details": "Left behind by v4.12.0. The payslip photo import was the only thing outside\nworking-with.js that called it; everything still reading an image with Gemini —\nthe team screenshot import, the two extract routes, the photo-library AI rename\n— sits in that file and calls it directly. The text counterpart stays exported,\nsince v3/didYouKnow.js uses it.\n\nNothing else was orphaned by the removal: multer is gone from server.js but is\nstill used by working-with.js and payslipFiles.js, and the Gemini API key and\nmodel settings still drive the team screenshot import, whose Settings blurb\nalready describes only that."
+    },
     {
       "version": "4.12.0",
       "date": "2026-08-29",
