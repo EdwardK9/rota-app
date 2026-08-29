@@ -156,6 +156,20 @@ const API = {
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   },
 
+  // Payslip documents — the original PDFs, stored as-is. Nothing reads them.
+  getPayslipFiles:      (year)     => API.get('/api/payslip-files' + (year ? '?year=' + year : '')),
+  getPayslipFileYears:  ()         => API.get('/api/payslip-files/years'),
+  updatePayslipFile:    (id, data) => API.patch(`/api/payslip-files/${id}`, data),
+  deletePayslipFile:    (id)       => API.delete(`/api/payslip-files/${id}`),
+  uploadPayslipFiles:   (files, month, notes) => {
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f);
+    fd.append('month', month);
+    if (notes) fd.append('notes', notes);
+    return fetch('/api/payslip-files', { method: 'POST', body: fd })
+      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
+  },
+
   // Working-with — Gemini: list models available to the saved API key
   getGeminiModels: () => API.get('/api/colleagues/gemini-models'),
 

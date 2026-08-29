@@ -160,6 +160,24 @@ try { db.exec('ALTER TABLE photo_files DROP COLUMN image_blob'); } catch(_) {}
 // since a DD.MM.YYYY filename doesn't sort correctly as plain text.
 try { db.exec('ALTER TABLE photo_files ADD COLUMN week_start_date TEXT'); } catch(_) {}
 
+// Payslip documents — the original PDFs (or photos) of payslips, kept as a safe
+// copy and nothing more: nothing reads them, and no figure on the Payslips page
+// comes from them. Same split as the photo library: metadata here, the file
+// itself on disk under DATA_DIR/payslip-files, so the database stays small.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payslip_files (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    month       TEXT NOT NULL,                              -- YYYY-MM the document belongs to
+    filename    TEXT NOT NULL,                              -- name as uploaded, shown in the list
+    mime_type   TEXT NOT NULL DEFAULT 'application/pdf',
+    size_bytes  INTEGER NOT NULL DEFAULT 0,
+    file_path   TEXT NOT NULL,
+    notes       TEXT,
+    uploaded_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_payslip_files_month ON payslip_files(month);
+`);
+
 // Clock in/out
 db.exec(`
   CREATE TABLE IF NOT EXISTS clock_entries (

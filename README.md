@@ -423,6 +423,8 @@ It is recommended to take a backup before any major import or change.
 
 The server already snapshots the whole SQLite database every night into `data/backups` (kept for 14 days). It can also push each nightly snapshot to a GitHub repo — so you have an offsite copy if the host disk is lost.
 
+Note what this does **not** cover: uploaded files live on disk next to the database, not inside it — rota screenshots in `data/photo-library/` and payslip PDFs in `data/payslip-files/`. The nightly snapshot carries `rota.db` alone, so those files are only as safe as whatever backs up the `data/` volume itself.
+
 Easiest way: go to **Settings → Backup & Restore → Offsite backup (GitHub)** and fill in:
 
 | Field | Required | Description |
@@ -536,7 +538,9 @@ TrueNAS filesystem
     │       ├── api.js
     │       └── utils.js
     └── data/
-        └── rota.db                    ← SQLite database (persisted via Docker volume)
+        ├── rota.db                    ← SQLite database (persisted via Docker volume)
+        ├── photo-library/             ← uploaded rota screenshots (files on disk, metadata in the db)
+        └── payslip-files/<YYYY-MM>/   ← uploaded payslip PDFs, kept as-is and never read
 ```
 
 The `data/` directory (containing `rota.db`) is stored in a named Docker volume called `rota-data`, which means the database **survives container restarts and image changes**.

@@ -63,6 +63,7 @@ const PayslipsView = {
       <!-- Year-to-date running totals -->
       <div id="ytdSection" style="margin-top:24px"></div>
       <div id="psTaxRefundsSection" style="margin-top:24px"></div>
+      <div id="psDocumentsSection" style="margin-top:24px"></div>
     `;
 
     document.getElementById('payslipYearSelect').addEventListener('change', e => {
@@ -111,19 +112,25 @@ const PayslipsView = {
 
   async load() {
     try {
-      [this.payslips, this.allPayslips, this.monthly, this.settings, this.taxRefunds, this.payRates] = await Promise.all([
+      let docs, docYears;
+      [this.payslips, this.allPayslips, this.monthly, this.settings, this.taxRefunds, this.payRates, docs, docYears] = await Promise.all([
         API.getPayslips({ year: this.currentYear }),
         API.getPayslips({}),          // all years — for financial-year YTD
         API.getMonthlyReport({ year: this.currentYear }),
         API.getSettings(),
         API.get('/api/tax-refunds'),
         API.getPayRates(),
+        API.getPayslipFiles(this.currentYear),
+        API.getPayslipFileYears(),
       ]);
+      this.documents     = docs.files || [];
+      this.documentYears = docYears.years || [];
       this.renderStats();
       this.renderTable();
       this.renderMonthComparison();
       this.renderYtd();
       this.renderTaxRefunds();
+      this.renderDocuments();
     } catch(e) { showToast('Failed to load payslips: ' + e.message, 'error'); }
   },
 
@@ -694,6 +701,201 @@ const PayslipsView = {
       if (window.ReportsView) ReportsView.activeTab = 'tax-year';
       App.navigate('reports');
     });
+  },
+
+  /* ── Payslip documents ────────────────────────────────────────────────────
+     A safe copy of the original payslip PDFs, and nothing more. Deliberately
+     inert: nothing reads these files and no figure on this page comes from one.
+     The AI photo import at the top of the view is the thing that reads a
+     payslip, and it stores nothing — the two don't meet. */
+  renderDocuments() {
+    const el = document.getElementById('psDocumentsSection');
+    if (!el) return;
+    const docs = this.documents || [];
+    // Documents filed under a year other than the one being viewed, so an empty
+    // list doesn't read as "nothing was ever uploaded".
+    const elsewhere = (this.documentYears || [])
+      .filter(y => String(y.year) !== String(this.currentYear))
+      .reduce((s, y) => s + y.count, 0);
+
+    const icon = (mime) => (mime || '').startsWith('image/') ? '🖼️' : '📄';
+
+    const rows = docs.map(d => `
+      <tr>
+        <td><strong>${fmtMonth(d.month)}</strong></td>
+        <td>
+          <a href="/api/payslip-files/${d.id}" target="_blank" rel="noopener" title="Open in a new tab">
+            ${icon(d.mime_type)} ${esc(d.filename)}
+          </a>
+          ${d.missing ? '<span class="diff-alert diff-alert-under" style="margin-left:6px" title="The record is here but the file is not on disk any more">⚠️ file missing</span>' : ''}
+          ${d.notes ? `<div style="font-size:11px;color:var(--text-muted)">${esc(d.notes)}</div>` : ''}
+        </td>
+        <td>${fmtFileSize(d.size_bytes)}</td>
+        <td>${fmtStamp(d.uploaded_at)}</td>
+        <td class="actions">
+          <a class="btn btn-sm btn-ghost" href="/api/payslip-files/${d.id}?download=1" title="Save a copy">⬇ Save</a>
+          <button class="btn btn-sm btn-ghost doc-edit-btn" data-id="${d.id}" title="Change month, name or note" style="margin-left:4px">✏️</button>
+          <button class="btn-icon danger doc-del-btn" data-id="${d.id}" title="Delete this document" style="margin-left:4px">🗑️</button>
+        </td>
+      </tr>`).join('');
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h2>📎 Payslip Documents <span style="font-size:12px;font-weight:400;color:var(--text-muted)">· ${this.currentYear}</span></h2>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+            Your original payslips, kept exactly as they came. Nothing is read from them and nothing on this page
+            is worked out from them — they're here so the real document is safe. PDFs and photos, up to 25MB each.
+          </p>
+
+          <div id="psDocDrop" style="border:2px dashed var(--border);border-radius:8px;padding:14px;transition:border-color .15s,background .15s">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Month</label>
+                <select id="psDocMonth">${getMonthOptions(getCurrentMonth())}</select>
+              </div>
+              <div class="form-group">
+                <label>File(s)</label>
+                <input type="file" id="psDocInput" accept="application/pdf,image/*" multiple />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Note <span style="font-size:11px;color:var(--text-muted)">(optional)</span></label>
+                <input type="text" id="psDocNotes" placeholder="e.g. corrected version" />
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end">
+                <button class="btn btn-primary" id="psDocUploadBtn">⬆ Upload</button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted)">Or drag files anywhere onto this box — they'll be filed under the month selected above.</div>
+          </div>
+
+          ${docs.length ? `
+            <div class="table-wrapper" style="margin-top:14px">
+              <table>
+                <thead>
+                  <tr><th>Month</th><th>Document</th><th>Size</th><th>Uploaded</th><th></th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>` : `
+            <div class="empty-state" style="margin-top:14px">
+              <div class="empty-state-icon">📎</div>
+              <div class="empty-state-text">No documents saved for ${this.currentYear}</div>
+              <div class="empty-state-sub">Upload the PDF your payslip came as, and it stays here untouched</div>
+            </div>`}
+
+          ${elsewhere ? `<p style="font-size:12px;color:var(--text-muted);margin-top:10px">
+            ${elsewhere} document${elsewhere === 1 ? '' : 's'} filed under other years — switch the year at the top of the page to see ${elsewhere === 1 ? 'it' : 'them'}.
+          </p>` : ''}
+
+          <p style="font-size:11px;color:var(--text-muted);margin-top:10px">
+            Files are kept in the app's data folder rather than inside the database, so they're covered by whatever
+            backs that folder up — the nightly GitHub backup carries the database only.
+          </p>
+        </div>
+      </div>`;
+
+    const drop  = document.getElementById('psDocDrop');
+    const input = document.getElementById('psDocInput');
+
+    document.getElementById('psDocUploadBtn').addEventListener('click', () => {
+      const files = [...(input.files || [])];
+      if (!files.length) { showToast('Choose a file to upload first', 'warning'); return; }
+      this.uploadDocuments(files);
+    });
+
+    // Drag and drop over the whole box — the month select still decides where
+    // the file is filed, so dropping is just a shortcut past the file picker.
+    const glow = (on) => {
+      drop.style.borderColor = on ? 'var(--primary)' : 'var(--border)';
+      drop.style.background  = on ? 'var(--bg-hover, transparent)' : 'transparent';
+    };
+    ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); glow(true); }));
+    ['dragleave', 'dragend'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); glow(false); }));
+    drop.addEventListener('drop', e => {
+      e.preventDefault();
+      glow(false);
+      const files = [...(e.dataTransfer?.files || [])];
+      if (files.length) this.uploadDocuments(files);
+    });
+
+    el.querySelectorAll('.doc-edit-btn').forEach(b =>
+      b.addEventListener('click', () => this.openDocumentModal(+b.dataset.id)));
+    el.querySelectorAll('.doc-del-btn').forEach(b =>
+      b.addEventListener('click', () => this.deleteDocument(+b.dataset.id)));
+  },
+
+  async uploadDocuments(files) {
+    const month = document.getElementById('psDocMonth')?.value || getCurrentMonth();
+    const notes = document.getElementById('psDocNotes')?.value?.trim() || '';
+    showToast(`Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`, 'info');
+    try {
+      await API.uploadPayslipFiles(files, month, notes);
+      const wrongYear = month.slice(0, 4) !== String(this.currentYear);
+      await this.load();
+      showToast(
+        wrongYear
+          ? `Saved under ${fmtMonth(month)} — switch the year to ${month.slice(0, 4)} to see it`
+          : `Saved under ${fmtMonth(month)}`,
+        'success'
+      );
+    } catch (e) {
+      showToast('Upload failed: ' + e.message, 'error');
+    }
+  },
+
+  openDocumentModal(id) {
+    const d = (this.documents || []).find(x => x.id === id);
+    if (!d) return;
+    Modal.open('Payslip Document', `
+      <div class="form-group">
+        <label>Month</label>
+        <select id="pdMonth">${getMonthOptions(d.month)}</select>
+      </div>
+      <div class="form-group">
+        <label>Name <span style="font-size:11px;color:var(--text-muted)">(how it's listed here)</span></label>
+        <input type="text" id="pdName" value="${esc(d.filename)}" />
+      </div>
+      <div class="form-group">
+        <label>Note <span style="font-size:11px;color:var(--text-muted)">(optional)</span></label>
+        <input type="text" id="pdNotes" value="${esc(d.notes || '')}" placeholder="e.g. corrected version" />
+      </div>
+      <p style="font-size:12px;color:var(--text-muted)">
+        The stored file itself is never altered — this only changes how it's filed and listed.
+      </p>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
+        <button class="btn btn-primary" id="pdSaveBtn">Save</button>
+      </div>`);
+
+    document.getElementById('pdSaveBtn').addEventListener('click', async () => {
+      const filename = document.getElementById('pdName').value.trim();
+      if (!filename) { showToast('Name cannot be empty', 'error'); return; }
+      try {
+        await API.updatePayslipFile(id, {
+          month: document.getElementById('pdMonth').value,
+          filename,
+          notes: document.getElementById('pdNotes').value.trim(),
+        });
+        Modal.close();
+        await this.load();
+        showToast('Document updated', 'success');
+      } catch (e) { showToast('Error saving: ' + e.message, 'error'); }
+    });
+  },
+
+  async deleteDocument(id) {
+    const d = (this.documents || []).find(x => x.id === id);
+    if (!confirmAction(`Delete ${d ? d.filename : 'this document'}? The file is removed for good.`)) return;
+    try {
+      await API.deletePayslipFile(id);
+      await this.load();
+      showToast('Document deleted', 'success');
+    } catch (e) { showToast('Error deleting: ' + e.message, 'error'); }
   },
 
   openAddModal(prefillMonth) {
@@ -1399,6 +1601,20 @@ const PayslipsView = {
 function pf(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
 function pfToggled(togId, inputId) { return document.getElementById(togId)?.checked ? pf(inputId) : 0; }
 function round2(v) { return Math.round(v * 100) / 100; }
+function fmtFileSize(bytes) {
+  if (!bytes) return '—';
+  return bytes < 1024 * 1024
+    ? Math.max(1, Math.round(bytes / 1024)) + ' KB'
+    : (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+// SQLite datetime ("YYYY-MM-DD HH:MM:SS", UTC) -> "29/08/2026 21:16"
+function fmtStamp(stamp) {
+  if (!stamp) return '—';
+  const d = new Date(stamp.replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return fmtDate(String(stamp).slice(0, 10));
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 function nextMonthStr(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const d = new Date(y, m, 1); // JS months are 0-indexed, so m = next month
