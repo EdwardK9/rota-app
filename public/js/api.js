@@ -148,14 +148,6 @@ const API = {
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   },
 
-  // Payslips — Gemini AI photo import (returns field data matching the payslip form, no DB writes)
-  extractPayslipPhoto: (file) => {
-    const fd = new FormData();
-    fd.append('photo', file);
-    return fetch('/api/payslips/import-photo', { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
-
   // Payslip documents — the original PDFs, stored as-is. Nothing reads them.
   getPayslipFiles:      (year)     => API.get('/api/payslip-files' + (year ? '?year=' + year : '')),
   getPayslipFileYears:  ()         => API.get('/api/payslip-files/years'),

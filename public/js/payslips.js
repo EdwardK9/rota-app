@@ -23,8 +23,6 @@ const PayslipsView = {
           </select>
         </div>
         <div class="toolbar-right" style="display:flex;gap:8px">
-          <button class="btn btn-ghost" id="importPayslipPhotoBtn" title="Read a payslip photo with AI and pre-fill the form">📷 Import from Photo</button>
-          <input type="file" id="payslipPhotoInput" accept="image/*" style="display:none" />
           <button class="btn btn-primary" id="addPayslipBtn">+ Add Payslip</button>
         </div>
       </div>
@@ -72,42 +70,6 @@ const PayslipsView = {
     });
 
     document.getElementById('addPayslipBtn').addEventListener('click', () => this.openAddModal());
-
-    document.getElementById('importPayslipPhotoBtn').addEventListener('click', () =>
-      document.getElementById('payslipPhotoInput').click());
-    document.getElementById('payslipPhotoInput').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) this._importPayslipPhoto(file);
-      e.target.value = '';
-    });
-  },
-
-  // Read a payslip photo with Gemini, then open the Add/Edit modal pre-filled with
-  // whatever it found — figures are never saved automatically, always reviewed first.
-  async _importPayslipPhoto(file) {
-    showToast('Reading payslip with Gemini…', 'info');
-    try {
-      const result = await API.extractPayslipPhoto(file);
-      const data = result.data || {};
-      const month = data.month || getCurrentMonth();
-      const existing = this.payslips.find(p => p.month === month);
-      if (existing) {
-        Modal.open('Edit Payslip (from photo — review before saving)', this.payslipFormHtml({ ...existing, ...data }));
-        this.wirePayslipForm(existing.id);
-      } else {
-        Modal.open('Add Payslip (from photo — review before saving)', this.payslipFormHtml(data));
-        this.wirePayslipForm(null);
-      }
-      const usedFallback = result.model_used && App.settings?.gemini_model && result.model_used !== App.settings.gemini_model;
-      showToast(
-        usedFallback
-          ? `Payslip read via ${result.model_used} (your configured model was overloaded) — check the figures before saving`
-          : 'Payslip read — check the figures before saving',
-        'success'
-      );
-    } catch (e) {
-      showToast('Failed to read payslip: ' + e.message, 'error');
-    }
   },
 
   async load() {
@@ -705,9 +667,9 @@ const PayslipsView = {
 
   /* ── Payslip documents ────────────────────────────────────────────────────
      A safe copy of the original payslip PDFs, and nothing more. Deliberately
-     inert: nothing reads these files and no figure on this page comes from one.
-     The AI photo import at the top of the view is the thing that reads a
-     payslip, and it stores nothing — the two don't meet. */
+     inert: nothing reads these files, and no figure on this page comes from
+     one. Keep it that way — the figures are typed in and worked out, and a
+     stored document is only ever a document. */
   renderDocuments() {
     const el = document.getElementById('psDocumentsSection');
     if (!el) return;
@@ -1338,11 +1300,10 @@ const PayslipsView = {
 
      Everything stays editable. A field is only ever written while the form
      still owns it; typing in it hands it over for good, and anything that
-     already had a value when the form opened — every field of a saved payslip,
-     or whatever the photo import read — counts as typed from the start. So a
-     figure you entered by hand is never overwritten by a later change to the
-     month, the hours or anything else. An Auto-calculate button hands a field
-     back to the form. */
+     already had a value when the form opened — every field of a saved payslip
+     — counts as typed from the start. So a figure you entered by hand is never
+     overwritten by a later change to the month, the hours or anything else. An
+     Auto-calculate button hands a field back to the form. */
   _wireAutofill(editId) {
     const el    = id => document.getElementById(id);
     const write = (id, value) => { const e = el(id); if (e) e.value = value; };

@@ -12,7 +12,6 @@ const packageJson = require('./package.json');
 const { db, getPayRateForDate, calcHoursWorked } = require('./db');
 const { leaveHoursByMonth, leaveHoursByWeek } = require('./leaveHours');
 const workingWithRouter = require('./working-with');
-const { callGeminiVision } = workingWithRouter;
 const commuteRouter = require('./commute');
 const { fetchHourlyForecast, nearestHourKey, buildAlerts } = commuteRouter;
 const teamMetricsRouter = require('./teamMetrics');
@@ -588,76 +587,6 @@ app.post('/api/payslips', (req, res) => {
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Payslip for this month already exists' });
     throw e;
-  }
-});
-
-// Read a photo of a payslip with Gemini and return figures matching the payslip form
-// fields exactly — no DB write. The frontend opens the Add/Edit Payslip modal
-// pre-filled with this so you can review before saving, same pattern as the team
-// schedule screenshot import.
-const PAYSLIP_PROMPT = `You are reading a UK payslip (Screwfix format) from a photo. Extract the following figures exactly as printed — never estimate or guess a figure that isn't visible.
-
-Return ONLY valid JSON, no markdown, no explanation, matching this exact shape (use 0 for any money/hours figure that isn't present on the payslip, use null for text fields that aren't present):
-
-{
-  "month": "YYYY-MM",
-  "payment_date": "YYYY-MM-DD",
-  "basic_pay": 0,
-  "arrears_pay": 0,
-  "additional_hours_qty": 0,
-  "additional_hours_pay": 0,
-  "addt_hours_prev_qty": 0,
-  "addt_hours_prev_amount": 0,
-  "annual_leave_adj_curr": 0,
-  "annual_leave_adj_prev": 0,
-  "bank_hol_curr_qty": 0,
-  "bank_hol_curr_amount": 0,
-  "bank_hol_prev_qty": 0,
-  "bank_hol_prev_amount": 0,
-  "company_sick_pay": 0,
-  "company_sick_pay_is_prev": 0,
-  "sip_contribution": 0,
-  "other_payments": 0,
-  "other_pay_description": null,
-  "total_gross": 0,
-  "total_deductions": 0,
-  "net_payment": 0,
-  "tax_paid": 0,
-  "ni_employee": 0,
-  "ni_employer": 0,
-  "sharesave_amount": 0,
-  "sharesave_description": null,
-  "gross_ytd": 0,
-  "taxable_ytd": 0,
-  "tax_ytd": 0,
-  "ni_able_ytd": 0
-}
-
-FIELD NOTES:
-- "month" is the pay period the payslip covers (YYYY-MM), not the payment date.
-- basic_pay / additional_hours_qty / additional_hours_pay / bank_hol_curr_* / annual_leave_adj_curr are for THIS pay period.
-- arrears_pay / addt_hours_prev_* / annual_leave_adj_prev / bank_hol_prev_* are corrections for a PREVIOUS pay period shown on this payslip — payslips often show these as a separate line, sometimes negative.
-- sip_contribution (Share Incentive Plan) and sharesave_amount are usually deductions — enter as negative if shown that way on the payslip.
-- other_payments / other_pay_description is for any one-off line that doesn't fit the above (e.g. SSP, bonus).
-- ni_employer is only present on some payslip formats — use 0 if not shown.
-
-RULES:
-1. Use exact figures as printed — never round, rephrase, or infer a number that isn't shown.
-2. If a line item isn't present on the payslip at all, use 0 (numbers) or null (text) — do not guess.
-3. Return ONLY the JSON — no surrounding text.`;
-
-const payslipPhotoUpload = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-app.post('/api/payslips/import-photo', payslipPhotoUpload.single('photo'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  try {
-    const { parsed, rawText, modelUsed } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png', PAYSLIP_PROMPT);
-    if (!parsed) {
-      return res.status(502).json({ error: 'Gemini returned unexpected output — could not parse JSON', rawText: (rawText || '').slice(0, 3000) });
-    }
-    res.json({ data: parsed, model_used: modelUsed });
-  } catch (err) {
-    console.error('Payslip photo import error:', err);
-    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

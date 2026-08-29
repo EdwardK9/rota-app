@@ -679,7 +679,8 @@ Note: `docker-compose down` does **not** delete the `rota-data` volume or the da
 | `colleague_shifts` | Colleagues' shift records (imported from Rotageek or OCR) |
 | `shift_audit_log` | Immutable log of every create/update/delete action on shifts |
 | `ocr_jobs` / `ocr_job_files` | Background job queue for screenshot OCR processing |
-| `photo_folders` / `photo_files` | Payslip photo storage |
+| `photo_folders` / `photo_files` | Uploaded rota screenshots — metadata here, files on disk under `data/photo-library/` |
+| `payslip_files` | Uploaded payslip PDFs — metadata here, files on disk under `data/payslip-files/` |
 | `clock_entries` | Clock-in / clock-out times per day |
 | `delivery_schedules` | History of which days delivery shifts run |
 | `tax_refunds` | Tax refund records by tax year |
@@ -715,6 +716,11 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 | POST | `/api/payslips` | Create payslip |
 | PUT | `/api/payslips/:id` | Update payslip |
 | DELETE | `/api/payslips/:id` | Delete payslip |
+| GET | `/api/payslip-files` | List stored payslip documents — optional `?year=YYYY` |
+| POST | `/api/payslip-files` | Upload documents (multipart `files`, plus `month`) |
+| GET | `/api/payslip-files/:id` | The file itself — inline, or `?download=1` to save |
+| PATCH | `/api/payslip-files/:id` | Retag month, rename, or set a note |
+| DELETE | `/api/payslip-files/:id` | Delete the document and its file |
 
 ### Pay Rates
 | Method | Endpoint | Description |
