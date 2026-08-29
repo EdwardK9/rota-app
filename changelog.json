@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-29T21:48:51.488Z",
-  "commit": "65c1d48",
+  "generated_at": "2026-08-29T21:57:47.507Z",
+  "commit": "bc1c9ba",
   "entries": [
+    {
+      "version": "4.12.0",
+      "date": "2026-08-29",
+      "summary": "Remove the payslip photo import",
+      "details": "It earned its place when a payslip meant typing twenty figures. It doesn't now:\nv4.11.0 works out basic pay, both pairs of hourly extras, tax, NI and every\ntotal from the month and a couple of quantities, and v4.11.1 keeps the original\nPDF itself. Reading a photo with an AI and then checking every figure it\nreturned is more work than the two numbers the form now actually needs, and it\nwas one more thing that could quietly put a wrong figure in a saved payslip.\n\nGone: the 📷 Import from Photo button and its hidden file input, the\n_importPayslipPhoto handler, API.extractPayslipPhoto, and the server's\nPOST /api/payslips/import-photo along with the 60-line PAYSLIP_PROMPT and the\nmulter instance behind it. server.js no longer imports callGeminiVision, which\nthat route was its only user of — the function itself stays in working-with.js,\nwhere the team screenshot import and the photo-library AI rename still use it.\nNothing else referenced any of it.\n\nAlso corrected while in the README: the schema table described photo_folders /\nphoto_files as \"payslip photo storage\", which they never were — they hold the\nrota screenshots. They are listed properly now, next to payslip_files, and the\npayslip-document endpoints added in v4.11.1 are documented.\n\nVerified in the running app: the toolbar is just \"+ Add Payslip\", the page loads\nwith no console errors and no failed requests, the form and the documents card\nboth still work, and POST /api/payslips/import-photo now returns 404."
+    },
     {
       "version": "4.11.1",
       "date": "2026-08-29",
