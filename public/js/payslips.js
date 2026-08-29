@@ -145,18 +145,24 @@ const PayslipsView = {
   },
 
   /* ── Payslip autofill ─────────────────────────────────────────────────────
-     Both suggestions were checked against all 22 recorded payslips before
-     being wired up (see the v4.9.0 commit message for the numbers).
+     Every suggestion here was checked against all 22 recorded payslips before
+     being wired up, and the obvious formula lost more than once (see the v4.9.0
+     and v4.11.0 commit messages for the numbers).
 
-     Additional hours is simply qty x the hourly rate for that month — exact on
-     every one of the 21 payslips that had any.
+     Hourly extras are qty x the hourly rate — but the rate for the month the
+     hours were WORKED, not the month they're paid in. The previous-month hours
+     on the April 2026 payslip were paid at March's £13.04, not April's £13.48.
 
      Basic pay is a fixed monthly amount that only moves when the rate or the
      contract does, so the best predictor is what payroll actually paid last
      month on the same rate, not a formula: carrying it forward is exact,
      whereas contracted x 52/12 x rate is consistently a penny or two out (and
      21p out on the current rate). The formula is the fallback for the first
-     month on a new rate, where there's nothing to carry. */
+     month on a new rate, where there's nothing to carry.
+
+     NI is 8% of gross above the monthly primary threshold. Tax is cumulative
+     PAYE on the tax code fitted to the tax already deducted this year, rather
+     than on an assumed one. */
 
   WEEKS_PER_MONTH: 52 / 12,
 
@@ -194,10 +200,121 @@ const PayslipsView = {
     };
   },
 
-  _suggestedExtraPay(qty, month) {
+  // Additional hours and bank holiday hours, current or previous month — pass
+  // the month the hours were worked in, since that's what sets the rate. Exact
+  // on all 21 payslips with current-month hours, all 17 with previous-month
+  // hours (paying those at the payslip's own rate misses April 2026 by £1.98)
+  // and all 5 with bank holiday hours.
+  _suggestedHoursPay(qty, month) {
     const rate = this._rateForMonth(month);
     if (!rate || !(qty > 0)) return null;
     return { value: round2(qty * rate), rate };
+  },
+
+  /* Employee NI: 8% of everything above the primary threshold of £1,048 a
+     month, frozen since 2022/23. Exact on 21 of the 22 recorded payslips —
+     including all nine months under the threshold, where it correctly comes to
+     nothing — the one miss being Nov 2025, a penny over. */
+  NI_PRIMARY_THRESHOLD: 1048,
+  NI_EMPLOYEE_RATE: 0.08,
+
+  _suggestedNI(gross) {
+    if (!(gross > 0)) return null;
+    const over = gross - this.NI_PRIMARY_THRESHOLD;
+    return { value: over > 0 ? round2(over * this.NI_EMPLOYEE_RATE) : 0, over };
+  },
+
+  /* PAYE. Tax is worked out on the year to date rather than the month: 20% of
+     everything earned since 6 April above the free pay the tax code allows by
+     this point in the year, less the tax already deducted in it.
+
+     The code is fitted, not assumed. PAYE is deterministic, so one taxed
+     payslip pins the code down to a pound or two of allowance and two pin it
+     exactly — and assuming would have been wrong, since 2025/26 actually ran on
+     1240L. Carrying a fitted code across April would be wrong too, HMRC having
+     put it back to 1257L for 2026/27, so each tax year is fitted from its own
+     payslips and falls back to the standard code until one of them has tax on
+     it. Right on 21 of the 22 recorded payslips; the miss is July 2025, the
+     first taxed month of a year, where there was nothing yet to fit to. */
+  TAX_BASIC_RATE: 0.20,
+  BASIC_RATE_BAND: 37700,
+  STANDARD_TAX_CODE: 1257,
+
+  _taxMonthIndex(month) {
+    const mo = +month.split('-')[1];
+    return mo >= 4 ? mo - 3 : mo + 9;      // April = 1 … March = 12
+  },
+
+  _taxYearStart(month) {
+    const [y, mo] = month.split('-').map(Number);
+    return (mo >= 4 ? y : y - 1) + '-04';
+  },
+
+  // HMRC's free pay tables: a code of N allows (N x 10) + 9 for the year,
+  // spread over 12 months and rounded up to the penny at each one.
+  _freePayToDate(code, monthIndex) {
+    return Math.ceil(monthIndex * ((code * 10 + 9) / 12) * 100) / 100;
+  },
+
+  _priorPayslipsThisTaxYear(month, editId) {
+    const start = this._taxYearStart(month);
+    return (this.allPayslips || [])
+      .filter(p => p.month >= start && p.month < month && p.id !== editId)
+      .sort((a, b) => a.month.localeCompare(b.month));
+  },
+
+  // The tax a payslip should show, given a code and the months before it.
+  _paye(code, month, priors, gross) {
+    const ytdGross = priors.reduce((s, p) => s + (p.total_gross || 0), 0) + gross;
+    const ytdTax   = priors.reduce((s, p) => s + (p.tax_paid    || 0), 0);
+    // HMRC rounds taxable pay to date down to whole pounds before taxing it.
+    const taxable   = Math.floor(ytdGross - this._freePayToDate(code, this._taxMonthIndex(month)));
+    const dueToDate = taxable > 0 ? round2(taxable * this.TAX_BASIC_RATE) : 0;
+    return round2(Math.max(0, dueToDate - ytdTax));
+  },
+
+  // → { code, fitted } — fitted false means "assuming the standard code".
+  _fittedTaxCode(month, editId) {
+    const priors = this._priorPayslipsThisTaxYear(month, editId);
+    const taxed  = priors.filter(p => (p.tax_paid || 0) > 0);
+    if (!taxed.length) return { code: this.STANDARD_TAX_CODE, fitted: false };
+
+    const fits = [];
+    for (let code = 0; code <= 2000; code++) {
+      const ok = taxed.every(p =>
+        Math.abs(this._paye(code, p.month, priors.filter(q => q.month < p.month), p.total_gross || 0)
+                 - (p.tax_paid || 0)) < 0.005);
+      if (ok) fits.push(code);
+    }
+    if (!fits.length) return { code: this.STANDARD_TAX_CODE, fitted: false };
+    // Any code in the fitted range reproduces the year so far; prefer the
+    // standard one when it's among them, otherwise take the middle.
+    return {
+      code: fits.includes(this.STANDARD_TAX_CODE) ? this.STANDARD_TAX_CODE : fits[Math.floor(fits.length / 2)],
+      fitted: true,
+    };
+  },
+
+  // → { value, code, fitted } or null
+  _suggestedTax(month, gross, editId, codeInfo) {
+    if (!month || !(gross > 0)) return null;
+    const { code, fitted } = codeInfo || this._fittedTaxCode(month, editId);
+    const priors   = this._priorPayslipsThisTaxYear(month, editId);
+    const idx      = this._taxMonthIndex(month);
+    const ytdGross = priors.reduce((s, p) => s + (p.total_gross || 0), 0) + gross;
+    // Only the basic rate is modelled — say nothing rather than guess if the
+    // year's earnings ever reach the higher-rate band.
+    if (ytdGross - this._freePayToDate(code, idx) > this.BASIC_RATE_BAND * idx / 12) return null;
+    return { value: this._paye(code, month, priors, gross), code, fitted };
+  },
+
+  // Figures that stay put month to month until they change — carried from the
+  // most recent payslip that had one, rather than hard-coded.
+  _lastRecorded(field, month, editId) {
+    const priors = (this.allPayslips || [])
+      .filter(p => p.month < month && p.id !== editId && p[field])
+      .sort((a, b) => a.month.localeCompare(b.month));
+    return priors.length ? priors[priors.length - 1][field] : null;
   },
 
   renderStats() {
@@ -252,11 +369,7 @@ const PayslipsView = {
     const payslipByMonth = {};
     this.payslips.forEach(p => { payslipByMonth[p.month] = p; });
     const nextMonth = nextMonthStr;
-    const prevMonth = (m) => {
-      const [y, mo] = m.split('-').map(Number);
-      const d = new Date(y, mo - 2, 1); // one month back
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    };
+    const prevMonth = prevMonthStr;
     // "Paid in next month" helpers — per-month flag stored in settings
     const isPaidInNext  = (m) => this.settings[`paid_in_next_${m}`] === '1';
     const shiftMapByMonth = {};
@@ -624,13 +737,23 @@ const PayslipsView = {
     const v  = (k, def = '') => (p[k] != null && p[k] !== 0) ? p[k] : def;
     const vn = (k)           => (p[k] != null && p[k] !== 0) ? p[k] : '';
 
+    // Standing amounts — SIP and Sharesave sit at the same figure month after
+    // month, so an empty one carries from the last payslip that had it rather
+    // than being hard-coded, and follows along if it ever changes.
+    const carried = (k) => vn(k) || (this._lastRecorded(k, p.month || getCurrentMonth(), p.id) ?? '');
+
     // Determine which toggles should be ON (because the existing payslip has values)
     const hasPrevMonth   = !!(p.arrears_pay || p.addt_hours_prev_qty || p.addt_hours_prev_amount || p.annual_leave_adj_prev);
     const hasALCurr      = !!p.annual_leave_adj_curr;
     const hasBankHol     = !!(p.bank_hol_curr_qty || p.bank_hol_curr_amount || p.bank_hol_prev_qty || p.bank_hol_prev_amount);
     const hasSickPay     = !!p.company_sick_pay;
-    const hasSIP         = !!p.sip_contribution;
-    const hasSharesave   = !!(p.sharesave_amount || p.sharesave_description);
+    // Sharesave and SIP run at the same figure every month until they stop, so
+    // a brand-new payslip starts with whichever of them the month before had.
+    const prevSlip       = p.id == null
+      ? (this.allPayslips || []).find(q => q.month === prevMonthStr(p.month || getCurrentMonth()))
+      : null;
+    const hasSIP         = !!(p.sip_contribution || prevSlip?.sip_contribution);
+    const hasSharesave   = !!(p.sharesave_amount || p.sharesave_description || prevSlip?.sharesave_amount);
     const hasOtherPay   = !!(p.other_payments || p.other_pay_description);
 
     const chk = (val) => val ? 'checked' : '';
@@ -708,6 +831,7 @@ const PayslipsView = {
     <div class="form-group">
       <label>Additional Hours <span style="font-size:11px;color:var(--text-muted)">(prev month) — £</span></label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfPrevExtraPay" step="0.01" value="${vn('addt_hours_prev_amount')}" placeholder="0.00" /></div>
+      <div class="form-hint" id="pfPrevExtraPayHint"></div>
     </div>
   </div>
   <div class="form-row">
@@ -752,6 +876,7 @@ const PayslipsView = {
     <div class="form-group">
       <label>Bank Holiday Hrs <span style="font-size:11px;color:var(--text-muted)">(this month) — £</span></label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfBHCurrAmt" step="0.01" value="${vn('bank_hol_curr_amount')}" placeholder="0.00" /></div>
+      <div class="form-hint" id="pfBHCurrAmtHint"></div>
     </div>
   </div>
   <div class="form-row">
@@ -762,6 +887,7 @@ const PayslipsView = {
     <div class="form-group">
       <label>Bank Holiday Hrs <span style="font-size:11px;color:var(--text-muted)">(prev month) — £</span></label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfBHPrevAmt" step="0.01" value="${vn('bank_hol_prev_amount')}" placeholder="0.00" /></div>
+      <div class="form-hint" id="pfBHPrevAmtHint"></div>
     </div>
   </div>
 </div>
@@ -806,7 +932,7 @@ const PayslipsView = {
   <div class="form-row">
     <div class="form-group">
       <label>SIP Contribution — £ <span style="font-size:11px;color:var(--text-muted)">(enter as negative, e.g. −50.00)</span></label>
-      <div class="input-prefix"><span>£</span><input type="number" id="pfSIP" step="0.01" value="${vn('sip_contribution')}" placeholder="-50.00" /></div>
+      <div class="input-prefix"><span>£</span><input type="number" id="pfSIP" step="0.01" value="${carried('sip_contribution')}" placeholder="-50.00" /></div>
     </div>
     <div class="form-group"></div>
   </div>
@@ -843,10 +969,12 @@ const PayslipsView = {
     <div class="form-group">
       <label>Tax Paid</label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfTax" step="0.01" value="${vn('tax_paid')}" placeholder="0.00" /></div>
+      <div class="form-hint" id="pfTaxHint"></div>
     </div>
     <div class="form-group">
       <label>National Insurance <span style="font-size:11px;color:var(--text-muted)">(employee)</span></label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfNI" step="0.01" value="${vn('ni_employee')}" placeholder="0.00" /></div>
+      <div class="form-hint" id="pfNIHint"></div>
     </div>
   </div>
 </div>
@@ -862,7 +990,7 @@ const PayslipsView = {
   <div class="form-row">
     <div class="form-group">
       <label>Sharesave — £</label>
-      <div class="input-prefix"><span>£</span><input type="number" id="pfSharesaveAmt" step="0.01" value="${p.sharesave_amount != null && p.sharesave_amount !== 0 ? p.sharesave_amount : 250}" placeholder="250" /></div>
+      <div class="input-prefix"><span>£</span><input type="number" id="pfSharesaveAmt" step="0.01" value="${carried('sharesave_amount') || 250}" placeholder="250" /></div>
     </div>
     <div class="form-group">
       <label>Description <span style="font-size:11px;color:var(--text-muted)">(e.g. Nov25 3yrs £250)</span></label>
@@ -890,7 +1018,7 @@ const PayslipsView = {
 
 <!-- ══════════════════════════════════════════════ TOTALS ══ -->
 <div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:#1B2A4A;font-weight:700;font-size:13px;letter-spacing:.05em">
-  TOTALS <span style="font-weight:400;font-size:11px;opacity:.8">(auto-calculated from above if left blank)</span>
+  TOTALS <span style="font-weight:400;font-size:11px;opacity:.8">(kept in step with the figures above until you type your own)</span>
 </div>
 <div style="padding:10px 0 0">
   <div class="form-row">
@@ -923,7 +1051,7 @@ const PayslipsView = {
 
 <!-- ══════════════════════════════════════════════ YTD ══ -->
 <div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:#1B2A4A;font-weight:700;font-size:13px;letter-spacing:.05em">
-  YEAR TO DATE (from payslip) <span style="font-weight:400;font-size:11px;opacity:.8">(auto-calculated if left blank)</span>
+  YEAR TO DATE (from payslip) <span style="font-weight:400;font-size:11px;opacity:.8">(kept in step until you type your own)</span>
 </div>
 <div style="padding:10px 0 0">
   <div class="form-row">
@@ -961,8 +1089,9 @@ const PayslipsView = {
     </div>
   </div>
   <p style="font-size:11px;color:var(--text-muted);margin-top:4px">
-    Gross/Tax YTD are exact running totals from your logged payslips. Taxable/NI'able YTD are estimated as
-    Gross − SIP contribution (Sharesave isn't deducted pre-tax) — if your payslip shows a different figure, trust the payslip and enter it directly.
+    All four are running totals from your logged payslips for the tax year so far. Taxable and NI'able pay equal gross:
+    the SIP contribution is a negative payment line, so it has already come off the gross above, and Sharesave comes out of net pay.
+    If your payslip shows a different figure, trust the payslip and enter it directly.
   </p>
 </div>
 
@@ -993,152 +1122,176 @@ const PayslipsView = {
     ];
     togglePairs.forEach(([tid, sid]) => this._bindToggle(tid, sid));
 
-    // Auto-calculate gross total
-    const calcGross = () => {
-      const basic    = pf('pfBasicPay');
-      const extra    = pf('pfExtraPay');
-      const arrears  = pfToggled('togPrevMonth', 'pfArrears');
-      const prevExtr = pfToggled('togPrevMonth', 'pfPrevExtraPay');
-      const alPrev   = pfToggled('togPrevMonth', 'pfALPrev');
-      const alCurr   = pfToggled('togALCurr',    'pfALCurr');
-      const bhCA     = pfToggled('togBankHol',   'pfBHCurrAmt');
-      const bhPA     = pfToggled('togBankHol',   'pfBHPrevAmt');
-      const sick     = pfToggled('togSickPay',   'pfSickPay');
-      const sip      = pfToggled('togSIP',       'pfSIP');
-      const other    = pfToggled('togOtherPay',  'pfOtherPayAmt');
-      const total    = basic + extra + arrears + prevExtr + alPrev + alCurr + bhCA + bhPA + sick + sip + other;
-      document.getElementById('pfTotalGross').value = round2(total);
-    };
-
-    // Auto-calculate deductions total
-    const calcDeduc = () => {
-      const tax   = pf('pfTax');
-      const ni    = pf('pfNI');
-      const saves = pfToggled('togSharesave', 'pfSharesaveAmt');
-      const total = tax + ni + saves;
-      document.getElementById('pfDeductions').value = round2(total);
-    };
-
-    const calcNet = () => {
-      const gross  = pf('pfTotalGross');
-      const deduc  = pf('pfDeductions');
-      document.getElementById('pfNetPay').value = round2(gross - deduc);
-    };
-
-    document.getElementById('pfCalcGrossBtn').addEventListener('click', calcGross);
-    document.getElementById('pfCalcDeducBtn').addEventListener('click', calcDeduc);
-    document.getElementById('pfCalcNetBtn').addEventListener('click', calcNet);
-
-    // YTD auto-calc from accumulated payslips in the same UK tax year (6 Apr - 5 Apr,
-    // bucketed here by calendar month since that's how payslips are stored).
-    // gross/tax are exact running sums of each month's own payslip figure.
-    // taxable/ni are estimated as gross minus SIP contribution — SIP is a genuine
-    // pre-tax salary sacrifice, Sharesave (SAYE) is deducted from net pay so it
-    // doesn't reduce taxable/NI'able pay.
-    const periodTaxableNiablePay = (grossVal) => {
-      const sip = Math.abs(pfToggled('togSIP', 'pfSIP'));
-      return grossVal - sip;
-    };
-    const calcYtd = (field) => {
-      const month = document.getElementById('pfMonth').value;
-      if (!month) { showToast('Select a month first', 'warning'); return; }
-      const [y, m] = month.split('-').map(Number);
-      const taxYearStart = m >= 4 ? String(y) + '-04' : String(y - 1) + '-04';
-      const prev = PayslipsView.allPayslips.filter(p =>
-        p.month >= taxYearStart && p.month < month && p.id !== editId
-      );
-      const thisGross = pf('pfTotalGross') || pf('pfBasicPay');
-      if (field === 'gross') {
-        const prevSum = prev.reduce((s, p) => s + (p.total_gross || 0), 0);
-        document.getElementById('pfGrossYtd').value = round2(prevSum + thisGross);
-      } else if (field === 'tax') {
-        const prevSum = prev.reduce((s, p) => s + (p.tax_paid || 0), 0);
-        document.getElementById('pfTaxYtd').value = round2(prevSum + pf('pfTax'));
-      } else if (field === 'taxable') {
-        // Re-derive each prior month's taxable pay the same way (gross - SIP) for consistency
-        const prevSum = prev.reduce((s, p) => s + ((p.total_gross || 0) - Math.abs(p.sip_contribution || 0)), 0);
-        document.getElementById('pfTaxableYtd').value = round2(prevSum + periodTaxableNiablePay(thisGross));
-      } else if (field === 'ni') {
-        const prevSum = prev.reduce((s, p) => s + ((p.total_gross || 0) - Math.abs(p.sip_contribution || 0)), 0);
-        document.getElementById('pfNiYtd').value = round2(prevSum + periodTaxableNiablePay(thisGross));
-      }
-    };
-
-    document.getElementById('pfCalcGrossYtdBtn').addEventListener('click',   () => calcYtd('gross'));
-    document.getElementById('pfCalcTaxYtdBtn').addEventListener('click',    () => calcYtd('tax'));
-    document.getElementById('pfCalcTaxableYtdBtn').addEventListener('click', () => calcYtd('taxable'));
-    document.getElementById('pfCalcNiYtdBtn').addEventListener('click',      () => calcYtd('ni'));
-
-    // Before the YTD auto-run below: it falls back to Basic Salary when there's
-    // no gross yet, so the prefill has to be in place or YTD opens counting zero
-    // for this month.
+    // Everything numeric on this form fills itself in and keeps in step as you
+    // type — see _wireAutofill.
     this._wireAutofill(editId);
-
-    // Auto-run once on open for any YTD field that's still blank, so YTD "just works"
-    // without needing a click — the buttons stay available to refresh after edits.
-    ['pfGrossYtd', 'pfTaxYtd', 'pfTaxableYtd', 'pfNiYtd'].forEach((id, i) => {
-      const el = document.getElementById(id);
-      if (el && !el.value) calcYtd(['gross', 'tax', 'taxable', 'ni'][i]);
-    });
 
     document.getElementById('pfSaveBtn').addEventListener('click', () => this.savePayslipForm(editId));
   },
 
-  /* Prefills Basic Salary and derives Additional Hours £ from the hours you
-     type. Both stay fully editable: a field is only ever written while it is
-     still flagged auto, and typing in it clears that flag for good, so nothing
-     you've entered by hand gets overwritten by a later month change. */
-  _wireAutofill(editId) {
-    const basic     = document.getElementById('pfBasicPay');
-    const qty       = document.getElementById('pfExtraQty');
-    const extra     = document.getElementById('pfExtraPay');
-    const monthSel  = document.getElementById('pfMonth');
-    const basicHint = document.getElementById('pfBasicPayHint');
-    const extraHint = document.getElementById('pfExtraPayHint');
-    if (!basic || !qty || !extra || !monthSel) return;
+  /* Fills in every figure the app can work out for itself — basic salary, both
+     pairs of hourly extras, tax, NI, the three totals and the four YTD boxes —
+     and keeps them in step as you type, so entering a payslip is mostly
+     checking figures rather than typing them.
 
-    const isAuto = el => el.dataset.autofilled === '1';
-    const markManual = el => { delete el.dataset.autofilled; };
+     Everything stays editable. A field is only ever written while the form
+     still owns it; typing in it hands it over for good, and anything that
+     already had a value when the form opened — every field of a saved payslip,
+     or whatever the photo import read — counts as typed from the start. So a
+     figure you entered by hand is never overwritten by a later change to the
+     month, the hours or anything else. An Auto-calculate button hands a field
+     back to the form. */
+  _wireAutofill(editId) {
+    const el    = id => document.getElementById(id);
+    const write = (id, value) => { const e = el(id); if (e) e.value = value; };
+    const hint  = (id, text)  => { const h = el(id); if (h) h.textContent = text || ''; };
+
+    const monthSel = el('pfMonth');
+    if (!monthSel) return;
+    const month     = () => monthSel.value;
+    const prevMonth = () => prevMonthStr(monthSel.value);
+    const monthName = m => fmtMonth(m).split(' ')[0];
+
+    // The fields the form fills in. A value already sitting in one when the
+    // form opens came from somewhere else, so that field is hands-off.
+    const MANAGED = ['pfBasicPay', 'pfExtraPay', 'pfPrevExtraPay', 'pfBHCurrAmt', 'pfBHPrevAmt',
+                     'pfTax', 'pfNI', 'pfTotalGross', 'pfDeductions', 'pfNetPay',
+                     'pfGrossYtd', 'pfTaxYtd', 'pfTaxableYtd', 'pfNiYtd'];
+    MANAGED.forEach(id => {
+      const e = el(id);
+      if (!e) return;
+      if (e.value !== '') e.dataset.manual = '1';
+      e.addEventListener('input', () => { e.dataset.manual = '1'; });
+    });
+    const mine = id => el(id) && el(id).dataset.manual !== '1';
+
+    // Fitting a tax code walks every code against the year's payslips, so do it
+    // once per month rather than on every keystroke.
+    const codeCache = new Map();
+    const taxCodeFor = (m) => {
+      if (!codeCache.has(m)) codeCache.set(m, this._fittedTaxCode(m, editId));
+      return codeCache.get(m);
+    };
 
     const fillBasic = () => {
-      if (basic.value && !isAuto(basic)) return;      // hand-entered — leave alone
-      const s = this._suggestedBasicPay(monthSel.value, editId);
-      if (!s) {
-        if (isAuto(basic)) basic.value = '';
-        if (basicHint) basicHint.textContent = '';
-        return;
-      }
-      basic.value = s.value;
-      basic.dataset.autofilled = '1';
-      if (basicHint) {
-        basicHint.textContent = s.source === 'carried'
-          ? `Auto-filled — what you were paid in ${s.basis === 1 ? 'the previous month' : `${s.basis} previous months`} on this rate. Edit if your payslip differs.`
-          : `Estimated — ${s.basis.contracted_hours_per_week}h/week × 52 ÷ 12 × £${s.basis.hourly_rate}. First month on this rate, so check it against the payslip.`;
-      }
+      if (!mine('pfBasicPay')) return;
+      const s = this._suggestedBasicPay(month(), editId);
+      if (!s) { write('pfBasicPay', ''); hint('pfBasicPayHint', ''); return; }
+      write('pfBasicPay', s.value);
+      hint('pfBasicPayHint', s.source === 'carried'
+        ? `Auto-filled — what you were paid in ${s.basis === 1 ? 'the previous month' : `${s.basis} previous months`} on this rate. Edit if your payslip differs.`
+        : `Estimated — ${s.basis.contracted_hours_per_week}h/week × 52 ÷ 12 × £${s.basis.hourly_rate}. First month on this rate, so check it against the payslip.`);
     };
 
-    const fillExtra = () => {
-      if (extra.value && !isAuto(extra)) return;
-      const q = parseFloat(qty.value);
-      const s = this._suggestedExtraPay(q, monthSel.value);
-      if (!s) {
-        if (isAuto(extra)) extra.value = '';
-        if (extraHint) extraHint.textContent = '';
-        return;
-      }
-      extra.value = s.value;
-      extra.dataset.autofilled = '1';
-      if (extraHint) extraHint.textContent = `Auto-filled — ${q} × £${s.rate}. Edit if your payslip differs.`;
+    // Hours are paid at the rate in force for the month they were worked, so
+    // the previous-month columns follow the previous month's rate.
+    const fillHours = (qtyId, amtId, hintId, workedIn) => {
+      if (!mine(amtId)) return;
+      const qty = pf(qtyId);
+      const m   = workedIn();
+      const s   = this._suggestedHoursPay(qty, m);
+      if (!s) { write(amtId, ''); hint(hintId, ''); return; }
+      write(amtId, s.value);
+      hint(hintId, `Auto-filled — ${qty} × £${s.rate}${m === month() ? '' : ` (${monthName(m)}'s rate)`}. Edit if your payslip differs.`);
     };
 
-    basic.addEventListener('input', () => markManual(basic));
-    extra.addEventListener('input', () => markManual(extra));
-    qty.addEventListener('input', fillExtra);
-    monthSel.addEventListener('change', () => { fillBasic(); fillExtra(); });
+    const grossTotal = () =>
+      pf('pfBasicPay') + pf('pfExtraPay') +
+      pfToggled('togPrevMonth', 'pfArrears')   + pfToggled('togPrevMonth', 'pfPrevExtraPay') +
+      pfToggled('togPrevMonth', 'pfALPrev')    + pfToggled('togALCurr',    'pfALCurr') +
+      pfToggled('togBankHol',   'pfBHCurrAmt') + pfToggled('togBankHol',   'pfBHPrevAmt') +
+      pfToggled('togSickPay',   'pfSickPay')   + pfToggled('togSIP',       'pfSIP') +
+      pfToggled('togOtherPay',  'pfOtherPayAmt');
 
-    // On open: fill anything still blank, exactly as the YTD fields do
-    if (!basic.value) fillBasic();
-    if (!extra.value) fillExtra();
+    const fillGross = () => {
+      if (!mine('pfTotalGross')) return;
+      write('pfTotalGross', round2(grossTotal()) || '');
+    };
+
+    const fillNI = () => {
+      if (!mine('pfNI')) return;
+      const s = this._suggestedNI(pf('pfTotalGross'));
+      if (!s) { write('pfNI', ''); hint('pfNIHint', ''); return; }
+      write('pfNI', s.value || '');
+      hint('pfNIHint', s.over > 0
+        ? `Auto-filled — 8% of the ${fmtCurrency(s.over)} above the £${this.NI_PRIMARY_THRESHOLD.toLocaleString()} monthly threshold.`
+        : `Nothing due — gross is under the £${this.NI_PRIMARY_THRESHOLD.toLocaleString()} monthly NI threshold.`);
+    };
+
+    const fillTax = () => {
+      if (!mine('pfTax')) return;
+      const s = this._suggestedTax(month(), pf('pfTotalGross') || pf('pfBasicPay'), editId, taxCodeFor(month()));
+      if (!s) { write('pfTax', ''); hint('pfTaxHint', ''); return; }
+      write('pfTax', s.value || '');
+      hint('pfTaxHint', s.fitted
+        ? `Estimated — cumulative PAYE on code ${s.code}L, the code that matches the tax on your earlier payslips this tax year. Check it against the payslip.`
+        : `Estimated — cumulative PAYE assuming the standard ${s.code}L code; no taxed payslip yet this tax year to check it against.`);
+    };
+
+    const fillDeduc = () => {
+      if (!mine('pfDeductions')) return;
+      write('pfDeductions', round2(pf('pfTax') + pf('pfNI') + pfToggled('togSharesave', 'pfSharesaveAmt')) || '');
+    };
+
+    const fillNet = () => {
+      if (!mine('pfNetPay')) return;
+      write('pfNetPay', round2(pf('pfTotalGross') - pf('pfDeductions')) || '');
+    };
+
+    /* YTD running totals for the UK tax year (6 Apr – 5 Apr, bucketed here by
+       calendar month since that's how payslips are stored). Gross and tax are
+       exact sums of each month's own payslip figure. Taxable and NI'able pay
+       come to the same as gross: the SIP contribution is a negative payment
+       line, so it has already come off the gross, and Sharesave comes out of
+       net pay. The May 2026 payslip bears that out — taxable YTD £2,753.06,
+       exactly the two months' gross. */
+    const YTD = { gross: 'pfGrossYtd', tax: 'pfTaxYtd', taxable: 'pfTaxableYtd', ni: 'pfNiYtd' };
+    const calcYtd = (field) => {
+      const id = YTD[field];
+      if (!mine(id) || !month()) return;
+      const priors = this._priorPayslipsThisTaxYear(month(), editId);
+      const sum = (k) => priors.reduce((s, p) => s + (p[k] || 0), 0);
+      write(id, field === 'tax'
+        ? round2(sum('tax_paid') + pf('pfTax'))
+        : round2(sum('total_gross') + (pf('pfTotalGross') || pf('pfBasicPay'))));
+    };
+
+    // Order matters: the totals feed tax and NI, which feed the deductions and
+    // the net, and the YTD boxes count this month's gross and tax.
+    const recalc = () => {
+      fillBasic();
+      fillHours('pfExtraQty',     'pfExtraPay',     'pfExtraPayHint',     month);
+      fillHours('pfPrevExtraQty', 'pfPrevExtraPay', 'pfPrevExtraPayHint', prevMonth);
+      fillHours('pfBHCurrQty',    'pfBHCurrAmt',    'pfBHCurrAmtHint',    month);
+      fillHours('pfBHPrevQty',    'pfBHPrevAmt',    'pfBHPrevAmtHint',    prevMonth);
+      fillGross();
+      fillNI();
+      fillTax();
+      fillDeduc();
+      fillNet();
+      Object.keys(YTD).forEach(f => calcYtd(f));
+    };
+
+    // Any change anywhere can move the totals, so recalculate on all of them.
+    // The listeners go on the fields themselves, which the modal throws away.
+    document.querySelectorAll('#modalBody input, #modalBody select').forEach(input => {
+      const evt = (input.tagName === 'SELECT' || input.type === 'checkbox' || input.type === 'radio')
+        ? 'change' : 'input';
+      input.addEventListener(evt, recalc);
+    });
+
+    // Auto-calculate ↻ hands a field back to the form and refills it.
+    const rearm = (id) => { const e = el(id); if (e) delete e.dataset.manual; recalc(); };
+    [['pfCalcGrossBtn',      'pfTotalGross'],
+     ['pfCalcDeducBtn',      'pfDeductions'],
+     ['pfCalcNetBtn',        'pfNetPay'],
+     ['pfCalcGrossYtdBtn',   'pfGrossYtd'],
+     ['pfCalcTaxYtdBtn',     'pfTaxYtd'],
+     ['pfCalcTaxableYtdBtn', 'pfTaxableYtd'],
+     ['pfCalcNiYtdBtn',      'pfNiYtd']].forEach(([btnId, fieldId]) =>
+      el(btnId)?.addEventListener('click', () => rearm(fieldId)));
+
+    recalc();
   },
 
   async savePayslipForm(editId) {
@@ -1249,5 +1402,10 @@ function round2(v) { return Math.round(v * 100) / 100; }
 function nextMonthStr(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const d = new Date(y, m, 1); // JS months are 0-indexed, so m = next month
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function prevMonthStr(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const d = new Date(y, m - 2, 1); // one month back
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
