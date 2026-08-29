@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-29T13:03:35.379Z",
-  "commit": "3555a6c",
+  "generated_at": "2026-08-29T21:03:48.957Z",
+  "commit": "937ecbe",
   "entries": [
+    {
+      "version": "4.9.0",
+      "date": "2026-08-29",
+      "summary": "Autofill Basic Salary and Additional Hours pay on the payslip form",
+      "details": "Both suggestions were picked by measuring against all 22 recorded payslips\nrather than assumed, and one of the two obvious formulas turned out to be\nthe wrong one.\n\n- Additional Hours £ derives from the hours as you type them: qty x the\n  hourly rate for that month. Exact on all 21 payslips that had any\n  additional hours — not a penny out on any of them.\n\n- Basic Salary is prefilled on open. The obvious formula, contracted x\n  52/12 x rate, is what Pay Audit uses to judge a payslip, but it's a poor\n  thing to type in: it lands a penny under on most months and 21p under on\n  the current rate (1168.27 against the 1168.48 actually paid). Basic is a\n  constant that only moves when the rate or contract does, so the better\n  predictor is what payroll actually paid last time on the same rate.\n  Carrying that forward is exact on 16 of 22, and the three it misses are\n  months no formula could get either — a real underpayment in Jan 2025 and\n  the 14->20h transition in Nov 2025. The most common prior value is used\n  rather than simply the latest, so one odd month doesn't propagate.\n\n  The formula remains the fallback for the first month on a new rate, where\n  there is nothing to carry, and says so in the hint.\n\nEverything stays editable. A field is only ever written while it's still\nflagged as autofilled; typing in it clears that flag permanently, so a\nhand-entered figure survives later changes to the month or the hours. Values\non an existing payslip are never touched when editing. Each prefilled field\nexplains itself underneath — \"what you were paid in 4 previous months on this\nrate\", \"2 x £13.48\" — so the number is checkable rather than magic.\n\nAutofill now runs before the YTD auto-calc rather than after, since YTD falls\nback to Basic Salary when there's no gross yet; opening August 2026 gives a\nYTD gross of £6729.17 instead of £5560.69.\n\nVerified in the running app against a copy of the live database: August 2026\nprefills £1168.48, 2 hours gives £26.96 and 10.25 gives £138.17, all three\nmatching the real payslips; hand-edited values survive month and hours\nchanges; switching to June 2025 correctly follows the older rate to £791.10."
+    },
     {
       "version": "4.8.0",
       "date": "2026-08-29",
