@@ -435,20 +435,26 @@ const PayslipsView = {
     const rows = months.map(m => {
       const contracted = m.contracted_hours || 0;
       const logged     = m.scheduled_hours  || 0;
-      const hrsDiff     = logged - contracted;
-      const rate        = this._rateForMonth(m.month);
-      const hrsDiffPay  = hrsDiff * rate;
+      // Booked leave counts towards the contract — you were paid for those hours
+      // and weren't expected to be on the rota. Without this a fortnight off read
+      // as a 20-hour shortfall and looked exactly like a payroll error.
+      const leave      = m.leave_hours || 0;
+      const covered    = logged + leave;
+      const hrsDiff    = covered - contracted;
+      const rate       = this._rateForMonth(m.month);
+      const hrsDiffPay = hrsDiff * rate;
 
       let note, noteColour;
+      const leaveNote = leave > 0 ? ` (incl. ${fmtHours(leave)} leave)` : '';
       if (contracted === 0) {
         note = 'No contracted hours set for this month'; noteColour = 'var(--text-muted)';
       } else if (Math.abs(hrsDiff) < 1) {
-        note = 'On contract'; noteColour = 'var(--text-muted)';
+        note = `On contract${leaveNote}`; noteColour = 'var(--text-muted)';
       } else if (hrsDiff < 0) {
-        note = `${fmtHours(Math.abs(hrsDiff))} under contract ${rate ? `(≈ ${fmtCurrency(Math.abs(hrsDiffPay))} less)` : ''}`;
+        note = `${fmtHours(Math.abs(hrsDiff))} under contract ${rate ? `(≈ ${fmtCurrency(Math.abs(hrsDiffPay))} less)` : ''}${leaveNote}`;
         noteColour = 'var(--danger)';
       } else {
-        note = `${fmtHours(hrsDiff)} over contract ${rate ? `(≈ +${fmtCurrency(hrsDiffPay)})` : ''}`;
+        note = `${fmtHours(hrsDiff)} over contract ${rate ? `(≈ +${fmtCurrency(hrsDiffPay)})` : ''}${leaveNote}`;
         noteColour = 'var(--success)';
       }
 
@@ -456,6 +462,8 @@ const PayslipsView = {
         <td><strong>${fmtMonth(m.month)}</strong></td>
         <td>${contracted ? fmtHours(contracted) : '—'}</td>
         <td>${logged ? fmtHours(logged) : '—'}</td>
+        <td style="color:${leave > 0 ? 'var(--info)' : 'var(--text-muted)'}">${leave > 0 ? fmtHours(leave) : '—'}</td>
+        <td><strong>${covered ? fmtHours(covered) : '—'}</strong></td>
         <td style="color:${hrsDiff < 0 ? 'var(--danger)' : hrsDiff > 0 ? 'var(--success)' : 'var(--text-muted)'}">
           ${hrsDiff ? (hrsDiff > 0 ? '+' : '') + fmtHours(hrsDiff) : '—'}
         </td>
@@ -471,9 +479,10 @@ const PayslipsView = {
         </div>
         <div class="card-body">
           <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-            Compares your contracted hours against hours actually logged (worked + upcoming shifts) each month —
-            useful for telling whether a low "Paid vs Est." month above was really just fewer hours on the rota,
-            rather than a payroll mistake.
+            Compares your contracted hours against hours actually logged (worked + upcoming shifts) plus any
+            booked leave each month — useful for telling whether a low "Paid vs Est." month above was really
+            just fewer hours on the rota, rather than a payroll mistake. Leave counts towards the contract:
+            you were paid for those hours and weren't expected on the rota, so a holiday isn't a shortfall.
           </p>
           <div class="table-wrapper">
             <table>
@@ -482,6 +491,8 @@ const PayslipsView = {
                   <th>Month</th>
                   <th title="Your contracted hours for this month, based on your pay rate settings">Contracted Hrs</th>
                   <th title="Total hours from your logged shifts this month — includes shifts not worked yet">Logged Hrs</th>
+                  <th title="Booked leave falling in this month, spread across the days each entry covers">Leave Hrs</th>
+                  <th title="Logged hours plus leave — what to compare against your contract">Covered Hrs</th>
                   <th>Hours Diff</th>
                   <th title="Hourly rate in effect for this month">Rate</th>
                   <th>What this means</th>

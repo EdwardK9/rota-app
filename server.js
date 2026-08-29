@@ -10,6 +10,7 @@ const zlib    = require('zlib');
 const { execSync, execFileSync } = require('child_process');
 const packageJson = require('./package.json');
 const { db, getPayRateForDate, calcHoursWorked } = require('./db');
+const { leaveHoursByMonth, leaveHoursByWeek } = require('./leaveHours');
 const workingWithRouter = require('./working-with');
 const { callGeminiVision } = workingWithRouter;
 const commuteRouter = require('./commute');
@@ -937,18 +938,11 @@ app.get('/api/reports/monthly', (req, res) => {
     return Math.round(rate.contracted_hours_per_week * workingDaysInMonth(monthStr) / 5 * 100) / 100;
   }
 
-  // Fetch annual leave entries for the year and group by month
-  const leaveRows = db.prepare(`
-    SELECT
-      strftime('%Y-%m', start_date) as month,
-      SUM(hours_taken) as leave_hours
-    FROM leave_entries
-    WHERE leave_type = 'annual'
-      AND strftime('%Y', start_date) = ?
-    GROUP BY month
-  `).all(yearFilter);
-  const leaveMap = {};
-  leaveRows.forEach(l => { leaveMap[l.month] = l.leave_hours || 0; });
+  // Leave hours per month, spread across the working days each entry actually
+  // covers. Grouping by the entry's start month (which this used to do) put a
+  // holiday running 30 Mar → 11 Apr entirely in March, leaving April looking
+  // over 20 hours under contract. See leaveHours.js.
+  const leaveMap = leaveHoursByMonth(`${yearFilter}-01-01`, `${yearFilter}-12-31`);
 
   const merged = shiftRows.map(s => {
     const rate = getRateForMonth(s.month);
@@ -1215,47 +1209,16 @@ app.get('/api/reports/weekly', (req, res) => {
     weekMap[key].shift_count++;
   }
 
-  // Also include annual leave hours so leave weeks don't look under-contracted
-  {
-    const hpdRow = db.prepare(`SELECT value FROM settings WHERE key='hours_per_day'`).get();
-    const hpd = parseFloat(hpdRow?.value || '7.4');
-    const leaveEntries = db.prepare(
-      `SELECT start_date, end_date, hours_taken, days_taken FROM leave_entries
-       WHERE start_date <= ? AND end_date >= ?`
-    ).all(`${year}-12-31`, `${year}-01-01`);
-
-    for (const entry of leaveEntries) {
-      const fullStart = new Date(entry.start_date + 'T00:00:00');
-      const fullEnd   = new Date(entry.end_date   + 'T00:00:00');
-      // Count working days in the full entry for hours-per-day calculation
-      let workingDays = 0;
-      const counter = new Date(fullStart);
-      while (counter <= fullEnd) {
-        const dow = counter.getDay();
-        if (dow >= 1 && dow <= 5) workingDays++;
-        counter.setDate(counter.getDate() + 1);
-      }
-      if (workingDays === 0) continue;
-      const totalHours = entry.hours_taken != null ? entry.hours_taken : (entry.days_taken * hpd);
-      const hoursPerDay = totalHours / workingDays;
-
-      // Walk only the portion within this year
-      const clampedStart = new Date(Math.max(fullStart, new Date(`${year}-01-01T00:00:00`)));
-      const clampedEnd   = new Date(Math.min(fullEnd,   new Date(`${year}-12-31T00:00:00`)));
-      const cur = new Date(clampedStart);
-      while (cur <= clampedEnd) {
-        const dow = cur.getDay();
-        if (dow >= 1 && dow <= 5) {
-          const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-          const key = getMondayKey(dateStr);
-          if (!weekMap[key]) {
-            weekMap[key] = { weekStart: key, hours_worked: 0, contracted_hours: getContractedHours(dateStr), shift_count: 0 };
-          }
-          weekMap[key].hours_worked += hoursPerDay;
-        }
-        cur.setDate(cur.getDate() + 1);
-      }
+  // Also include leave hours so leave weeks don't look under-contracted.
+  // Spreading lives in leaveHours.js so this, the monthly report and V3
+  // Overtime can't drift apart again.
+  for (const [week, hours] of Object.entries(
+    leaveHoursByWeek(`${year}-01-01`, `${year}-12-31`, getMondayKey)
+  )) {
+    if (!weekMap[week]) {
+      weekMap[week] = { weekStart: week, hours_worked: 0, contracted_hours: getContractedHours(week), shift_count: 0 };
     }
+    weekMap[week].hours_worked += hours;
   }
 
   // Only include weeks whose Monday falls within the requested year

@@ -181,7 +181,8 @@ const ReportsView = {
                 <th>Done</th>
                 <th>Hours</th>
                 <th>Contracted</th>
-                <th>Over/Under</th>
+                <th title="Booked leave falling in this month — counts towards your contract">Leave</th>
+                <th title="Logged hours plus leave, against contracted">Over/Under</th>
                 <th>Est. Pay</th>
                 <th>Gross (slip)</th>
                 <th>Net Paid</th>
@@ -201,12 +202,13 @@ const ReportsView = {
                   ? `<span class="${diffClass(diff)}">${diff >= 0 ? '+' : ''}${fmtCurrency(Math.abs(diff))}</span>`
                   : '—';
                 const contracted = m.contracted_hours != null ? m.contracted_hours : null;
-                const overUnder  = contracted !== null ? (m.scheduled_hours || 0) - contracted : null;
+                // Leave counts towards the contract — see leaveHours.js
+                const overUnder  = contracted !== null ? (m.scheduled_hours || 0) + (m.leave_hours || 0) - contracted : null;
                 const contractedHtml = contracted !== null
                   ? `<span style="color:var(--text-muted)">${fmtHours(contracted)}</span>`
                   : '<span style="color:var(--text-muted)">—</span>';
                 const overUnderHtml  = overUnder !== null
-                  ? `<span class="${diffClass(overUnder)}">${overUnder >= 0 ? '+' : ''}${fmtHours(Math.abs(overUnder))}</span>`
+                  ? `<span class="${diffClass(overUnder)}">${overUnder >= 0 ? '+' : '−'}${fmtHours(Math.abs(overUnder))}</span>`
                   : '—';
                 return `<tr>
                   <td><strong>${fmtMonth(m.month)}</strong></td>
@@ -214,6 +216,7 @@ const ReportsView = {
                   <td><span class="badge badge-success">${m.completed_count}</span></td>
                   <td>${fmtHours(m.hours_worked)}</td>
                   <td>${contractedHtml}</td>
+                    <td style="color:${(m.leave_hours || 0) > 0 ? 'var(--info)' : 'var(--text-muted)'}">${(m.leave_hours || 0) > 0 ? fmtHours(m.leave_hours) : '—'}</td>
                   <td>${overUnderHtml}</td>
                   <td>${fmtCurrency(m.calculated_pay)}</td>
                   <td>${gross !== null ? fmtCurrency(gross) : '<span style="color:var(--text-muted)">—</span>'}</td>
@@ -231,7 +234,8 @@ const ReportsView = {
                 <td>${monthly.reduce((s,m)=>s+m.completed_count,0)}</td>
                 <td>${fmtHours(monthly.reduce((s,m)=>s+(m.hours_worked||0),0))}</td>
                 <td style="color:var(--text-muted)">${fmtHours(monthly.reduce((s,m)=>s+(m.contracted_hours||0),0))}</td>
-                <td>${(() => { const d = monthly.reduce((s,m)=>s+(m.scheduled_hours||0),0) - monthly.reduce((s,m)=>s+(m.contracted_hours||0),0); return `<span class="${diffClass(d)}">${d>=0?'+':''}${fmtHours(Math.abs(d))}</span>`; })()}</td>
+                <td style="color:var(--info)">${fmtHours(monthly.reduce((s,m)=>s+(m.leave_hours||0),0))}</td>
+                <td>${(() => { const d = monthly.reduce((s,m)=>s+(m.scheduled_hours||0)+(m.leave_hours||0),0) - monthly.reduce((s,m)=>s+(m.contracted_hours||0),0); return `<span class="${diffClass(d)}">${d>=0?'+':'−'}${fmtHours(Math.abs(d))}</span>`; })()}</td>
                 <td>${fmtCurrency(monthly.reduce((s,m)=>s+(m.calculated_pay||0),0))}</td>
                 <td>${fmtCurrency(monthly.reduce((s,m)=>s+(m.payslip?.total_gross||0),0))}</td>
                 <td style="color:var(--success)">${fmtCurrency(monthly.reduce((s,m)=>s+(m.payslip?.net_payment||0),0))}</td>
