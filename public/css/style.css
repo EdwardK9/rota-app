@@ -451,27 +451,25 @@ textarea { resize: vertical; min-height: 72px; }
 .settings-section h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
 
 /* ── Settings page shell ────────────────────────────────────────────────
-   The page fills whatever width it's given, flowing sections into as many
-   columns as fit (masonry-style, so tall cards don't leave gaps beside them)
-   and collapsing to a single column on narrow screens. */
+   The page fills whatever width it's given, spreading sections across as many
+   columns as fit and collapsing to a single column on narrow screens.
+
+   Real column elements, filled by JS, rather than CSS multi-column: multicol
+   re-balances its columns whenever any content changes height, so collapsing
+   one card made every other card jump to a new place. Here a card only ever
+   moves when something above it *in its own column* changes. */
 .settings-page { width: 100%; }
 
 .settings-grid {
-  column-width: 460px;
-  column-gap: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
 }
-.settings-section {
-  break-inside: avoid;
-  -webkit-column-break-inside: avoid;
-  page-break-inside: avoid;
-  margin-bottom: 20px;
-  /* Multicol fragments an element unless it's a formatting context of its own */
-  display: flow-root;
+.settings-col {
+  flex: 1 1 0;
+  min-width: 0;   /* let columns shrink below their content's natural width */
 }
-/* Very wide screens: stop columns growing without limit */
-@media (min-width: 1900px) {
-  .settings-grid { column-width: 520px; column-count: 3; }
-}
+.settings-section { margin-bottom: 20px; }
 
 /* ── Search bar ──────────────────────────────────────────────────────── */
 .settings-search {

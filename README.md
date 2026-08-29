@@ -247,6 +247,38 @@ A monthly calendar view showing:
 
 Navigate months using the arrows. Click any shift to view or edit it.
 
+#### Live calendar subscription
+
+`GET /calendar.ics` serves a live iCal feed — 90 days back, 12 months forward — so a
+phone calendar stays in sync without re-exporting. The URL to subscribe to is shown on
+the **Export** page. On iPhone: Settings → Calendar → Accounts → Add Subscribed
+Calendar. On Google Calendar: Other calendars → From URL.
+
+**If the app is behind Cloudflare Access, the subscription will not work.** Calendar
+apps can't complete an interactive login, so Access answers their request with its
+sign-in page and the client sees no calendar data. This is the same reason the NFC
+clock-in tag fails from outside the network. Nothing in the app can work around it —
+the request is intercepted before it ever reaches the container.
+
+The fix is to exempt just that one path in Cloudflare Zero Trust:
+
+1. Zero Trust dashboard → **Access → Applications → Add an application → Self-hosted**
+2. Set the domain to your existing hostname with the path `calendar.ics`
+   (e.g. `schedule.example.uk` / `calendar.ics`)
+3. Add one policy: **Action = Bypass**, **Include = Everyone**
+4. Save. A more specific path takes precedence over the application covering the
+   whole hostname, so the rest of the app stays behind Access.
+
+That path is then reachable by anyone who knows the URL, so protect it with a token —
+**Export → Live calendar subscription → Token protection → Generate token**. The
+subscription URL becomes `/calendar.ics?token=<value>`, and requests without the exact
+token get a 403. The token lives in the `settings` table under `ical_token`; the
+`ICAL_TOKEN` env var still works as a fallback for values not set in the app.
+
+Repeat steps 1–4 with the path `clock-tap` if you want the NFC tag to work from
+outside your network too — it already has its own token, set in Settings → NFC
+Clock In/Out.
+
 ---
 
 ### Colleagues & Working With

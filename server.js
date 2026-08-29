@@ -4876,15 +4876,30 @@ app.post('/api/google/reconcile', async (req, res) => {
 // -----------------------------------------
 // ICAL SUBSCRIPTION FEED (2026-07-08)
 // Subscribe from a phone calendar app: http://<server>:<port>/calendar.ics
-// Optional protection: set ICAL_TOKEN env var, then use /calendar.ics?token=<value>
+// Optional protection: a token, either from Settings (ical_token, set on the
+// Export page) or the ICAL_TOKEN env var. Settings wins, matching how the
+// GitHub backup credentials work. With one set the feed needs
+// /calendar.ics?token=<value>; with neither it's open, as it always was.
+//
+// Worth protecting if this path is exempted from an authenticating proxy
+// (e.g. a Cloudflare Access bypass rule), since calendar apps can't log in —
+// the bypass is what makes the feed reachable, and the token is then the only
+// thing standing between the internet and your rota.
 // -----------------------------------------
+
+function icalToken() {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'ical_token'").get();
+  const fromSettings = row && row.value && row.value.trim();
+  return fromSettings || process.env.ICAL_TOKEN || null;
+}
 
 function _icsEscape(s) {
   return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 }
 
 app.get('/calendar.ics', (req, res) => {
-  if (process.env.ICAL_TOKEN && req.query.token !== process.env.ICAL_TOKEN) {
+  const token = icalToken();
+  if (token && req.query.token !== token) {
     return res.status(403).send('Forbidden');
   }
   try {

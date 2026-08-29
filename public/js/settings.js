@@ -629,6 +629,65 @@ const SettingsView = {
 
     this.initCollapsibleSections();
     this.initSearch();
+    this.initColumns();
+  },
+
+  /* ─── Column layout ──────────────────────────────────────────────────────
+     Sections are dealt across real column elements, left to right, and stay
+     put. The alternative (CSS multi-column) re-balances the whole page every
+     time a card changes height, so collapsing one card shuffled all the rest. */
+
+  MIN_COLUMN_WIDTH: 460,
+  MAX_COLUMNS: 3,
+
+  initColumns() {
+    // Canonical order, captured before the sections are moved into columns
+    this._orderedSections = [...document.querySelectorAll('#settingsGrid .settings-section')];
+    this.layoutColumns();
+
+    // Settings re-renders on every visit, so drop the previous render's
+    // listener before adding this one rather than stacking them up.
+    if (this._onResize) window.removeEventListener('resize', this._onResize);
+    this._onResize = () => {
+      clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => this.layoutColumns(this._searchMatches), 120);
+    };
+    window.addEventListener('resize', this._onResize);
+  },
+
+  _columnCount() {
+    const grid = document.getElementById('settingsGrid');
+    if (!grid) return 1;
+    const gap = 20;
+    const fit = Math.floor((grid.clientWidth + gap) / (this.MIN_COLUMN_WIDTH + gap));
+    return Math.max(1, Math.min(this.MAX_COLUMNS, fit));
+  },
+
+  // `visible` (optional) restricts which sections are dealt out — used while a
+  // search is active so a lone match doesn't sit in an otherwise empty column.
+  layoutColumns(visible) {
+    const grid = document.getElementById('settingsGrid');
+    if (!grid || !this._orderedSections) return;
+
+    const n = this._columnCount();
+    const dealt = visible || this._orderedSections;
+    const parked = this._orderedSections.filter(s => !dealt.includes(s));
+
+    // Skip the DOM churn if nothing about the arrangement would change
+    const signature = n + '|' + dealt.map(s => this._sectionTitle(s)).join('|');
+    if (grid.dataset.layout === signature) return;
+    grid.dataset.layout = signature;
+
+    const cols = Array.from({ length: n }, () => {
+      const col = document.createElement('div');
+      col.className = 'settings-col';
+      return col;
+    });
+    dealt.forEach((section, i) => cols[i % n].appendChild(section));
+    // Filtered-out sections are display:none, so they can live anywhere
+    parked.forEach(section => cols[0].appendChild(section));
+
+    grid.replaceChildren(...cols);
   },
 
   /* ─── Collapsible sections ───────────────────────────────────────────────
@@ -771,11 +830,13 @@ const SettingsView = {
       });
       if (count) count.textContent = '';
       if (bulk) bulk.style.display = '';
+      this._searchMatches = null;
+      this.layoutColumns();
       return;
     }
 
     const terms = query.split(/\s+/);
-    let hits = 0;
+    const matched = [];
 
     index.forEach(({ section, units, haystack }) => {
       // A section hidden by its own logic (e.g. Milestones with no start date)
@@ -786,13 +847,18 @@ const SettingsView = {
       section.classList.toggle('search-hidden', !match);
       if (!match) return;
 
-      hits++;
+      matched.push(section);
       section.classList.remove('collapsed');   // show what matched, don't make them click
       units.forEach(unit => {
         const text = unit.textContent.toLowerCase();
         if (terms.some(term => text.includes(term))) unit.classList.add('settings-hit');
       });
     });
+
+    const hits = matched.length;
+    // Re-deal only the matches, so a single result isn't stranded in column two
+    this._searchMatches = matched;
+    this.layoutColumns(matched);
 
     if (count) {
       count.textContent = hits

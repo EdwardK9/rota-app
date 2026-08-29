@@ -25,8 +25,23 @@ const ExportView = {
             On iPhone: Settings \u2192 Calendar \u2192 Accounts \u2192 Add Subscribed Calendar. On Google Calendar: Other calendars \u2192 From URL.
           </p>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <code id="icalUrl" style="background:var(--bg);padding:8px 10px;border-radius:6px;font-size:13px;word-break:break-all;">${(App.settings && App.settings.public_base_url) || window.location.origin}/calendar.ics</code>
+            <code id="icalUrl" style="background:var(--bg);padding:8px 10px;border-radius:6px;font-size:13px;word-break:break-all;">${this._icalUrl()}</code>
             <button class="btn btn-secondary" id="copyIcalUrl" style="min-height:36px;">Copy</button>
+          </div>
+
+          <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px;">
+            <p style="font-size:13px;font-weight:600;margin-bottom:6px;">Token protection</p>
+            <p style="color:var(--text-muted);font-size:12.5px;margin-bottom:10px;">
+              Calendar apps can't log in, so if this app sits behind something that asks for a login
+              (a Cloudflare Access rule, a reverse-proxy password) the subscription just fails. The fix
+              is to exempt <code>/calendar.ics</code> from that login — at which point a token here is
+              what keeps the feed private, since the path is otherwise open to anyone who guesses it.
+            </p>
+            <div id="icalTokenStatus" style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px;"></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <button class="btn btn-secondary" id="icalTokenGenerate" style="min-height:36px;">🔑 Generate token</button>
+              <button class="btn btn-ghost" id="icalTokenClear" style="min-height:36px;">Remove</button>
+            </div>
           </div>
         </div>
 
@@ -136,6 +151,38 @@ const ExportView = {
     `;
   },
 
+  // The URL a calendar app should subscribe to, token included when one is set.
+  _icalUrl() {
+    const base  = (App.settings && App.settings.public_base_url) || window.location.origin;
+    const token = App.settings && App.settings.ical_token;
+    return `${base.replace(/\/+$/, '')}/calendar.ics` + (token ? `?token=${encodeURIComponent(token)}` : '');
+  },
+
+  _renderIcalTokenState() {
+    const urlEl    = document.getElementById('icalUrl');
+    const statusEl = document.getElementById('icalTokenStatus');
+    const clearBtn = document.getElementById('icalTokenClear');
+    const token    = App.settings && App.settings.ical_token;
+    if (urlEl) urlEl.textContent = this._icalUrl();
+    if (statusEl) {
+      statusEl.textContent = token
+        ? '🔒 Protected — only this exact URL, token and all, returns your rota.'
+        : '🔓 No token — anyone who reaches this URL can read your rota.';
+    }
+    if (clearBtn) clearBtn.style.display = token ? '' : 'none';
+  },
+
+  async _setIcalToken(token) {
+    try {
+      await API.saveSettings({ ical_token: token });
+      App.settings = await API.getSettings();
+      this._renderIcalTokenState();
+      showToast(token ? 'Token saved — re-subscribe with the new URL' : 'Token removed', 'success');
+    } catch (e) {
+      showToast('Failed to save: ' + e.message, 'error');
+    }
+  },
+
   wire() {
     const copyBtn = document.getElementById('copyIcalUrl');
     if (copyBtn) copyBtn.addEventListener('click', async () => {
@@ -145,6 +192,21 @@ const ExportView = {
       } catch(_) {
         showToast('Could not copy — long-press the URL to copy it', 'error');
       }
+    });
+
+    this._renderIcalTokenState();
+
+    document.getElementById('icalTokenGenerate')?.addEventListener('click', () => {
+      if (App.settings?.ical_token &&
+          !confirmAction('This invalidates the URL you already subscribed with — you\'ll need to re-add the calendar. Continue?')) return;
+      const token = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36))
+        .replace(/-/g, '');
+      this._setIcalToken(token);
+    });
+
+    document.getElementById('icalTokenClear')?.addEventListener('click', () => {
+      if (!confirmAction('Remove the token? The feed will be readable by anyone who reaches the URL.')) return;
+      this._setIcalToken('');
     });
 
     // Show/hide pickers based on mode
