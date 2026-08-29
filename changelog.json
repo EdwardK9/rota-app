@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-26T19:06:05.915Z",
-  "commit": "627cddf",
+  "generated_at": "2026-08-29T11:53:18.636Z",
+  "commit": "7ea05cc",
   "entries": [
+    {
+      "version": "4.7.0",
+      "date": "2026-08-29",
+      "summary": "Make Settings responsive, searchable and collapsible; pin the mobile topbar",
+      "details": "Settings was a single 680px column regardless of screen width, with fifteen\nsections stacked in it and no way to jump to one. The GitHub offsite backup\nin particular was unfindable: it was a sub-block three quarters of the way\ndown the Backup & Restore card.\n\n- The page now flows sections into as many ~460px columns as fit\n  (masonry-style, so a tall card doesn't leave a gap beside it), collapsing\n  to one column on mobile. Replaces the hardcoded max-width.\n\n- Every section collapses from its header, with open/closed state keyed on\n  the section title in localStorage so it survives reloads. Expand all /\n  Collapse all in the toolbar; collapsed, the whole page is a two-column\n  index of what's there. Header buttons (\"+ Add Rate\") don't toggle.\n\n- Search filters sections live, matching visible text plus per-section\n  data-search synonyms — so \"pat\" or \"offsite\" finds the GitHub card, and\n  \"wage\" finds Pay Rates. Matching sections force-expand and the matching\n  field is highlighted. Employment Milestones, which hides itself when\n  there's no job start date, stays hidden.\n\n- Offsite Backup (GitHub) is its own top-level section rather than a block\n  inside Backup & Restore, with a cross-link from where it used to live.\n\nAlso fixes the topbar, which affected every view, not just Settings:\n\n- The burger menu scrolled off the top on mobile. `.main-content` sets\n  overflow-x below 860px, which makes it the topbar's nearest scroll\n  container — and since it isn't the element that actually scrolls,\n  `position: sticky` never engaged. Pinned it with `position: fixed` in the\n  same media block that introduces the overflow, offset by the sidebar\n  width down to 768px and full-width below that.\n\n- Removed a leftover `.main-content { padding-top: 52px }` on short desktop\n  windows (height <= 800px), which left a 52px blank strip above an\n  in-flow topbar. The matching height override now sets --topbar-height so\n  anything sized off it follows automatically.\n\nVerified at 375, 820, 1400 and 1600px wide, in light and dark mode, against\na copy of the live database."
+    },
     {
       "version": "4.6.0",
       "date": "2026-08-26",
