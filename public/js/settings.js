@@ -12,10 +12,27 @@ const SettingsView = {
   render() {
     const el = document.getElementById('view-settings');
     el.innerHTML = `
-      <div style="max-width:680px">
+      <div class="settings-page">
+
+        <div class="settings-search" id="settingsSearchWrap">
+          <div class="settings-search-field">
+            <span class="settings-search-icon">🔎</span>
+            <input type="search" id="settingsSearch" placeholder="Search settings… (e.g. github, postcode, pay)"
+                   autocomplete="off" spellcheck="false" />
+            <button type="button" class="settings-search-clear" id="settingsSearchClear" title="Clear search">&times;</button>
+          </div>
+          <div class="settings-search-count" id="settingsSearchCount"></div>
+        </div>
+
+        <div class="settings-bulk">
+          <button class="btn btn-ghost btn-sm" id="settingsExpandAll">Expand all</button>
+          <button class="btn btn-ghost btn-sm" id="settingsCollapseAll">Collapse all</button>
+        </div>
+
+        <div class="settings-grid" id="settingsGrid">
 
         <!-- General Settings -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="general name employer leave year start job start date of birth dob public url distance miles">
           <div class="card">
             <div class="card-header"><h2>General</h2></div>
             <div class="card-body">
@@ -73,7 +90,7 @@ const SettingsView = {
         </div>
 
         <!-- Commute & Weather (V2.0 Phase 2.1) -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="commute weather postcode home work rain frost forecast location travel">
           <div class="card">
             <div class="card-header"><h2>🌦️ Commute &amp; Weather</h2></div>
             <div class="card-body">
@@ -100,7 +117,7 @@ const SettingsView = {
         </div>
 
         <!-- Clock In/Out Thresholds -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="clock in out early late threshold minutes punctuality timekeeping">
           <div class="card">
             <div class="card-header"><h2>Clock In / Out</h2></div>
             <div class="card-body">
@@ -139,7 +156,7 @@ const SettingsView = {
         </div>
 
         <!-- NFC / Quick-Tap Clock In/Out -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="nfc tag quick tap token url shortcut bookmark">
           <div class="card">
             <div class="card-header"><h2>🏷️ NFC Clock In/Out</h2></div>
             <div class="card-body">
@@ -166,7 +183,7 @@ const SettingsView = {
         </div>
 
         <!-- Delivery Schedules -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="delivery schedules days lorry drop">
           <div class="card">
             <div class="card-header">
               <h2>Delivery Schedules</h2>
@@ -182,7 +199,7 @@ const SettingsView = {
         </div>
 
         <!-- Job Milestones -->
-        <div class="settings-section" id="milestonesSection" style="display:none">
+        <div class="settings-section" id="milestonesSection" style="display:none" data-search="milestones anniversary employment service length">
           <div class="card">
             <div class="card-header"><h2>Employment Milestones</h2></div>
             <div class="card-body" id="milestonesBody"></div>
@@ -190,7 +207,7 @@ const SettingsView = {
         </div>
 
         <!-- Pay Rates -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="pay rate wage hourly salary night premium bank holiday">
           <div class="card">
             <div class="card-header">
               <h2>Pay Rates</h2>
@@ -203,7 +220,7 @@ const SettingsView = {
         </div>
 
         <!-- Backup & Restore -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="backup restore export import json database db snapshot nightly automatic">
           <div class="card">
             <div class="card-header"><h2>Backup &amp; Restore</h2></div>
             <div class="card-body">
@@ -246,47 +263,56 @@ const SettingsView = {
                   <span id="dbBackupStatus" style="font-size:13px;color:var(--text-muted)"></span>
                 </div>
                 <div id="dbBackupList" style="font-size:13px;color:var(--text-muted)">Loading…</div>
+                <p style="color:var(--text-muted);font-size:12.5px;margin-top:10px">
+                  To also push these offsite, see
+                  <a href="#" data-goto-section="☁️ Offsite Backup (GitHub)">☁️ Offsite Backup (GitHub)</a>.
+                </p>
               </div>
 
-              <!-- GitHub offsite backup -->
-              <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
-                <p style="font-size:13px;font-weight:600;margin-bottom:8px">Offsite backup (GitHub)</p>
-                <p style="color:var(--text-muted);font-size:12.5px;margin-bottom:12px">
-                  Also push each nightly backup to a GitHub repo, so a copy survives even if this server's disk is lost.
-                  Use a <strong>private</strong> repo — the pushed files are full database dumps.
-                </p>
-                <div id="githubBackupStatus" style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px"></div>
-                <div class="form-group" style="margin-bottom:12px">
-                  <label>Repo</label>
-                  <input type="text" id="ghBackupRepo" placeholder="your-username/rota-backups" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Offsite Backup (GitHub) -->
+        <div class="settings-section" data-search="github offsite backup git repo repository personal access token pat branch folder cloud remote private nightly push">
+          <div class="card">
+            <div class="card-header"><h2>☁️ Offsite Backup (GitHub)</h2></div>
+            <div class="card-body">
+              <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+                Also push each nightly backup to a GitHub repo, so a copy survives even if this server's disk is lost.
+                Use a <strong>private</strong> repo — the pushed files are full database dumps.
+              </p>
+              <div id="githubBackupStatus" style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px"></div>
+              <div class="form-group" style="margin-bottom:12px">
+                <label>Repo</label>
+                <input type="text" id="ghBackupRepo" placeholder="your-username/rota-backups" />
+              </div>
+              <div class="form-group" style="margin-bottom:12px">
+                <label>Personal access token</label>
+                <input type="password" id="ghBackupToken" placeholder="Leave blank to keep the saved token" autocomplete="new-password" />
+                <div class="form-hint">Needs <code>contents: write</code> on that repo. Only re-enter this if you're changing it — it's never shown back to you.</div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Branch</label>
+                  <input type="text" id="ghBackupBranch" placeholder="main" />
                 </div>
-                <div class="form-group" style="margin-bottom:12px">
-                  <label>Personal access token</label>
-                  <input type="password" id="ghBackupToken" placeholder="Leave blank to keep the saved token" autocomplete="new-password" />
-                  <div class="form-hint">Needs <code>contents: write</code> on that repo. Only re-enter this if you're changing it — it's never shown back to you.</div>
+                <div class="form-group">
+                  <label>Folder</label>
+                  <input type="text" id="ghBackupPath" placeholder="backups" />
                 </div>
-                <div class="form-row">
-                  <div class="form-group">
-                    <label>Branch</label>
-                    <input type="text" id="ghBackupBranch" placeholder="main" />
-                  </div>
-                  <div class="form-group">
-                    <label>Folder</label>
-                    <input type="text" id="ghBackupPath" placeholder="backups" />
-                  </div>
-                </div>
-                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-                  <button class="btn btn-primary" id="ghBackupSaveBtn">Save</button>
-                  <button class="btn btn-ghost" id="ghBackupClearBtn">Clear</button>
-                  <span id="ghBackupSaveStatus" style="font-size:13px;color:var(--text-muted)"></span>
-                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <button class="btn btn-primary" id="ghBackupSaveBtn">Save</button>
+                <button class="btn btn-ghost" id="ghBackupClearBtn">Clear</button>
+                <span id="ghBackupSaveStatus" style="font-size:13px;color:var(--text-muted)"></span>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Data Tools -->
-        <div class="settings-section">
+        <div class="settings-section" data-search="data tools recalculate recalc rebuild fix repair bank holiday">
           <div class="card">
             <div class="card-header"><h2>Data Tools</h2></div>
             <div class="card-body">
@@ -305,7 +331,7 @@ const SettingsView = {
 
 <!-- Google Calendar Sync -->
 
-        <div class="settings-section">
+        <div class="settings-section" data-search="google calendar sync gcal oauth events ics">
           <div class="card">
             <div class="card-header"><h2>Google Calendar Sync</h2></div>
             <div class="card-body">
@@ -397,7 +423,7 @@ const SettingsView = {
 
 <!-- Rotageek API -->
 
-        <div class="settings-section">
+        <div class="settings-section" data-search="rotageek api key token integration">
           <div class="card">
             <div class="card-header"><h2>Rotageek API</h2></div>
             <div class="card-body">
@@ -433,7 +459,7 @@ const SettingsView = {
 
 <!-- AI Screenshot Import (Gemini) -->
 
-        <div class="settings-section">
+        <div class="settings-section" data-search="ai screenshot import gemini google api key model ocr">
           <div class="card">
             <div class="card-header"><h2>🤖 AI Screenshot Import</h2></div>
             <div class="card-body">
@@ -478,7 +504,7 @@ const SettingsView = {
 
 <!-- Smart Home Webhooks (V2.0 Phase 5) -->
 
-        <div class="settings-section">
+        <div class="settings-section" data-search="smart home webhooks home assistant node-red automation events">
           <div class="card">
             <div class="card-header"><h2>🏠 Smart Home Webhooks</h2></div>
             <div class="card-body">
@@ -530,7 +556,7 @@ const SettingsView = {
 
 <!-- About -->
 
-        <div class="settings-section">
+        <div class="settings-section" data-search="about version app info storage sqlite">
           <div class="card">
             <div class="card-header"><h2>About</h2></div>
             <div class="card-body" style="color:var(--text-muted);font-size:13.5px">
@@ -541,6 +567,7 @@ const SettingsView = {
           </div>
         </div>
 
+        </div><!-- /.settings-grid -->
       </div>
     `;
 
@@ -600,6 +627,187 @@ const SettingsView = {
     document.getElementById('whTestBtn')?.addEventListener('click', () => this.testWebhook());
     document.getElementById('whLogRefresh')?.addEventListener('click', () => this.renderWebhookLog());
 
+    this.initCollapsibleSections();
+    this.initSearch();
+  },
+
+  /* ─── Collapsible sections ───────────────────────────────────────────────
+     Each section card gets a chevron and a clickable header. Open/closed state
+     is keyed on the section title so it survives re-renders and reloads. */
+
+  COLLAPSE_KEY: 'settings.collapsed',
+
+  _collapsedSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(this.COLLAPSE_KEY) || '[]')); }
+    catch { return new Set(); }
+  },
+
+  _saveCollapsedSet(set) {
+    try { localStorage.setItem(this.COLLAPSE_KEY, JSON.stringify([...set])); } catch {}
+  },
+
+  _sectionTitle(section) {
+    return section.querySelector('.card-header h2')?.textContent.trim() || '';
+  },
+
+  initCollapsibleSections() {
+    const collapsed = this._collapsedSet();
+
+    document.querySelectorAll('#settingsGrid .settings-section').forEach(section => {
+      const header = section.querySelector('.card-header');
+      if (!header || header.dataset.collapsibleReady) return;
+      header.dataset.collapsibleReady = '1';
+
+      const chevron = document.createElement('span');
+      chevron.className = 'settings-collapse-chevron';
+      chevron.textContent = '▶';
+      header.appendChild(chevron);
+
+      if (collapsed.has(this._sectionTitle(section))) section.classList.add('collapsed');
+
+      header.addEventListener('click', e => {
+        // Header buttons ("+ Add Rate" etc.) must not toggle the section
+        if (e.target.closest('button')) return;
+        this.toggleSection(section);
+      });
+    });
+
+    document.getElementById('settingsExpandAll')?.addEventListener('click', () => this.setAllCollapsed(false));
+    document.getElementById('settingsCollapseAll')?.addEventListener('click', () => this.setAllCollapsed(true));
+
+    // "See X" cross-links between sections
+    document.getElementById('settingsGrid')?.addEventListener('click', e => {
+      const link = e.target.closest('[data-goto-section]');
+      if (!link) return;
+      e.preventDefault();
+      this.gotoSection(link.dataset.gotoSection);
+    });
+  },
+
+  toggleSection(section, force) {
+    const collapse = force === undefined ? !section.classList.contains('collapsed') : force;
+    section.classList.toggle('collapsed', collapse);
+
+    const set = this._collapsedSet();
+    const title = this._sectionTitle(section);
+    if (collapse) set.add(title); else set.delete(title);
+    this._saveCollapsedSet(set);
+  },
+
+  setAllCollapsed(collapse) {
+    const sections = [...document.querySelectorAll('#settingsGrid .settings-section')];
+    const set = collapse ? new Set(sections.map(s => this._sectionTitle(s))) : new Set();
+    sections.forEach(s => s.classList.toggle('collapsed', collapse));
+    this._saveCollapsedSet(set);
+  },
+
+  gotoSection(title) {
+    const section = [...document.querySelectorAll('#settingsGrid .settings-section')]
+      .find(s => this._sectionTitle(s) === title);
+    if (!section) return;
+    this.toggleSection(section, false);
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+
+  /* ─── Search ─────────────────────────────────────────────────────────────
+     Matches each section's visible text plus its data-search synonyms, so
+     "github" or "pat" finds the offsite backup card even though neither word
+     appears in the labels. Matching sections are force-expanded and the
+     matching field inside them is highlighted. */
+
+  initSearch() {
+    const input = document.getElementById('settingsSearch');
+    if (!input) return;
+
+    let t;
+    input.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => this.applySearch(input.value), 120);
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { input.value = ''; this.applySearch(''); }
+    });
+    document.getElementById('settingsSearchClear')?.addEventListener('click', () => {
+      input.value = '';
+      this.applySearch('');
+      input.focus();
+    });
+  },
+
+  _buildSearchIndex() {
+    return [...document.querySelectorAll('#settingsGrid .settings-section')].map(section => ({
+      section,
+      // Fields worth highlighting individually when they match
+      units: [...section.querySelectorAll('.card-body .form-group, .card-body > p, .card-body > div > p')],
+      haystack: (
+        this._sectionTitle(section) + ' ' +
+        (section.dataset.search || '') + ' ' +
+        section.textContent
+      ).toLowerCase().replace(/\s+/g, ' '),
+    }));
+  },
+
+  applySearch(rawQuery) {
+    const query = (rawQuery || '').trim().toLowerCase();
+    const wrap  = document.getElementById('settingsSearchWrap');
+    const count = document.getElementById('settingsSearchCount');
+    const bulk  = document.querySelector('.settings-bulk');
+    // Rebuilt per keystroke: section bodies (pay rates, backup list, sync log)
+    // fill in asynchronously, so a cached index would go stale.
+    const index = this._buildSearchIndex();
+
+    wrap?.classList.toggle('has-query', !!query);
+    document.getElementById('settingsNoResults')?.remove();
+
+    // Clear previous highlights
+    document.querySelectorAll('.settings-hit').forEach(el => el.classList.remove('settings-hit'));
+
+    if (!query) {
+      // Restore: show everything, put collapse state back the way the user left it
+      const collapsed = this._collapsedSet();
+      index.forEach(({ section }) => {
+        section.classList.remove('search-hidden');
+        section.classList.toggle('collapsed', collapsed.has(this._sectionTitle(section)));
+      });
+      if (count) count.textContent = '';
+      if (bulk) bulk.style.display = '';
+      return;
+    }
+
+    const terms = query.split(/\s+/);
+    let hits = 0;
+
+    index.forEach(({ section, units, haystack }) => {
+      // A section hidden by its own logic (e.g. Milestones with no start date)
+      // stays hidden — search must not resurrect it.
+      if (section.style.display === 'none') { section.classList.remove('search-hidden'); return; }
+
+      const match = terms.every(term => haystack.includes(term));
+      section.classList.toggle('search-hidden', !match);
+      if (!match) return;
+
+      hits++;
+      section.classList.remove('collapsed');   // show what matched, don't make them click
+      units.forEach(unit => {
+        const text = unit.textContent.toLowerCase();
+        if (terms.some(term => text.includes(term))) unit.classList.add('settings-hit');
+      });
+    });
+
+    if (count) {
+      count.textContent = hits
+        ? `${hits} section${hits === 1 ? '' : 's'} match “${rawQuery.trim()}”`
+        : '';
+    }
+    if (bulk) bulk.style.display = 'none';
+
+    if (!hits) {
+      const msg = document.createElement('div');
+      msg.id = 'settingsNoResults';
+      msg.className = 'settings-no-results';
+      msg.innerHTML = `<p>No settings match “${esc(rawQuery.trim())}”.</p>`;
+      document.getElementById('settingsGrid')?.after(msg);
+    }
   },
 
   async load() {

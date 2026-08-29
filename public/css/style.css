@@ -448,8 +448,103 @@ textarea { resize: vertical; min-height: 72px; }
 /* ─────────────────────────────────────────
    Settings
    ───────────────────────────────────────── */
-.settings-section { margin-bottom: 28px; }
 .settings-section h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+
+/* ── Settings page shell ────────────────────────────────────────────────
+   The page fills whatever width it's given, flowing sections into as many
+   columns as fit (masonry-style, so tall cards don't leave gaps beside them)
+   and collapsing to a single column on narrow screens. */
+.settings-page { width: 100%; }
+
+.settings-grid {
+  column-width: 460px;
+  column-gap: 20px;
+}
+.settings-section {
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 20px;
+  /* Multicol fragments an element unless it's a formatting context of its own */
+  display: flow-root;
+}
+/* Very wide screens: stop columns growing without limit */
+@media (min-width: 1900px) {
+  .settings-grid { column-width: 520px; column-count: 3; }
+}
+
+/* ── Search bar ──────────────────────────────────────────────────────── */
+.settings-search {
+  margin-bottom: 20px;
+  max-width: 460px;
+}
+.settings-search-field { position: relative; }
+.settings-search input {
+  width: 100%;
+  padding-left: 36px;
+  padding-right: 34px;
+}
+/* We supply our own clear button, so drop the browser's */
+.settings-search input::-webkit-search-cancel-button,
+.settings-search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+.settings-search-icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 14px; color: var(--text-muted); pointer-events: none;
+}
+.settings-search-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 20px; line-height: 1;
+  padding: 4px 8px; display: none;
+  min-height: 0;
+}
+.settings-search.has-query .settings-search-clear { display: block; }
+.settings-search-count {
+  font-size: 12.5px; color: var(--text-muted); margin-top: 6px;
+}
+
+.settings-no-results {
+  padding: 40px 20px; text-align: center; color: var(--text-muted);
+}
+
+/* Hidden by the search filter. A separate class from inline `display:none`,
+   which some sections (Employment Milestones) set for their own reasons. */
+.settings-section.search-hidden { display: none; }
+
+/* ── Collapsible sections ────────────────────────────────────────────── */
+.settings-section .card-header {
+  cursor: pointer;
+  user-select: none;
+  gap: 10px;
+}
+/* Neutral grey reads as a hover against both the light and dark card colours */
+.settings-section .card-header:hover { background: rgba(128,128,128,0.08); }
+/* Title grows so the chevron sits hard right, after any header button */
+.settings-section .card-header h2 { flex: 1; min-width: 0; }
+.settings-collapse-chevron {
+  flex: none;
+  font-size: 11px; color: var(--text-muted);
+  transition: transform var(--transition);
+  transform: rotate(90deg);
+}
+.settings-section.collapsed .settings-collapse-chevron { transform: rotate(0deg); }
+.settings-section.collapsed .card-header { border-bottom: none; }
+.settings-section.collapsed .card-body { display: none; }
+
+/* Row of bulk expand/collapse controls */
+.settings-bulk {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+
+/* Search hit highlight inside an expanded section */
+.settings-hit {
+  border-left: 3px solid var(--primary);
+  padding-left: 10px;
+  margin-left: -13px;
+  background: rgba(255,214,0,0.08);
+  border-radius: 0 6px 6px 0;
+}
 
 .pay-rate-card {
   background: var(--bg); border-radius: 8px;
@@ -604,6 +699,22 @@ textarea { resize: vertical; min-height: 72px; }
   .main-content { overflow-x: hidden; }
   .view { max-width: 100%; }
 
+  /* That overflow-x makes .main-content the topbar's nearest scroll container,
+     which kills `position: sticky` — the topbar (and the burger menu on mobile)
+     would scroll away. Pin it for real instead, and pad the content to match. */
+  .topbar {
+    position: fixed;
+    top: 0; left: var(--sidebar-width); right: 0;
+    height: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .main-content { padding-top: calc(var(--topbar-height) + env(safe-area-inset-top, 0px)); }
+}
+/* Must follow the 860px block: below 768px the sidebar is off-canvas, so the
+   topbar spans the full width rather than starting after it. */
+@media (max-width: 768px) {
+  .topbar { left: 0; }
+
   /* Cards shouldn't exceed viewport */
   .card { max-width: 100% !important; }
 
@@ -702,9 +813,9 @@ textarea { resize: vertical; min-height: 72px; }
   .nav-link { padding: 7px 14px; font-size: 13px; }
   /* View padding: less top/bottom */
   .view { padding: 12px 16px; }
-  /* Topbar: slightly shorter */
-  .topbar { height: 52px; }
-  .main-content { padding-top: 52px; }
+  /* Topbar: slightly shorter. Set via the variable so anything sized off it
+     (e.g. the fixed-topbar offset under 860px) follows automatically. */
+  :root { --topbar-height: 52px; }
 }
 @media (max-height: 650px) and (min-width: 769px) {
   .nav-link { padding: 5px 14px; font-size: 12px; }
