@@ -130,13 +130,74 @@ const PayslipsView = {
   // Hourly rate in effect for a given YYYY-MM month — latest pay_rates row whose
   // effective_date falls on or before the 1st of that month (mirrors the server's
   // getRateForMonth in /api/reports/monthly).
-  _rateForMonth(month) {
+  _rateRecordForMonth(month) {
     const firstDay = month + '-01';
     let rate = null;
     for (const r of (this.payRates || []).slice().sort((a, b) => a.effective_date.localeCompare(b.effective_date))) {
       if (r.effective_date <= firstDay) rate = r;
     }
-    return rate ? rate.hourly_rate : 0;
+    return rate;
+  },
+
+  _rateForMonth(month) {
+    const rec = this._rateRecordForMonth(month);
+    return rec ? rec.hourly_rate : 0;
+  },
+
+  /* ── Payslip autofill ─────────────────────────────────────────────────────
+     Both suggestions were checked against all 22 recorded payslips before
+     being wired up (see the v4.9.0 commit message for the numbers).
+
+     Additional hours is simply qty x the hourly rate for that month — exact on
+     every one of the 21 payslips that had any.
+
+     Basic pay is a fixed monthly amount that only moves when the rate or the
+     contract does, so the best predictor is what payroll actually paid last
+     month on the same rate, not a formula: carrying it forward is exact,
+     whereas contracted x 52/12 x rate is consistently a penny or two out (and
+     21p out on the current rate). The formula is the fallback for the first
+     month on a new rate, where there's nothing to carry. */
+
+  WEEKS_PER_MONTH: 52 / 12,
+
+  // → { value, source: 'carried' | 'formula', basis } or null
+  _suggestedBasicPay(month, editId) {
+    const rec = this._rateRecordForMonth(month);
+    if (!rec) return null;
+
+    const priors = (this.allPayslips || []).filter(p =>
+      p.month < month &&
+      p.id !== editId &&
+      (p.basic_pay || 0) > 0 &&
+      this._rateRecordForMonth(p.month)?.id === rec.id
+    );
+
+    if (priors.length) {
+      // Most common value, ties going to the most recent — one odd month
+      // (an underpayment, a transition) shouldn't become the suggestion.
+      const counts = new Map();
+      priors.forEach(p => counts.set(p.basic_pay, (counts.get(p.basic_pay) || 0) + 1));
+      let best = null, bestCount = -1;
+      priors.slice().sort((a, b) => a.month.localeCompare(b.month)).forEach(p => {
+        const c = counts.get(p.basic_pay);
+        if (c >= bestCount) { bestCount = c; best = p.basic_pay; }
+      });
+      return { value: round2(best), source: 'carried', basis: bestCount };
+    }
+
+    const weekly = rec.contracted_hours_per_week || 0;
+    if (!weekly || !rec.hourly_rate) return null;
+    return {
+      value: round2(weekly * this.WEEKS_PER_MONTH * rec.hourly_rate),
+      source: 'formula',
+      basis: rec,
+    };
+  },
+
+  _suggestedExtraPay(qty, month) {
+    const rate = this._rateForMonth(month);
+    if (!rate || !(qty > 0)) return null;
+    return { value: round2(qty * rate), rate };
   },
 
   renderStats() {
@@ -591,6 +652,7 @@ const PayslipsView = {
     <div class="form-group">
       <label>Basic Salary <span style="font-size:11px;color:var(--text-muted)">(this month)</span></label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfBasicPay" step="0.01" value="${vn('basic_pay')}" placeholder="0.00" /></div>
+      <div class="form-hint" id="pfBasicPayHint"></div>
     </div>
     <div class="form-group"></div>
   </div>
@@ -606,6 +668,7 @@ const PayslipsView = {
     <div class="form-group">
       <label>Additional Hours <span style="font-size:11px;color:var(--text-muted)">(this month) — £</span></label>
       <div class="input-prefix"><span>£</span><input type="number" id="pfExtraPay" step="0.01" value="${vn('additional_hours_pay')}" placeholder="0.00" /></div>
+      <div class="form-hint" id="pfExtraPayHint"></div>
     </div>
   </div>
 </div>
@@ -995,6 +1058,11 @@ const PayslipsView = {
     document.getElementById('pfCalcTaxableYtdBtn').addEventListener('click', () => calcYtd('taxable'));
     document.getElementById('pfCalcNiYtdBtn').addEventListener('click',      () => calcYtd('ni'));
 
+    // Before the YTD auto-run below: it falls back to Basic Salary when there's
+    // no gross yet, so the prefill has to be in place or YTD opens counting zero
+    // for this month.
+    this._wireAutofill(editId);
+
     // Auto-run once on open for any YTD field that's still blank, so YTD "just works"
     // without needing a click — the buttons stay available to refresh after edits.
     ['pfGrossYtd', 'pfTaxYtd', 'pfTaxableYtd', 'pfNiYtd'].forEach((id, i) => {
@@ -1003,6 +1071,63 @@ const PayslipsView = {
     });
 
     document.getElementById('pfSaveBtn').addEventListener('click', () => this.savePayslipForm(editId));
+  },
+
+  /* Prefills Basic Salary and derives Additional Hours £ from the hours you
+     type. Both stay fully editable: a field is only ever written while it is
+     still flagged auto, and typing in it clears that flag for good, so nothing
+     you've entered by hand gets overwritten by a later month change. */
+  _wireAutofill(editId) {
+    const basic     = document.getElementById('pfBasicPay');
+    const qty       = document.getElementById('pfExtraQty');
+    const extra     = document.getElementById('pfExtraPay');
+    const monthSel  = document.getElementById('pfMonth');
+    const basicHint = document.getElementById('pfBasicPayHint');
+    const extraHint = document.getElementById('pfExtraPayHint');
+    if (!basic || !qty || !extra || !monthSel) return;
+
+    const isAuto = el => el.dataset.autofilled === '1';
+    const markManual = el => { delete el.dataset.autofilled; };
+
+    const fillBasic = () => {
+      if (basic.value && !isAuto(basic)) return;      // hand-entered — leave alone
+      const s = this._suggestedBasicPay(monthSel.value, editId);
+      if (!s) {
+        if (isAuto(basic)) basic.value = '';
+        if (basicHint) basicHint.textContent = '';
+        return;
+      }
+      basic.value = s.value;
+      basic.dataset.autofilled = '1';
+      if (basicHint) {
+        basicHint.textContent = s.source === 'carried'
+          ? `Auto-filled — what you were paid in ${s.basis === 1 ? 'the previous month' : `${s.basis} previous months`} on this rate. Edit if your payslip differs.`
+          : `Estimated — ${s.basis.contracted_hours_per_week}h/week × 52 ÷ 12 × £${s.basis.hourly_rate}. First month on this rate, so check it against the payslip.`;
+      }
+    };
+
+    const fillExtra = () => {
+      if (extra.value && !isAuto(extra)) return;
+      const q = parseFloat(qty.value);
+      const s = this._suggestedExtraPay(q, monthSel.value);
+      if (!s) {
+        if (isAuto(extra)) extra.value = '';
+        if (extraHint) extraHint.textContent = '';
+        return;
+      }
+      extra.value = s.value;
+      extra.dataset.autofilled = '1';
+      if (extraHint) extraHint.textContent = `Auto-filled — ${q} × £${s.rate}. Edit if your payslip differs.`;
+    };
+
+    basic.addEventListener('input', () => markManual(basic));
+    extra.addEventListener('input', () => markManual(extra));
+    qty.addEventListener('input', fillExtra);
+    monthSel.addEventListener('change', () => { fillBasic(); fillExtra(); });
+
+    // On open: fill anything still blank, exactly as the YTD fields do
+    if (!basic.value) fillBasic();
+    if (!extra.value) fillExtra();
   },
 
   async savePayslipForm(editId) {
