@@ -1926,5 +1926,7 @@ router.delete('/photo-library/files/:id', (req, res) => {
 });
 
 module.exports = router;
-module.exports.callGeminiVision = callGeminiVision;
+// callGeminiText is shared with v3/didYouKnow.js. The vision counterpart isn't
+// exported: its only outside caller was the payslip photo import, removed in
+// v4.12.0, and everything that still reads an image with it lives in this file.
 module.exports.callGeminiText = callGeminiText;
