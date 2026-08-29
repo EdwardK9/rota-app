@@ -241,15 +241,11 @@ const ShiftsView = {
       .sort((a, b) => b.effective_date.localeCompare(a.effective_date))[0];
     if (!rate) return null;
 
-    // Count Mon–Fri in the month
-    const [y, m] = month.split('-').map(Number);
-    const daysInMonth = new Date(y, m, 0).getDate();
-    let workingDays = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dow = new Date(y, m - 1, d).getDay(); // 0=Sun,6=Sat
-      if (dow >= 1 && dow <= 5) workingDays++;
-    }
-    return Math.round((rate.contracted_hours_per_week * workingDays / 5) * 100) / 100;
+    // 52/12ths of the weekly contract — the same basis payroll uses for basic
+    // pay, and the same as the server's getContractedForMonth. Counting Mon–Fri
+    // days instead swung this between 80h and 92h for an unchanging 20h
+    // contract, on a rota where 38% of shifts fall at a weekend.
+    return Math.round(rate.contracted_hours_per_week * (52 / 12) * 100) / 100;
   },
 
   renderStats() {

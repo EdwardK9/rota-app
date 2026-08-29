@@ -125,8 +125,22 @@ This is what `autoBreakMinutes()` in `server.js` implements, what the break audi
 Shifts tab compares against, and what the Data Doctor uses to work out whether a shift's
 hours or its break field is the one that has gone stale.
 
-**Break unused pay:**
-When you take `none` as your break, the app adds the scheduled break minutes back as paid time. The monthly report shows how much extra pay this generates.
+**Breaks are never paid.**
+
+Every break is unpaid time whether you take it or not. Working through a break earns
+nothing extra — it just means unpaid time spent on shift.
+
+Each shift therefore stores two hours figures, and they mean different things:
+
+| Column | Meaning |
+|--------|---------|
+| `hours_paid` | span minus the **scheduled** break, always. This is what pay, contract comparisons and the payslip reconciliation all use |
+| `hours_worked` | span minus the break **actually taken**. Higher than `hours_paid` when a break was worked through. Records time on shift, not paid time |
+
+Anything comparing against pay or contracted hours must use `hours_paid`. The monthly
+report did use `hours_worked` for its hours totals, which overstated them by ~23 hours
+across the dataset, and a "Break unused pay" figure once presented the skipped break
+minutes as money earned — neither was right, and both were corrected in v4.11.0.
 
 ---
 

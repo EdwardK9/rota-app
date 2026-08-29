@@ -806,17 +806,6 @@ app.get('/api/reports/summary', (req, res) => {
 });
 
 // Helper: count Mon-Fri working days in a YYYY-MM month
-function workingDaysInMonth(monthStr) {
-  const [y, m] = monthStr.split('-').map(Number);
-  const dim = new Date(y, m, 0).getDate();
-  let count = 0;
-  for (let d = 1; d <= dim; d++) {
-    const dow = new Date(y, m - 1, d).getDay();
-    if (dow !== 0 && dow !== 6) count++;
-  }
-  return count;
-}
-
 // Monthly breakdown — returns per-month rows with shift data + payslip data joined
 app.get('/api/reports/monthly', (req, res) => {
   const { year } = req.query;
@@ -827,8 +816,11 @@ app.get('/api/reports/monthly', (req, res) => {
       strftime('%Y-%m', date) as month,
       COUNT(*) as shift_count,
       SUM(CASE WHEN completed=1 THEN 1 ELSE 0 END) as completed_count,
-      SUM(CASE WHEN completed=1 THEN hours_worked ELSE 0 END) as hours_worked,
-      SUM(hours_worked) as scheduled_hours,
+      -- Paid hours, not clock hours. Every break is unpaid whether taken or
+      -- not, so hours_worked (which keeps the time back when a break is worked
+      -- through) overstates what counts towards pay and contract by ~23h.
+      SUM(CASE WHEN completed=1 THEN hours_paid ELSE 0 END) as hours_worked,
+      SUM(hours_paid) as scheduled_hours,
       SUM(CASE WHEN completed=1 THEN calculated_pay ELSE 0 END) as calculated_pay,
       SUM(calculated_pay) as scheduled_pay,
       SUM(CASE WHEN completed=1 THEN distance_miles ELSE 0 END) as distance_miles,
@@ -863,10 +855,16 @@ app.get('/api/reports/monthly', (req, res) => {
     }
     return rate || null;
   }
+  // Contracted hours for a month. Payroll works in 52/12ths of the weekly
+  // contract — basic pay is weekly x 52/12 x rate, confirmed against 22 real
+  // payslips — so this has to match or the hours screens judge you against a
+  // target payroll never used. The old workingDaysInMonth/5 form counted Mon-Fri
+  // only, which on a rota that is 38% weekends swung the target between 80h and
+  // 92h for an unchanging contract and overstated the year by ~4h.
   function getContractedForMonth(monthStr) {
     const rate = getRateForMonth(monthStr);
     if (!rate) return 0;
-    return Math.round(rate.contracted_hours_per_week * workingDaysInMonth(monthStr) / 5 * 100) / 100;
+    return Math.round(rate.contracted_hours_per_week * (52 / 12) * 100) / 100;
   }
 
   // Leave hours per month, spread across the working days each entry actually
@@ -879,9 +877,8 @@ app.get('/api/reports/monthly', (req, res) => {
     const rate = getRateForMonth(s.month);
     const leaveHours = leaveMap[s.month] || 0;
     const leavePay = rate ? Math.round(leaveHours * rate.hourly_rate * 100) / 100 : 0;
-    const breakUnusedPay = rate
-      ? Math.round((s.breaks_skipped_minutes || 0) / 60 * rate.hourly_rate * 100) / 100
-      : 0;
+    // Deliberately not a pay figure. Working through a break earns nothing —
+    // all breaks are unpaid — so this is just how much unpaid time was worked.
     return {
       month: s.month,
       shift_count: s.shift_count,
@@ -898,7 +895,7 @@ app.get('/api/reports/monthly', (req, res) => {
       breaks_taken_minutes: s.breaks_taken_minutes || 0,
       breaks_skipped_count: s.breaks_skipped_count || 0,
       breaks_skipped_minutes: s.breaks_skipped_minutes || 0,
-      break_unused_pay: breakUnusedPay,
+      break_unused_pay: 0,   // retained for older clients; always zero, see above
       payslip: payslipMap[s.month] || null
     };
   });
@@ -962,7 +959,7 @@ app.get('/api/streaks', (req, res) => {
   const getContractedForMonth = (monthStr) => {
     let rate = null;
     for (const r of allPayRates) { if (r.effective_date <= monthStr + '-01') rate = r; }
-    return rate ? Math.round(rate.contracted_hours_per_week * workingDaysInMonth(monthStr) / 5 * 100) / 100 : 0;
+    return rate ? Math.round(rate.contracted_hours_per_week * (52 / 12) * 100) / 100 : 0;
   };
   const currentMonth = localDateStr().slice(0, 7);
   const completedMonths = monthRows.filter(m => m.month < currentMonth && getContractedForMonth(m.month) > 0);
@@ -1106,7 +1103,9 @@ app.get('/api/reports/weekly', (req, res) => {
     if (shift.hours_worked != null) return shift.hours_worked;
     const [sh, sm] = shift.start_time.split(':').map(Number);
     const [eh, em] = shift.end_time.split(':').map(Number);
-    const mins = (eh * 60 + em) - (sh * 60 + sm) - (shift.break_scheduled_minutes || 0);
+    let mins = (eh * 60 + em) - (sh * 60 + sm);
+    if (mins < 0) mins += 24 * 60;          // shift crossing midnight
+    mins -= (shift.break_scheduled_minutes || 0);
     return Math.max(0, mins) / 60;
   }
 
@@ -2296,7 +2295,9 @@ app.post('/api/import/ics-shifts', (req, res) => {
     db.prepare("SELECT value FROM settings WHERE key='default_distance_miles'").get()?.value || 3.6
   );
 
-  const bk = parseInt(breakMinutes, 10) || 30;
+  // null means "work it out per shift from the break policy" — a flat fallback
+  // forced 30 minutes onto short shifts that are entitled to none.
+  const bkOverride = breakMinutes === '' || breakMinutes == null ? null : parseInt(breakMinutes, 10);
 
   const doImport = db.transaction(() => {
     for (const ev of events) {
@@ -2324,8 +2325,8 @@ app.post('/api/import/ics-shifts', (req, res) => {
 
         // Derive the break from the shift length (policy-based) unless the caller
         // forces a specific value; keeps ICS imports consistent with everything else.
-        const evBreak        = (breakMinutes === 'auto' || breakMinutes === undefined)
-          ? autoBreakMinutes(start_time, end_time) : bk;
+        const evBreak        = (breakMinutes === 'auto' || breakMinutes === undefined || !Number.isFinite(bkOverride))
+          ? autoBreakMinutes(start_time, end_time) : bkOverride;
         const rateRecord     = getPayRateForDate(date);
         const hourly_rate    = rateRecord ? rateRecord.hourly_rate : null;
         const hours_worked   = calcHoursWorked(start_time, end_time, evBreak);
@@ -2419,7 +2420,12 @@ app.post('/api/import/shifts', (req, res) => {
           skipped++; return;
         }
 
-        const breakMins = parseInt(row[mapping.break_minutes] || 30, 10) || 30;
+        // A blank or zero break column means apply the policy for that shift's
+        // length, not a flat 30 — `|| 30` turned a legitimate 0 into 30 and cost
+        // half an hour of pay on every short shift imported.
+        const rawBreak = row[mapping.break_minutes];
+        const parsedBreak = rawBreak === '' || rawBreak == null ? NaN : parseInt(rawBreak, 10);
+        const breakMins = Number.isFinite(parsedBreak) ? parsedBreak : autoBreakMinutes(start_time, end_time);
         const rateRecord = getPayRateForDate(date);
         const hourly_rate = rateRecord ? rateRecord.hourly_rate : null;
         const actualBreak = resolveBreakMinutes('full', breakMins, breakMins);

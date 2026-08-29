@@ -147,7 +147,6 @@ const ReportsView = {
     const totalBreakMin      = monthly.reduce((s,m) => s + (m.breaks_taken_minutes  || 0), 0);
     const totalBreaksSkipped = monthly.reduce((s,m) => s + (m.breaks_skipped_count  || 0), 0);
     const totalSkippedMin    = monthly.reduce((s,m) => s + (m.breaks_skipped_minutes|| 0), 0);
-    const totalBreakUnusedPay= monthly.reduce((s,m) => s + (m.break_unused_pay     || 0), 0);
 
     el.innerHTML = `
       <div style="padding:0 20px 16px">
@@ -166,9 +165,9 @@ const ReportsView = {
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${fmtMins(totalSkippedMin)} unused</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Unused break pay</div>
-            <div class="stat-value warning">${fmtCurrency(totalBreakUnusedPay)}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">extra earned on skipped breaks</div>
+            <div class="stat-label">Unpaid time worked</div>
+            <div class="stat-value warning">${fmtMins(totalSkippedMin)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">breaks worked through — all breaks are unpaid, so this earned nothing</div>
           </div>
         </div>
 
@@ -189,7 +188,6 @@ const ReportsView = {
                 <th>Diff</th>
                 <th>Breaks taken</th>
                 <th>Breaks skipped</th>
-                <th>Unused pay</th>
                 <th>Distance</th>
               </tr>
             </thead>
@@ -224,7 +222,6 @@ const ReportsView = {
                   <td>${diffHtml}</td>
                   <td style="color:var(--success)">${m.breaks_taken_count || 0} <small style="color:var(--text-muted)">(${fmtMins(m.breaks_taken_minutes || 0)})</small></td>
                   <td style="color:var(--warning)">${m.breaks_skipped_count || 0} <small style="color:var(--text-muted)">(${fmtMins(m.breaks_skipped_minutes || 0)})</small></td>
-                  <td style="color:var(--warning)">${m.break_unused_pay ? fmtCurrency(m.break_unused_pay) : '<span style="color:var(--text-muted)">—</span>'}</td>
                   <td>${fmtMiles(m.distance_miles)}</td>
                 </tr>`;
               }).join('')}
@@ -242,7 +239,6 @@ const ReportsView = {
                 <td>—</td>
                 <td style="color:var(--success)">${totalBreaksTaken} <small style="color:var(--text-muted)">(${fmtMins(totalBreakMin)})</small></td>
                 <td style="color:var(--warning)">${totalBreaksSkipped} <small style="color:var(--text-muted)">(${fmtMins(totalSkippedMin)})</small></td>
-                <td style="color:var(--warning)">${fmtCurrency(totalBreakUnusedPay)}</td>
                 <td>${fmtMiles(monthly.reduce((s,m)=>s+(m.distance_miles||0),0))}</td>
               </tr>
             </tbody>
