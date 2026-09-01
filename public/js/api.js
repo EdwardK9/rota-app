@@ -150,6 +150,19 @@ const API = {
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
   },
 
+  // Working-with — fast screenshot upload for the background import queue. Just
+  // saves the raw file (no Gemini call in this request), so it stays reliable
+  // over a flaky mobile connection — a server-side loop reads + imports it
+  // afterwards. See getScreenshotQueue for progress.
+  queueScreenshots: (files) => {
+    const fd = new FormData();
+    [...files].forEach(f => fd.append('screenshots', f));
+    return fetch('/api/colleagues/screenshot-queue', { method: 'POST', body: fd })
+      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
+  },
+  getScreenshotQueue: () => API.get('/api/colleagues/screenshot-queue'),
+  retryQueuedScreenshot: (fileId) => API.post(`/api/colleagues/screenshot-queue/${fileId}/retry`, {}),
+
   // Payslip documents — the original PDFs, stored as-is. Nothing reads them.
   getPayslipFiles:      (year)     => API.get('/api/payslip-files' + (year ? '?year=' + year : '')),
   getPayslipFileYears:  ()         => API.get('/api/payslip-files/years'),

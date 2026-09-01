@@ -160,6 +160,24 @@ try { db.exec('ALTER TABLE photo_files DROP COLUMN image_blob'); } catch(_) {}
 // since a DD.MM.YYYY filename doesn't sort correctly as plain text.
 try { db.exec('ALTER TABLE photo_files ADD COLUMN week_start_date TEXT'); } catch(_) {}
 
+// Screenshot auto-import queue — phone uploads used to run upload+Gemini+import
+// as one HTTP request, which failed ("Failed to fetch") whenever a slow Gemini
+// call outlasted a flaky mobile connection or the tab got backgrounded
+// mid-upload. Now the phone only does the fast, reliable part (save the raw
+// file); a server-side loop processes it afterwards, independent of any one
+// device staying connected. queued_for_import distinguishes these rows from
+// ordinary Photo Library uploads, which must never be auto-processed.
+const screenshotQueueMigrations = [
+  'ALTER TABLE photo_files ADD COLUMN queued_for_import INTEGER DEFAULT 0',
+  'ALTER TABLE photo_files ADD COLUMN processed_at TEXT',
+  'ALTER TABLE photo_files ADD COLUMN process_error TEXT',
+  'ALTER TABLE photo_files ADD COLUMN process_attempts INTEGER DEFAULT 0',
+  'ALTER TABLE photo_files ADD COLUMN import_batch_id INTEGER',
+];
+screenshotQueueMigrations.forEach(sql => {
+  try { db.exec(sql); } catch (_) { /* already exists */ }
+});
+
 // Payslip documents — the original PDFs (or photos) of payslips, kept as a safe
 // copy and nothing more: nothing reads them, and no figure on the Payslips page
 // comes from them. Same split as the photo library: metadata here, the file

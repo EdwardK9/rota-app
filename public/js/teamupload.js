@@ -14,11 +14,15 @@ const TeamUploadView = {
     this._initJsonPanel();
     this._initAutoAiPanel();
     this._loadImportBatches();
-    // Poll for new imports/pending reviews while this view is open — a
-    // screenshot uploaded from a phone should show up here without needing a
-    // manual refresh on the PC.
+    this._loadScreenshotQueue();
+    // Poll for new imports/pending reviews/queue progress while this view is
+    // open — a screenshot uploaded from a phone should show up here without
+    // needing a manual refresh on the PC.
     clearInterval(this._batchPollTimer);
-    this._batchPollTimer = setInterval(() => this._loadImportBatches(), 20_000);
+    this._batchPollTimer = setInterval(() => {
+      this._loadImportBatches();
+      this._loadScreenshotQueue();
+    }, 20_000);
   },
 
   destroy() {
@@ -247,9 +251,10 @@ const TeamUploadView = {
           <!-- AUTO IMPORT (AI) PANEL -->
           <div id="panelAutoAi">
             <p style="color:var(--text-muted);font-size:13.5px;margin-bottom:16px">
-              Drop one or more team schedule screenshots below and each is read automatically
-              with Gemini — no need to paste them into an AI chat yourself. Needs a Gemini API
-              key set in
+              Drop one or more team schedule screenshots below — each is uploaded straight
+              away, then read with Gemini and imported automatically in the background
+              (works even if you close this page right after uploading, e.g. from your
+              phone). Needs a Gemini API key set in
               <a href="#" onclick="App.navigate('settings');return false" style="color:var(--primary-text)">Settings → AI Screenshot Import</a>.
             </p>
 
@@ -261,6 +266,7 @@ const TeamUploadView = {
             </div>
 
             <div id="tuAutoStatus" style="font-size:13px;color:var(--text-muted);min-height:18px"></div>
+            <div id="tuQueueStatus" style="font-size:13px;margin-top:8px"></div>
           </div>
 
           <!-- PROMPT PANEL -->
@@ -455,62 +461,65 @@ RULES — follow exactly:
     });
   },
 
-  // Read one or more screenshots with Gemini, one at a time (so status can show
-  // progress), then feed all of them into the exact same preview/import/
-  // conflict-resolution pipeline used for manually pasted JSON — no separate
-  // code path to maintain, and it already supports multiple weeks at once.
+  // Upload only — no Gemini call happens in this request. Reading each
+  // screenshot with Gemini and importing it can take a while, and doing that
+  // as part of the same request that's uploading from a phone is exactly what
+  // caused "Failed to fetch": lock the screen or lose signal for a moment
+  // mid-request and the whole thing dies with nothing saved. Uploading is
+  // fast and hard to fail; a server-side queue (see working-with.js) reads
+  // and imports each screenshot afterwards, independent of this tab or device
+  // staying connected.
   async _autoImportScreenshots(files) {
     const status = document.getElementById('tuAutoStatus');
-    const results = [];
-    const errors = [];
-    const fallbackModels = new Set();
-    const savedAs = [];
-    const configuredModel = App.settings?.gemini_model;
-
-    for (let i = 0; i < files.length; i++) {
-      status.style.color = 'var(--text-muted)';
-      status.textContent = files.length > 1
-        ? `Reading screenshot ${i + 1} of ${files.length} with Gemini…`
-        : 'Reading screenshot with Gemini…';
-      try {
-        const result = await API.extractScreenshotGemini(files[i]);
-        results.push({ file: files[i].name, data: result.data });
-        if (result.model_used && configuredModel && result.model_used !== configuredModel) {
-          fallbackModels.add(result.model_used);
-        }
-        if (result.saved_as) savedAs.push(result.saved_as);
-      } catch (e) {
-        errors.push(`${files[i].name}: ${e.message}`);
-      }
-    }
-
-    if (!results.length) {
-      status.textContent = '✗ ' + (errors[0] || 'Failed to read screenshot(s)');
+    status.style.color = 'var(--text-muted)';
+    status.textContent = `Uploading ${files.length} screenshot${files.length !== 1 ? 's' : ''}…`;
+    try {
+      const result = await API.queueScreenshots(files);
+      status.style.color = 'var(--success)';
+      status.textContent = `✓ Uploaded ${result.queued} screenshot${result.queued !== 1 ? 's' : ''} — reading and importing automatically in the background. Safe to close this page now.`;
+      this._loadScreenshotQueue();
+      this._loadImportBatches();
+    } catch (e) {
       status.style.color = 'var(--danger)';
-      return;
+      status.textContent = '✗ Upload failed: ' + e.message;
     }
+  },
 
-    const fallbackNote = fallbackModels.size
-      ? ` (your configured model was overloaded — used ${[...fallbackModels].join(', ')} instead)`
-      : '';
-    const savedNote = savedAs.length
-      ? ` · 📁 saved to Photo Library as "${savedAs.join('", "')}"`
-      : '';
-    status.textContent = errors.length
-      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')})${fallbackNote}${savedNote} — importing…`
-      : `✓ Read successfully${fallbackNote}${savedNote} — importing…`;
-    status.style.color = errors.length ? 'var(--warning)' : 'var(--success)';
-
-    this._jsonFiles = results;
-    document.getElementById('tuJsonPaste').value = JSON.stringify(results[0].data, null, 2);
-    this._switchMode('json-import');
-    this._previewAllJson();
-    // Import immediately rather than waiting for a manual "Import" tap — the
-    // point of dropping a screenshot in from a phone is to be done with it.
-    // Anything that hits a conflict is persisted server-side either way (see
-    // POST /colleagues/import-json), so it's picked up by the "Needs Review"
-    // button in Recent Imports on whichever device reviews it next.
-    await this._importJson();
+  // Show what's still waiting to be read by Gemini, and anything that failed
+  // after retrying (with a manual Retry button). Polled alongside the import
+  // batch list so this stays live without a page refresh.
+  async _loadScreenshotQueue() {
+    const el = document.getElementById('tuQueueStatus');
+    if (!el) return;
+    try {
+      const { pending, failed } = await API.getScreenshotQueue();
+      if (!pending.length && !failed.length) { el.innerHTML = ''; return; }
+      let html = '';
+      if (pending.length) {
+        html += `<div style="color:var(--text-muted)">⏳ ${pending.length} screenshot${pending.length !== 1 ? 's' : ''} waiting to be read and imported…</div>`;
+      }
+      if (failed.length) {
+        html += failed.map(f => `
+          <div style="display:flex;align-items:center;gap:8px;color:var(--danger);margin-top:4px">
+            <span>✗ ${esc(f.filename)}: ${esc(f.process_error)}</span>
+            <button class="btn btn-sm btn-ghost" data-retry-screenshot="${f.id}">Retry</button>
+          </div>`).join('');
+      }
+      el.innerHTML = html;
+      el.querySelectorAll('[data-retry-screenshot]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await API.retryQueuedScreenshot(parseInt(btn.dataset.retryScreenshot, 10));
+            showToast('Queued for another attempt', 'success');
+            this._loadScreenshotQueue();
+          } catch (e) {
+            btn.disabled = false;
+            showToast('Retry failed: ' + e.message, 'error');
+          }
+        })
+      );
+    } catch (_) { /* non-critical — leave whatever was last shown */ }
   },
 
   // Parse a CSV exported from the team calendar back into grouped JSON

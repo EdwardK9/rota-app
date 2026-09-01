@@ -359,18 +359,39 @@ function rankGeminiModel(name) {
   return score;
 }
 
+// Vision requests are naturally slower than the text-only path (image
+// tokens), so this is more generous than GEMINI_TEXT_TIMEOUT_MS — but a call
+// still needs SOME bound. Without one, a stuck request used to hang the
+// caller indefinitely: fine-ish for an interactive upload where the user can
+// just give up and retry, but the background screenshot queue awaits these
+// sequentially, so one hung call could stall every screenshot behind it.
+const GEMINI_VISION_TIMEOUT_MS = 45000;
+
 async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model) {
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageB64 } }] }],
-        generationConfig: { temperature: 0 }
-      })
-    }
-  );
+  let geminiRes;
+  try {
+    geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageB64 } }] }],
+          generationConfig: { temperature: 0 }
+        }),
+        signal: AbortSignal.timeout(GEMINI_VISION_TIMEOUT_MS),
+      }
+    );
+  } catch (fetchErr) {
+    const err = new Error(
+      fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError'
+        ? `${model} didn't respond within ${GEMINI_VISION_TIMEOUT_MS / 1000}s`
+        : fetchErr.message
+    );
+    err.status = 504;
+    err.overloaded = true; // treat "unresponsive" the same as "busy" — try the next model
+    throw err;
+  }
 
   if (!geminiRes.ok) {
     const errBody = await geminiRes.json().catch(() => ({}));
@@ -2005,6 +2026,138 @@ router.delete('/photo-library/files/:id', (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ─────────────────────────────────────────
+// Screenshot auto-import queue
+//
+// The Auto Import (AI) panel used to run upload + Gemini read + import as one
+// HTTP request from the browser. On a phone that's a bad bet: a Gemini vision
+// call can take a while, and if the connection drops or the tab gets
+// backgrounded mid-request (very easy to do — lock the screen, switch apps),
+// the whole thing fails with a bare "Failed to fetch" and nothing is saved.
+//
+// Instead, POST /colleagues/screenshot-queue only saves the raw file (fast,
+// small request, hard to fail) into the Photo Library's "Team Rota
+// Screenshots" folder with queued_for_import=1. A server-side loop then reads
+// unprocessed rows a few at a time, runs them through Gemini + the same
+// import pipeline as manual JSON import, and leaves the result (including any
+// conflicts) on an import batch exactly like every other import — so it shows
+// up in Recent Imports / Needs Review on whichever device checks next.
+// ─────────────────────────────────────────
+
+// POST /colleagues/screenshot-queue — fast multi-file upload, no Gemini call here
+router.post('/colleagues/screenshot-queue', upload.array('screenshots', 10), (req, res) => {
+  const files = req.files || [];
+  if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+  try {
+    const folderId = getOrCreatePhotoFolder('Team Rota Screenshots');
+    const fileIds = files.map(f => {
+      const baseName = (f.originalname || '').replace(/\.[^.]+$/, '') || `Screenshot ${Date.now()}`;
+      const id = savePhotoToFolder(folderId, f.buffer, f.mimetype || 'image/jpeg', baseName, null);
+      db.prepare('UPDATE photo_files SET queued_for_import = 1 WHERE id = ?').run(id);
+      return id;
+    });
+    res.json({ ok: true, queued: fileIds.length, fileIds });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /colleagues/screenshot-queue — what's waiting / what failed, for the
+// Team Upload page's queue status panel
+router.get('/colleagues/screenshot-queue', (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, filename, uploaded_at, process_error, process_attempts, import_batch_id
+    FROM photo_files
+    WHERE queued_for_import = 1 AND processed_at IS NULL
+    ORDER BY id ASC
+  `).all();
+  res.json({
+    pending: rows.filter(r => !r.process_error),
+    failed:  rows.filter(r =>  r.process_error),
+  });
+});
+
+// POST /colleagues/screenshot-queue/:id/retry — clear a failed item so the
+// next processing tick picks it up again
+router.post('/colleagues/screenshot-queue/:id/retry', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const info = db.prepare(
+    'UPDATE photo_files SET process_error = NULL, process_attempts = 0 WHERE id = ? AND queued_for_import = 1'
+  ).run(id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Queued screenshot not found' });
+  res.json({ ok: true });
+});
+
+const SCREENSHOT_QUEUE_MAX_ATTEMPTS = 3;
+const SCREENSHOT_QUEUE_BATCH_SIZE   = 3; // per tick — enough to keep multi-file uploads moving without hammering Gemini
+
+async function processOneQueuedScreenshot(row) {
+  if (!fs.existsSync(row.file_path)) throw new Error('File missing on disk');
+  const buffer = fs.readFileSync(row.file_path);
+  const { parsed } = await callGeminiVision(buffer, row.mime_type || 'image/jpeg');
+  if (!parsed) throw new Error('Gemini returned unexpected output — could not parse JSON');
+  if (!Array.isArray(parsed.schedule)) throw new Error('Gemini response is missing a "schedule" array');
+
+  // Rename to the detected week, same as the manual "AI rename" action, so
+  // queued screenshots end up named consistently in the Photo Library.
+  const range = weekRangeForFilename(parsed.date_range);
+  if (range) {
+    const ext = fsPath.extname(row.filename) || '.jpg';
+    const existingNames = new Set(
+      db.prepare('SELECT filename FROM photo_files WHERE folder_id = ? AND id != ?').all(row.folder_id, row.id).map(r => r.filename)
+    );
+    let filename = range.label + ext;
+    let n = 2;
+    while (existingNames.has(filename)) { filename = `${range.label} (${n})${ext}`; n++; }
+    db.prepare('UPDATE photo_files SET filename=?, week_start_date=? WHERE id=?').run(filename, range.weekStart, row.id);
+  }
+
+  const batchId = createImportBatch('gemini', `Auto-queued screenshot — ${row.filename}`);
+  const result = runJsonScheduleImport(parsed, [], batchId);
+  if (result.error) throw new Error(result.error);
+  savePendingConflicts(batchId, parsed, result.conflicts);
+  db.prepare(
+    "UPDATE photo_files SET processed_at = datetime('now'), process_error = NULL, import_batch_id = ? WHERE id = ?"
+  ).run(batchId, row.id);
+}
+
+// Guards against overlapping runs — each screenshot now has a bounded Gemini
+// timeout (see GEMINI_VISION_TIMEOUT_MS), but a batch of a few could still run
+// past the next 30s tick, and starting a second pass over the same rows
+// concurrently would just waste Gemini calls on rows already in flight.
+let screenshotQueueRunning = false;
+
+async function processScreenshotQueue() {
+  if (screenshotQueueRunning) return;
+  screenshotQueueRunning = true;
+  try {
+    const rows = db.prepare(`
+      SELECT * FROM photo_files
+      WHERE queued_for_import = 1 AND processed_at IS NULL
+        AND (process_error IS NULL OR process_attempts < ?)
+      ORDER BY id ASC LIMIT ?
+    `).all(SCREENSHOT_QUEUE_MAX_ATTEMPTS, SCREENSHOT_QUEUE_BATCH_SIZE);
+
+    for (const row of rows) {
+      try {
+        await processOneQueuedScreenshot(row);
+      } catch (err) {
+        console.error('[ScreenshotQueue] Failed to process', row.filename, '-', err.message);
+        db.prepare(
+          'UPDATE photo_files SET process_error = ?, process_attempts = process_attempts + 1 WHERE id = ?'
+        ).run(err.message, row.id);
+      }
+    }
+  } finally {
+    screenshotQueueRunning = false;
+  }
+}
+
+setInterval(() => { processScreenshotQueue().catch(e => console.error('[ScreenshotQueue] tick error:', e.message)); }, 30_000);
+// Run once shortly after startup too, so anything left queued from before a
+// restart doesn't sit idle for a full 30s before the first attempt.
+setTimeout(() => { processScreenshotQueue().catch(e => console.error('[ScreenshotQueue] tick error:', e.message)); }, 5_000);
 
 module.exports = router;
 // callGeminiText is shared with v3/didYouKnow.js. The vision counterpart isn't
