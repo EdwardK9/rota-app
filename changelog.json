@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-08-29T22:37:46.587Z",
-  "commit": "82212ca",
+  "generated_at": "2026-09-01T15:55:34.342Z",
+  "commit": "024b521",
   "entries": [
+    {
+      "version": "4.13.0",
+      "date": "2026-09-01",
+      "summary": "Rotageek session keep-alive heartbeat",
+      "details": "Autosync only touched the Rotageek session once per (default 1h) interval,\nso a session cookie with a shorter inactivity TTL could go stale between\nruns -- the Import page kept showing \"Connected\" with no indication sync\nhad quietly stopped working. Added a 20-minute keep-alive heartbeat that\nreuses the existing auth-refresh chain (password re-auth, then bearer\nfallback) to touch the session more often than it can expire, and clears\nthe stale session_expired flag once a request succeeds again. The Import\npage also now re-polls status every 60s while the Rotageek tab is open."
+    },
     {
       "version": "4.11.0",
       "date": "2026-08-29",
