@@ -2912,6 +2912,7 @@ app.post('/api/rotageek/save-session', (req, res) => {
   rgUpsert('session_expired', '0');
   // Restart auto-sync with fresh session
   startAutoSync();
+  startRgKeepAlive();
   res.json({ ok: true, auth_mode: 'session' });
 });
 
@@ -2928,6 +2929,7 @@ app.get('/api/rotageek/save-session-bm', (req, res) => {
     rgUpsert('auth_mode',      'session');
     rgUpsert('session_expired', '0');
     startAutoSync();
+    startRgKeepAlive();
     res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f0fdf4}
       .box{text-align:center;padding:32px 40px;background:#fff;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,.1);border-top:4px solid #22c55e}
@@ -2996,6 +2998,7 @@ app.all(`${RG_PROXY_BASE}*`, (req, res) => {
         rgUpsert('auth_mode', 'session');
         rgUpsert('base_url', 'https://' + RG_PROXY_TARGET);
         startAutoSync();
+        startRgKeepAlive();
         console.log('[proxy] Auth cookie captured and saved');
       }
     }
@@ -3354,8 +3357,11 @@ async function rgReAuth(base_url) {
   return null;
 }
 
-// Shared sync logic used by both the manual endpoint and the auto-sync scheduler
-async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'auto_sync', compareOnly = false } = {}) {
+// Auth + GraphQL fetch, shared by the real sync and the lightweight keep-alive
+// heartbeat below. Handles the full auth-refresh chain (cookie → 401 → password
+// re-auth → bearer fallback → session_expired flag) but does no journal
+// processing or DB writes — callers decide what to do with the raw response.
+async function rgFetchSchedule(fromDate, toDate) {
   let cookie   = rgSetting('cookie');
   let csrf     = rgSetting('csrf_token');
   const base_url = (rgSetting('base_url') || 'https://screwfix.rotageek.com').replace(/\/$/, '');
@@ -3370,12 +3376,6 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     csrf   = rgSetting('csrf_token');
   }
 
-  const now = new Date();
-  const defaultFrom = new Date(now); defaultFrom.setDate(now.getDate() - 7);
-  const defaultTo   = new Date(now); defaultTo.setDate(now.getDate() + 60);
-
-  const fromDate = fromOverride || localDateStr(defaultFrom);
-  const toDate   = toOverride   || localDateStr(defaultTo);
   const fromStr  = fromDate + 'T00:00:00+00:00';
   const toStr    = toDate   + 'T23:59:59+00:00';
 
@@ -3416,7 +3416,6 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     return { status: r.status, ok: r.ok, data };
   }
 
-  let gqlData;
   try {
     // Attempt 1: cookie auth
     let result = await doGqlRequest(makeHeaders(true));
@@ -3458,10 +3457,54 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     if (result.data.errors) {
       return { error: result.data.errors[0]?.message || 'GraphQL error' };
     }
-    gqlData = result.data;
+    // Success — a session that was flagged expired clearly isn't any more
+    // (this fires whenever password re-auth silently recovered it, e.g. from
+    // the keep-alive heartbeat), so drop the stale banner.
+    if (rgSetting('session_expired') === '1') rgUpsert('session_expired', '0');
+    return { gqlData: result.data };
   } catch (e) {
     return { error: 'Could not reach Rotageek: ' + e.message };
   }
+}
+
+// Lightweight session heartbeat — reuses rgFetchSchedule's auth-refresh chain
+// with a single-day range purely to keep Rotageek's session cookie alive.
+// Session cookies commonly use a sliding/inactivity expiry, so touching it
+// every 20 minutes (much shorter than the default 1h autosync interval, let
+// alone a longer one) stops the "worked earlier, gone now" symptom — and if
+// the session genuinely can't be refreshed (no stored password, MFA, etc.)
+// this surfaces that promptly via the same session_expired flag + ntfy alert
+// a real sync would, rather than leaving the Import page's "Connected" badge
+// stale for up to an hour.
+async function rgKeepAlive() {
+  if (!rgSetting('cookie') && !rgSetting('token')) return; // nothing to keep alive
+  const today = localDateStr();
+  const result = await rgFetchSchedule(today, today);
+  if (result.error) console.log('[Rotageek] Keep-alive:', result.error);
+}
+
+const RG_KEEPALIVE_INTERVAL_MS = 20 * 60 * 1000; // 20 min — shorter than Rotageek's own session TTL
+let rgKeepAliveTimer = null;
+function startRgKeepAlive() {
+  if (rgKeepAliveTimer) return;
+  rgKeepAliveTimer = setInterval(() => { rgKeepAlive().catch(e => console.error('[Rotageek] Keep-alive error:', e.message)); }, RG_KEEPALIVE_INTERVAL_MS);
+}
+function stopRgKeepAlive() {
+  if (rgKeepAliveTimer) { clearInterval(rgKeepAliveTimer); rgKeepAliveTimer = null; }
+}
+
+// Shared sync logic used by both the manual endpoint and the auto-sync scheduler
+async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'auto_sync', compareOnly = false } = {}) {
+  const now = new Date();
+  const defaultFrom = new Date(now); defaultFrom.setDate(now.getDate() - 7);
+  const defaultTo   = new Date(now); defaultTo.setDate(now.getDate() + 60);
+
+  const fromDate = fromOverride || localDateStr(defaultFrom);
+  const toDate   = toOverride   || localDateStr(defaultTo);
+
+  const fetchResult = await rgFetchSchedule(fromDate, toDate);
+  if (fetchResult.error) return { error: fetchResult.error };
+  const gqlData = fetchResult.gqlData;
 
   const journals = gqlData?.data?.dateRangeSchedule?.journals || [];
   if (!journals.length) {
@@ -3745,6 +3788,7 @@ app.delete('/api/rotageek/disconnect', (req, res) => {
   ['token', 'base_url', 'username', 'auth_mode', 'cookie', 'csrf_token'].forEach(k =>
     db.prepare('DELETE FROM settings WHERE key = ?').run('rotageek_' + k)
   );
+  stopRgKeepAlive();
   res.json({ ok: true });
 });
 
@@ -4272,6 +4316,7 @@ function startArrivalReminderSync() {
 
 // Kick off on startup
 startAutoSync();
+startRgKeepAlive();
 startTimeSync();
 startShiftReminderSync();
 startJsonReminderSync();

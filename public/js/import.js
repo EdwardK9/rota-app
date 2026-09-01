@@ -546,7 +546,15 @@ const ImportView = {
     document.getElementById('panelCsv').style.display        = tab === 'csv'        ? 'block' : 'none';
     document.getElementById('panelIcs').style.display        = tab === 'ics'        ? 'block' : 'none';
     document.getElementById('panelRotageek').style.display   = tab === 'rotageek'   ? 'block' : 'none';
-    if (tab === 'rotageek') this.checkRotageekStatus();
+    if (this._rgStatusInterval) { clearInterval(this._rgStatusInterval); this._rgStatusInterval = null; }
+    if (tab === 'rotageek') {
+      this.checkRotageekStatus();
+      // Re-check periodically while this tab is open so the Connected badge
+      // doesn't sit stale for up to an hour if the session expires quietly
+      // in the background (server keep-alive covers most cases, but a
+      // password-less/MFA session can still lapse).
+      this._rgStatusInterval = setInterval(() => this.checkRotageekStatus(), 60_000);
+    }
   },
 
   // ─── Wire all events ────────────────────────────────────────────────────────
