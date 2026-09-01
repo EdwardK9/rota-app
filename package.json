@@ -1,6 +1,6 @@
 {
   "name": "screwfix-rota-app",
-  "version": "4.15.0",
+  "version": "4.16.0",
   "description": "Self-hosted shift, pay, and team rota tracker for Screwfix — AI-powered screenshot import (Gemini), Google Calendar sync, Rotageek integration, team analytics, and the V3.0 feature set (live money clock, trophies, goals, pay forecast, shift DNA and more).",
   "main": "server.js",
   "scripts": {

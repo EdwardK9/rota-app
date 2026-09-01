@@ -266,7 +266,6 @@ const TeamUploadView = {
             </div>
 
             <div id="tuAutoStatus" style="font-size:13px;color:var(--text-muted);min-height:18px"></div>
-            <div id="tuQueueStatus" style="font-size:13px;margin-top:8px"></div>
           </div>
 
           <!-- PROMPT PANEL -->
@@ -326,6 +325,13 @@ const TeamUploadView = {
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <div class="card" id="tuQueueCard" style="max-width:760px;margin:0 auto 20px;display:none">
+        <div class="card-header"><h2>\u{1F4E5} Processing Queue</h2></div>
+        <div class="card-body">
+          <div id="tuQueueGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px"></div>
         </div>
       </div>
 
@@ -485,28 +491,61 @@ RULES — follow exactly:
     }
   },
 
-  // Show what's still waiting to be read by Gemini, and anything that failed
-  // after retrying (with a manual Retry button). Polled alongside the import
-  // batch list so this stays live without a page refresh.
+  // Visual queue — a thumbnail per screenshot moving through waiting → done
+  // (or failed), so an upload from a phone is visibly happening on the PC
+  // rather than a status line easy to miss on a different tab. Polled
+  // alongside the import batch list so it stays live without a refresh.
   async _loadScreenshotQueue() {
-    const el = document.getElementById('tuQueueStatus');
-    if (!el) return;
+    const card = document.getElementById('tuQueueCard');
+    const grid = document.getElementById('tuQueueGrid');
+    if (!card || !grid) return;
     try {
-      const { pending, failed } = await API.getScreenshotQueue();
-      if (!pending.length && !failed.length) { el.innerHTML = ''; return; }
+      const { pending, failed, recent } = await API.getScreenshotQueue();
+      if (!pending.length && !failed.length && !recent.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+
+      const thumb = id => `<img src="/api/photo-library/files/${id}/image" loading="lazy"
+        style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block" />`;
+      const cardWrap = (inner, borderColor) => `
+        <div style="position:relative;border-radius:8px;overflow:hidden;background:var(--card-bg);
+          box-shadow:var(--card-shadow);border:2px solid ${borderColor}">${inner}</div>`;
+      const badge = (text, bg, fg) => `<div style="position:absolute;top:4px;left:4px;right:4px;
+        padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;text-align:center;
+        background:${bg};color:${fg};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${text}</div>`;
+      const caption = filename => `<div style="padding:4px 6px;font-size:10px;color:var(--text-muted);
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(filename)}">${esc(filename)}</div>`;
+
       let html = '';
-      if (pending.length) {
-        html += `<div style="color:var(--text-muted)">⏳ ${pending.length} screenshot${pending.length !== 1 ? 's' : ''} waiting to be read and imported…</div>`;
-      }
-      if (failed.length) {
-        html += failed.map(f => `
-          <div style="display:flex;align-items:center;gap:8px;color:var(--danger);margin-top:4px">
-            <span>✗ ${esc(f.filename)}: ${esc(f.process_error)}</span>
-            <button class="btn btn-sm btn-ghost" data-retry-screenshot="${f.id}">Retry</button>
-          </div>`).join('');
-      }
-      el.innerHTML = html;
-      el.querySelectorAll('[data-retry-screenshot]').forEach(btn =>
+
+      html += pending.map(p => cardWrap(`
+        ${thumb(p.id)}
+        ${badge('⏳ Waiting…', 'rgba(0,0,0,0.55)', '#fff')}
+        ${caption(p.filename)}
+      `, 'transparent')).join('');
+
+      html += failed.map(f => cardWrap(`
+        ${thumb(f.id)}
+        ${badge('⚠️ Failed', 'var(--danger)', '#fff')}
+        ${caption(f.filename)}
+        <button class="btn btn-sm btn-ghost" data-retry-screenshot="${f.id}"
+          style="width:100%;border-radius:0;font-size:11px" title="${esc(f.process_error)}">Retry</button>
+      `, 'var(--danger)')).join('');
+
+      html += recent.map(r => {
+        const needsReview = r.pending_conflict_count > 0;
+        return cardWrap(`
+          ${thumb(r.id)}
+          ${badge(needsReview ? `⚡ ${r.pending_conflict_count} to review` : `✓ ${r.inserted_count} imported`,
+            needsReview ? 'var(--warning)' : 'var(--success)', needsReview ? '#000' : '#fff')}
+          ${caption(r.filename)}
+          ${needsReview ? `<button class="btn btn-sm btn-ghost" data-review-batch-jump="${r.batch_id}"
+              style="width:100%;border-radius:0;font-size:11px">Review</button>` : ''}
+        `, needsReview ? 'var(--warning)' : 'transparent');
+      }).join('');
+
+      grid.innerHTML = html;
+
+      grid.querySelectorAll('[data-retry-screenshot]').forEach(btn =>
         btn.addEventListener('click', async () => {
           btn.disabled = true;
           try {
@@ -519,7 +558,22 @@ RULES — follow exactly:
           }
         })
       );
+      grid.querySelectorAll('[data-review-batch-jump]').forEach(btn =>
+        btn.addEventListener('click', () => this._jumpToBatchReview(parseInt(btn.dataset.reviewBatchJump, 10)))
+      );
     } catch (_) { /* non-critical — leave whatever was last shown */ }
+  },
+
+  // Scrolls Recent Imports into view and opens the review panel for a batch
+  // surfaced from the queue's "⚡ N to review" card, so the user doesn't have
+  // to go hunting for the matching row themselves.
+  async _jumpToBatchReview(batchId) {
+    await this._loadImportBatches();
+    const row = document.getElementById('tuBatchRow-' + batchId);
+    const btn = row?.querySelector(`[data-review-batch="${batchId}"]`);
+    if (!row || !btn) { showToast('Could not find that import in Recent Imports', 'error'); return; }
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    this._toggleBatchReview(batchId, btn);
   },
 
   // Parse a CSV exported from the team calendar back into grouped JSON

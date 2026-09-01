@@ -2063,18 +2063,35 @@ router.post('/colleagues/screenshot-queue', upload.array('screenshots', 10), (re
   }
 });
 
-// GET /colleagues/screenshot-queue — what's waiting / what failed, for the
-// Team Upload page's queue status panel
+// GET /colleagues/screenshot-queue — waiting / failed / recently-finished
+// screenshots, for the Team Upload page's visual queue panel. "recent"
+// carries each screenshot's outcome (shifts inserted, conflicts still
+// pending) so the queue can be seen through end to end: uploaded → waiting →
+// done, without needing to cross-reference Recent Imports separately.
 router.get('/colleagues/screenshot-queue', (req, res) => {
   const rows = db.prepare(`
-    SELECT id, filename, uploaded_at, process_error, process_attempts, import_batch_id
+    SELECT id, filename, uploaded_at, process_error, process_attempts
     FROM photo_files
     WHERE queued_for_import = 1 AND processed_at IS NULL
     ORDER BY id ASC
   `).all();
+  const recent = db.prepare(`
+    SELECT pf.id, pf.filename, pf.processed_at, pf.import_batch_id AS batch_id,
+           ib.inserted_count, ib.pending_conflicts
+    FROM photo_files pf
+    LEFT JOIN import_batches ib ON ib.id = pf.import_batch_id
+    WHERE pf.queued_for_import = 1 AND pf.processed_at IS NOT NULL
+    ORDER BY pf.processed_at DESC
+    LIMIT 8
+  `).all().map(r => ({
+    id: r.id, filename: r.filename, processed_at: r.processed_at, batch_id: r.batch_id,
+    inserted_count: r.inserted_count || 0,
+    pending_conflict_count: r.pending_conflicts ? JSON.parse(r.pending_conflicts).length : 0,
+  }));
   res.json({
     pending: rows.filter(r => !r.process_error),
     failed:  rows.filter(r =>  r.process_error),
+    recent,
   });
 });
 
