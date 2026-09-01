@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-01T16:02:48.562Z",
-  "commit": "84391ce",
+  "generated_at": "2026-09-01T16:18:43.045Z",
+  "commit": "3f6cf0e",
   "entries": [
+    {
+      "version": "4.15.0",
+      "date": "2026-09-01",
+      "summary": "Background processing queue for screenshot imports",
+      "details": "Uploading a screenshot from a phone ran upload + Gemini read + import as one\nHTTP request, so a slow Gemini call or the tab getting backgrounded\nmid-request (trivial to do on mobile) killed the whole thing with a bare\n\"Failed to fetch\" and nothing saved. The Auto Import (AI) panel now just\nuploads the raw file -- fast, small, hard to fail -- into the Photo Library\nwith queued_for_import=1; a server-side loop (working-with.js) picks up\nunprocessed screenshots every 30s, reads them with Gemini, and runs them\nthrough the same import pipeline as manual JSON import, independent of the\nphone staying connected. Team Upload shows queue progress and any errors\n(with a Retry button) via the new GET/POST /colleagues/screenshot-queue\nendpoints. Also added a timeout to the Gemini vision call itself (previously\nunbounded, unlike the text path) so one stuck request can't stall the queue."
+    },
     {
       "version": "4.14.0",
       "date": "2026-09-01",
