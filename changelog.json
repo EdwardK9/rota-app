@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-01T16:18:43.045Z",
-  "commit": "3f6cf0e",
+  "generated_at": "2026-09-01T16:25:22.453Z",
+  "commit": "9de6e61",
   "entries": [
+    {
+      "version": "4.16.0",
+      "date": "2026-09-01",
+      "summary": "Visual screenshot processing queue",
+      "details": "Replaced the buried one-line status text with a proper thumbnail grid card\n(\"Processing Queue\") on the Team Upload page, always visible regardless of\nwhich import tab is active. Each queued screenshot shows as a thumbnail with\na status badge: waiting, failed (with a Retry button and the actual error on\nhover), or done (with either an inserted-shift count or a \"N to review\"\nbadge that scrolls to and opens the matching Recent Imports row). Backing\nGET /colleagues/screenshot-queue now also returns recently-finished items\nwith their outcome, not just pending/failed."
+    },
     {
       "version": "4.15.0",
       "date": "2026-09-01",
