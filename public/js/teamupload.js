@@ -6,6 +6,7 @@
 
 const TeamUploadView = {
   _jsonFiles: null,
+  _batchPollTimer: null,
 
   init() {
     this.render();
@@ -13,11 +14,24 @@ const TeamUploadView = {
     this._initJsonPanel();
     this._initAutoAiPanel();
     this._loadImportBatches();
+    // Poll for new imports/pending reviews while this view is open — a
+    // screenshot uploaded from a phone should show up here without needing a
+    // manual refresh on the PC.
+    clearInterval(this._batchPollTimer);
+    this._batchPollTimer = setInterval(() => this._loadImportBatches(), 20_000);
+  },
+
+  destroy() {
+    clearInterval(this._batchPollTimer);
+    this._batchPollTimer = null;
   },
 
   async _loadImportBatches() {
     const el = document.getElementById('tuBatchList');
     if (!el) return;
+    // Don't clobber an open review panel (e.g. mid-decision on the PC) just
+    // because the background poll ticked — pick it back up next time it's closed.
+    if (el.querySelector('[id^="tuBatchReview-"]')) return;
     try {
       const { batches } = await API.getImportBatches(8);
       if (!batches.length) {
@@ -38,28 +52,164 @@ const TeamUploadView = {
             </tr></thead>
             <tbody>
               ${batches.map(b => `
-                <tr style="border-bottom:1px solid var(--border)">
+                <tr id="tuBatchRow-${b.id}" style="border-bottom:1px solid var(--border);${b.pending_conflict_count ? 'background:rgba(245,158,11,0.06)' : ''}">
                   <td style="padding:5px 8px;white-space:nowrap">${esc(b.created_at)}</td>
                   <td style="padding:5px 8px">${esc(sourceLabel[b.source] || b.source)}</td>
                   <td style="padding:5px 8px;color:var(--text-muted)">${esc(b.note || '')}</td>
                   <td style="padding:5px 8px">${b.remaining_count}${b.remaining_count !== b.inserted_count ? ` / ${b.inserted_count}` : ''}</td>
-                  <td style="padding:5px 8px;text-align:right">
+                  <td style="padding:5px 8px;text-align:right;white-space:nowrap">
+                    ${!b.undone_at && b.pending_conflict_count
+                      ? `<button class="btn btn-sm btn-primary" data-review-batch="${b.id}">⚡ Review (${b.pending_conflict_count})</button>`
+                      : ''}
                     ${b.undone_at
                       ? '<span style="color:var(--text-muted)">Undone</span>'
-                      : b.remaining_count === 0
+                      : b.remaining_count === 0 && !b.pending_conflict_count
                       ? '<span style="color:var(--text-muted)">Nothing left</span>'
-                      : `<button class="btn btn-sm btn-ghost" style="color:var(--danger)" data-undo-batch="${b.id}">Undo</button>`}
+                      : b.remaining_count > 0
+                      ? `<button class="btn btn-sm btn-ghost" style="color:var(--danger)" data-undo-batch="${b.id}">Undo</button>`
+                      : ''}
                   </td>
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>`;
+      el.querySelectorAll('[data-review-batch]').forEach(btn =>
+        btn.addEventListener('click', () => this._toggleBatchReview(parseInt(btn.dataset.reviewBatch, 10), btn))
+      );
       el.querySelectorAll('[data-undo-batch]').forEach(btn =>
         btn.addEventListener('click', () => this._undoImportBatch(parseInt(btn.dataset.undoBatch, 10)))
       );
     } catch (e) {
       el.innerHTML = `<span style="color:var(--danger)">Failed to load: ${esc(e.message)}</span>`;
     }
+  },
+
+  // Expand/collapse the conflict-resolution table for one batch, right under its
+  // row in Recent Imports. This is what makes "upload from phone, resolve on PC"
+  // possible — the conflicts and the original schedule JSON were persisted
+  // server-side when the phone's import first hit them, so any device can pull
+  // them up.
+  async _toggleBatchReview(batchId, btn) {
+    const existing = document.getElementById('tuBatchReview-' + batchId);
+    if (existing) { existing.remove(); return; }
+
+    btn.disabled = true;
+    try {
+      const { conflicts } = await API.getBatchConflicts(batchId);
+      btn.disabled = false;
+      if (!conflicts.length) {
+        showToast('Nothing left to review on this import', 'info');
+        this._loadImportBatches();
+        return;
+      }
+      const row = document.getElementById('tuBatchRow-' + batchId);
+      const tr = document.createElement('tr');
+      tr.id = 'tuBatchReview-' + batchId;
+      const td = document.createElement('td');
+      td.colSpan = 5;
+      td.style.padding = '8px';
+      td.innerHTML = this._conflictPanelHtml(conflicts, 'tuBatchReview' + batchId);
+      tr.appendChild(td);
+      row.after(tr);
+
+      this._wireConflictPanel(td, 'tuBatchReview' + batchId, async (overrides) => {
+        try {
+          const result = await API.resolveBatchConflicts(batchId, overrides);
+          const applied = (result.inserted || 0) + (result.updated || 0);
+          showToast(
+            `${applied} shift${applied !== 1 ? 's' : ''} applied` +
+            (result.conflicts.length ? ` · ${result.conflicts.length} still need review` : ''),
+            'success'
+          );
+          tr.remove();
+          this._loadImportBatches();
+        } catch (e) {
+          showToast('Failed to apply: ' + e.message, 'error');
+        }
+      });
+    } catch (e) {
+      btn.disabled = false;
+      showToast('Failed to load conflicts: ' + e.message, 'error');
+    }
+  },
+
+  // Shared conflict-resolution table markup — used by the "Needs Review" panel
+  // above. idPrefix scopes element ids so more than one panel can exist at once.
+  _conflictPanelHtml(conflicts, idPrefix) {
+    const fmtTime = (st, et, type) => {
+      if (type === 'leave')   return '🌴 Leave';
+      if (type === 'all_day') return '🏪 All Day';
+      return `${st} – ${et}`;
+    };
+    return `
+      <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
+        <div style="padding:8px 12px;background:rgba(245,158,11,0.1);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:600">⚡ ${conflicts.length} conflict${conflicts.length !== 1 ? 's' : ''} — this person already has a shift that day</span>
+          <span style="color:var(--text-muted);font-size:11px">Choose what to do with each, then Apply</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
+            <th style="padding:5px 8px;text-align:left;font-weight:500">Person</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:500">Date</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:500">Existing</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:500">Incoming</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:500">Action</th>
+          </tr></thead>
+          <tbody>
+            ${conflicts.map((c, idx) => `
+              <tr style="border-bottom:1px solid var(--border)" data-conflict-idx="${idx}">
+                <td style="padding:5px 8px;font-weight:500">${esc(c.name)}</td>
+                <td style="padding:5px 8px;color:var(--text-muted)">${c.date}</td>
+                <td style="padding:5px 8px;color:var(--text-muted)">${c.existing.map(e => esc(fmtTime(e.start_time, e.end_time, e.shift_type))).join('<br>')}</td>
+                <td style="padding:5px 8px;color:var(--success)">${esc(fmtTime(c.incoming.start_time, c.incoming.end_time, c.incoming.shift_type))}</td>
+                <td style="padding:5px 8px">
+                  <select class="${idPrefix}-action form-control" style="font-size:12px;padding:3px 6px"
+                    data-colleague-id="${c.colleague_id}" data-date="${c.date}" data-start-time="${c.incoming.start_time}">
+                    <option value="skip" selected>Skip — keep existing as-is</option>
+                    ${c.existing.map(e => `<option value="replace:${e.id}">Replace ${esc(fmtTime(e.start_time, e.end_time, e.shift_type))} with incoming</option>`).join('')}
+                    <option value="add">Keep both — add as extra shift</option>
+                  </select>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-top:1px solid var(--border)">
+          <button id="${idPrefix}-apply" class="btn btn-sm btn-primary">Apply</button>
+          <span id="${idPrefix}-count" style="font-size:11px;color:var(--text-muted)"></span>
+        </div>
+      </div>`;
+  },
+
+  // Wires the Apply button + live "N decided" counter for a panel rendered by
+  // _conflictPanelHtml. onApply receives the flat overrides array once clicked.
+  _wireConflictPanel(container, idPrefix, onApply) {
+    const applyBtn   = container.querySelector('#' + idPrefix + '-apply');
+    const countLabel = container.querySelector('#' + idPrefix + '-count');
+    const selects    = container.querySelectorAll('.' + idPrefix + '-action');
+
+    const updateCount = () => {
+      const n = [...selects].filter(s => s.value !== 'skip').length;
+      countLabel.textContent = n ? `${n} decided` : '';
+    };
+    selects.forEach(sel => sel.addEventListener('change', updateCount));
+    updateCount();
+
+    applyBtn.addEventListener('click', () => {
+      const overrides = [];
+      selects.forEach(sel => {
+        if (sel.value === 'skip') return;
+        const entry = {
+          colleague_id: parseInt(sel.dataset.colleagueId, 10),
+          date:         sel.dataset.date,
+          start_time:   sel.dataset.startTime,
+        };
+        if (sel.value === 'add') entry.action = 'add';
+        else { entry.action = 'replace'; entry.replace_id = parseInt(sel.value.split(':')[1], 10); }
+        overrides.push(entry);
+      });
+      if (!overrides.length) { showToast('Nothing to apply — every conflict is still set to Skip', 'info'); return; }
+      onApply(overrides);
+    });
   },
 
   async _undoImportBatch(batchId) {
@@ -347,14 +497,20 @@ RULES — follow exactly:
       ? ` · 📁 saved to Photo Library as "${savedAs.join('", "')}"`
       : '';
     status.textContent = errors.length
-      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')})${fallbackNote}${savedNote} — switching to preview…`
-      : `✓ Read successfully${fallbackNote}${savedNote} — switching to preview…`;
+      ? `✓ Read ${results.length} of ${files.length} — ${errors.length} failed (${errors.join('; ')})${fallbackNote}${savedNote} — importing…`
+      : `✓ Read successfully${fallbackNote}${savedNote} — importing…`;
     status.style.color = errors.length ? 'var(--warning)' : 'var(--success)';
 
     this._jsonFiles = results;
     document.getElementById('tuJsonPaste').value = JSON.stringify(results[0].data, null, 2);
     this._switchMode('json-import');
     this._previewAllJson();
+    // Import immediately rather than waiting for a manual "Import" tap — the
+    // point of dropping a screenshot in from a phone is to be done with it.
+    // Anything that hits a conflict is persisted server-side either way (see
+    // POST /colleagues/import-json), so it's picked up by the "Needs Review"
+    // button in Recent Imports on whichever device reviews it next.
+    await this._importJson();
   },
 
   // Parse a CSV exported from the team calendar back into grouped JSON

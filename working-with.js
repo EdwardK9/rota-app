@@ -1184,13 +1184,21 @@ router.put('/colleague-shifts/:id', (req, res) => {
 router.get('/colleagues/import-batches', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
   const batches = db.prepare(`
-    SELECT id, source, note, inserted_count, undone_at, created_at,
+    SELECT id, source, note, inserted_count, undone_at, created_at, pending_conflicts,
       (SELECT COUNT(*) FROM colleague_shifts WHERE import_batch_id = import_batches.id) AS remaining_count
     FROM import_batches
-    WHERE inserted_count > 0
+    WHERE inserted_count > 0 OR pending_conflicts IS NOT NULL
     ORDER BY id DESC
     LIMIT ?
-  `).all(limit);
+  `).all(limit).map(b => {
+    // A batch entirely made of conflicts (nothing auto-inserted) still needs to
+    // surface here — that's exactly the "phone uploaded, PC needs to review"
+    // case. pending_conflicts itself is left out of the list payload (the detail
+    // endpoint returns the full list); only the count is useful here.
+    const pendingCount = b.pending_conflicts ? JSON.parse(b.pending_conflicts).length : 0;
+    const { pending_conflicts, ...rest } = b;
+    return { ...rest, pending_conflict_count: pendingCount };
+  });
   res.json({ batches });
 });
 
@@ -1203,7 +1211,7 @@ router.delete('/colleagues/import-batches/:id', (req, res) => {
 
   const undo = db.transaction(() => {
     const info = db.prepare('DELETE FROM colleague_shifts WHERE import_batch_id = ?').run(batchId);
-    db.prepare("UPDATE import_batches SET undone_at = datetime('now') WHERE id = ?").run(batchId);
+    db.prepare("UPDATE import_batches SET undone_at = datetime('now'), pending_conflicts = NULL, pending_schedule_data = NULL WHERE id = ?").run(batchId);
     return info.changes;
   });
   const deleted = undo();
@@ -1361,15 +1369,33 @@ function normaliseAIOutput(parsed) {
   return { shifts };
 }
 
-router.post('/colleagues/import-json', (req, res) => {
-  const { schedule_data, overrides = [] } = req.body;
-  if (!schedule_data || !Array.isArray(schedule_data.schedule))
-    return res.status(400).json({ error: 'Expected { schedule_data: { date_range, schedule: [...] } }' });
+// Persist (or clear) the review state on an import batch. Called after any pass
+// over a schedule import — initial or a conflict-resolution follow-up — so a
+// second device can pick up exactly where the first one left off. Storing the
+// original schedule_data alongside the conflicts is what makes that possible:
+// resolving needs to re-run the same matching logic with the chosen overrides,
+// not just delete/insert the flagged rows directly.
+function savePendingConflicts(batchId, scheduleData, conflicts) {
+  if (conflicts && conflicts.length) {
+    db.prepare('UPDATE import_batches SET pending_conflicts = ?, pending_schedule_data = ? WHERE id = ?')
+      .run(JSON.stringify(conflicts), JSON.stringify(scheduleData), batchId);
+  } else {
+    db.prepare('UPDATE import_batches SET pending_conflicts = NULL, pending_schedule_data = NULL WHERE id = ?')
+      .run(batchId);
+  }
+}
 
+// Core of the JSON-schedule import — shared by the initial import (POST
+// /colleagues/import-json, which opens a fresh batch) and conflict resolution
+// (POST /colleagues/import-batches/:id/resolve-conflicts, which re-runs this
+// against the SAME batch so newly-inserted shifts stay attached to the
+// original import for Undo purposes). Returns the same shape either way;
+// callers own creating/finalizing the batch and persisting review state.
+function runJsonScheduleImport(schedule_data, overrides, batchId) {
   // Parse week dates — supports both "01 - Dec 7, 2025" and "Apr 27, 2026 – May 3, 2026"
   const weekDates = resolveWeekDates(schedule_data.date_range);
   if (!weekDates)
-    return res.status(400).json({ error: 'Cannot parse date_range: ' + (schedule_data.date_range || '(missing)') });
+    return { error: 'Cannot parse date_range: ' + (schedule_data.date_range || '(missing)') };
 
   const yourName = (
     db.prepare("SELECT value FROM settings WHERE key='your_name'").get()?.value || ''
@@ -1407,7 +1433,6 @@ router.post('/colleagues/import-json', (req, res) => {
     'SELECT id, start_time, end_time, shift_type, store FROM colleague_shifts WHERE colleague_id=? AND date=?'
   );
 
-  const batchId = createImportBatch('json', schedule_data.date_range || 'Team schedule JSON import');
   let inserted = 0, updated = 0, skipped = 0, reconciled = 0;
   const unknownNames = new Set();
   const warnings = [];
@@ -1546,8 +1571,64 @@ router.post('/colleagues/import-json', (req, res) => {
     }
   })();
 
-  finalizeImportBatch(batchId, inserted);
-  res.json({ inserted, updated, skipped, reconciled, conflicts, warnings, unknownNames: [...unknownNames], batchId });
+  // Accumulate rather than overwrite — resolve-conflicts re-runs this against the
+  // same batchId, so a later pass's insert count must add to, not replace, an
+  // earlier pass's.
+  const priorInserted = db.prepare('SELECT inserted_count FROM import_batches WHERE id = ?').get(batchId)?.inserted_count || 0;
+  finalizeImportBatch(batchId, priorInserted + inserted);
+  return { inserted, updated, skipped, reconciled, conflicts, warnings, unknownNames: [...unknownNames] };
+}
+
+router.post('/colleagues/import-json', (req, res) => {
+  const { schedule_data, overrides = [] } = req.body;
+  if (!schedule_data || !Array.isArray(schedule_data.schedule))
+    return res.status(400).json({ error: 'Expected { schedule_data: { date_range, schedule: [...] } }' });
+
+  const batchId = createImportBatch('json', schedule_data.date_range || 'Team schedule JSON import');
+  const result = runJsonScheduleImport(schedule_data, overrides, batchId);
+  if (result.error) return res.status(400).json({ error: result.error });
+
+  // Anything left unresolved gets parked on this batch so a different device
+  // (e.g. reviewing on a PC after uploading from a phone) can pick it up later
+  // via GET/POST /colleagues/import-batches/:id/conflicts.
+  savePendingConflicts(batchId, schedule_data, result.conflicts);
+
+  res.json({ ...result, batchId, needsReview: result.conflicts.length > 0 });
+});
+
+// GET /colleagues/import-batches/:id/conflicts — the pending conflicts + the
+// original schedule JSON for a batch, so a second device can render the same
+// resolution table the uploading device would have shown and decide from there.
+router.get('/colleagues/import-batches/:id/conflicts', (req, res) => {
+  const batchId = parseInt(req.params.id, 10);
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batchId);
+  if (!batch) return res.status(404).json({ error: 'Import batch not found' });
+  if (!batch.pending_conflicts) return res.json({ conflicts: [], schedule_data: null });
+  res.json({
+    conflicts:     JSON.parse(batch.pending_conflicts),
+    schedule_data: JSON.parse(batch.pending_schedule_data),
+    date_range:    batch.note,
+  });
+});
+
+// POST /colleagues/import-batches/:id/resolve-conflicts — apply chosen overrides
+// against a batch's stored pending conflicts. Re-runs against the SAME batch id
+// (rather than opening a new one) so everything this import ever touched — the
+// original insert plus whatever resolving conflicts adds/replaces — undoes as
+// one unit, and the review queue doesn't grow a new row per resolution attempt.
+router.post('/colleagues/import-batches/:id/resolve-conflicts', (req, res) => {
+  const batchId = parseInt(req.params.id, 10);
+  const { overrides = [] } = req.body;
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batchId);
+  if (!batch) return res.status(404).json({ error: 'Import batch not found' });
+  if (!batch.pending_schedule_data) return res.status(409).json({ error: 'This import has no pending conflicts to resolve' });
+
+  const schedule_data = JSON.parse(batch.pending_schedule_data);
+  const result = runJsonScheduleImport(schedule_data, overrides, batchId);
+  if (result.error) return res.status(400).json({ error: result.error });
+
+  savePendingConflicts(batchId, schedule_data, result.conflicts);
+  res.json({ ...result, batchId, needsReview: result.conflicts.length > 0 });
 });
 
 // ─────────────────────────────────────────

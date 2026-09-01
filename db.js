@@ -227,6 +227,19 @@ db.exec(`
   );
 `);
 
+// Pending conflict review — a screenshot import can hit shift conflicts the
+// person uploading can't easily resolve on a small phone screen. These columns
+// park the raw conflict list + the original schedule JSON against the batch so
+// a second device (e.g. a desktop) can review and resolve them later via
+// GET/POST /colleagues/import-batches/:id/conflicts (resolve-conflicts).
+const importBatchReviewMigrations = [
+  'ALTER TABLE import_batches ADD COLUMN pending_conflicts TEXT',
+  'ALTER TABLE import_batches ADD COLUMN pending_schedule_data TEXT',
+];
+importBatchReviewMigrations.forEach(sql => {
+  try { db.exec(sql); } catch (_) { /* already exists */ }
+});
+
 // Colleagues migrations -- start_date
 const colleagueStartDateMigration = ["ALTER TABLE colleagues ADD COLUMN start_date TEXT"];
 colleagueStartDateMigration.forEach(sql => { try { db.exec(sql); } catch (_) {} });
