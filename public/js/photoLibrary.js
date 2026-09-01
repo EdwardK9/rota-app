@@ -56,7 +56,7 @@ const PhotoLibrary = {
           <!-- Rename queue (hidden until something's waiting/failed) -->
           <div id="plRenameQueueCard" style="display:none;margin-bottom:16px;border:1px solid var(--border);
                border-radius:8px;padding:12px 14px;background:var(--card-bg)">
-            <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">🏷️ Rename queue</div>
+            <div id="plRenameQueueHeader" style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">🏷️ Rename queue</div>
             <div id="plRenameQueueGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px"></div>
           </div>
 
@@ -452,11 +452,16 @@ const PhotoLibrary = {
     try {
       const { pending, failed } = await API.getRenameQueue();
       // A drop in the queue count means something just finished since the last
-      // check — refresh the photo grid so its new AI-picked filename shows up
-      // without the user having to leave and come back.
+      // check (a failure stays in `failed` rather than disappearing, so this
+      // only fires on a genuine success) — refresh the photo grid so the new
+      // AI-picked filename shows up without leaving and coming back, and say
+      // so out loud, since a background queue with no visible activity is
+      // easy to mistake for "not doing anything."
       const total = pending.length + failed.length;
-      if (this._lastRenameQueueCount !== undefined && total < this._lastRenameQueueCount && this.currentFolder) {
-        this.loadFiles();
+      if (this._lastRenameQueueCount !== undefined && total < this._lastRenameQueueCount) {
+        const done = this._lastRenameQueueCount - total;
+        showToast(`✓ ${done} photo${done !== 1 ? 's' : ''} renamed`, 'success');
+        if (this.currentFolder) this.loadFiles();
       }
       this._lastRenameQueueCount = total;
 
@@ -471,12 +476,23 @@ const PhotoLibrary = {
       const badge = (text, bg, fg) => `<div style="position:absolute;top:3px;left:3px;right:3px;
         padding:1px 4px;border-radius:3px;font-size:9px;font-weight:600;text-align:center;
         background:${bg};color:${fg};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${text}</div>`;
+      const caption = filename => `<div style="padding:2px 4px;font-size:9px;color:var(--text-muted);
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(filename)}">${esc(filename)}</div>`;
+
+      const header = document.getElementById('plRenameQueueHeader');
+      if (header) {
+        const parts = [];
+        if (pending.length) parts.push(`⏳ ${pending.length} waiting`);
+        if (failed.length)  parts.push(`⚠️ ${failed.length} failed`);
+        header.textContent = '🏷️ Rename queue — ' + parts.join(', ');
+      }
 
       let html = '';
-      html += pending.map(p => cardWrap(`${thumb(p.id)}${badge('⏳', 'rgba(0,0,0,0.55)', '#fff')}`, 'var(--border)')).join('');
+      html += pending.map(p => cardWrap(`${thumb(p.id)}${badge('⏳', 'rgba(0,0,0,0.55)', '#fff')}${caption(p.filename)}`, 'var(--border)')).join('');
       html += failed.map(f => cardWrap(`
         ${thumb(f.id)}
         ${badge('⚠️', 'var(--danger)', '#fff')}
+        ${caption(f.filename)}
         <button class="btn btn-sm btn-ghost" data-retry-rename="${f.id}"
           style="width:100%;border-radius:0;font-size:10px;padding:2px" title="${esc(f.rename_error)}">Retry</button>
       `, 'var(--danger)')).join('');
