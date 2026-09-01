@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-01T16:49:09.595Z",
-  "commit": "7d4cf0f",
+  "generated_at": "2026-09-01T16:58:18.121Z",
+  "commit": "6d2a9bb",
   "entries": [
+    {
+      "version": "4.18.0",
+      "date": "2026-09-01",
+      "summary": "Route large AI-rename selections through the background queue",
+      "details": "Selecting a large batch of unrenamed photos (e.g. \"Select All\" on hundreds)\nand clicking \"AI Rename\" ran a synchronous loop of Gemini calls in the\nbrowser tab -- the exact problem already fixed for uploads, just reachable\nfrom a different button. Selections over 10 photos now get queued via the\nnew POST /photo-library/rename-queue/bulk endpoint and processed by the same\nbackground loop as auto-rename-on-upload, so closing the tab or losing\nconnection mid-batch no longer throws away progress. Small selections (<=10)\nstill rename immediately, since that's fast enough to just wait for."
+    },
     {
       "version": "4.17.1",
       "date": "2026-09-01",
