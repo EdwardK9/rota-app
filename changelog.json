@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-01T15:55:34.342Z",
-  "commit": "024b521",
+  "generated_at": "2026-09-01T16:02:48.562Z",
+  "commit": "84391ce",
   "entries": [
+    {
+      "version": "4.14.0",
+      "date": "2026-09-01",
+      "summary": "Cross-device conflict review for team screenshot imports",
+      "details": "Screenshot imports could only be reviewed for conflicts on whichever device\ndid the upload -- awkward on a phone's small screen, and if you left without\nresolving them the conflicts just vanished (only ever held in that browser\ntab's memory). Import batches now persist their pending conflicts + original\nschedule JSON server-side, so any device can pick them up: Recent Imports on\nthe Team Upload page shows a \"Review (N)\" button for batches with unresolved\nconflicts, opening the same resolve/skip/replace table inline. The Auto\nImport (AI) panel also imports immediately after Gemini reads a screenshot\ninstead of waiting for a manual Import tap, and the page polls for new\nimports every 20s so a phone upload shows up on the PC without a refresh."
+    },
     {
       "version": "4.13.0",
       "date": "2026-09-01",
