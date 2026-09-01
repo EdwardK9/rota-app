@@ -411,13 +411,30 @@ const PhotoLibrary = {
     });
   },
 
-  // Reads the week range off each selected screenshot with Gemini and renames it —
-  // one at a time so a failure on one photo doesn't stop the rest. This stays
-  // synchronous (unlike auto-rename-on-upload below) — the user is at the PC,
-  // selecting specific photos, and waiting for the result right here.
+  // For a handful of photos, read them with Gemini one at a time right here —
+  // fast enough that waiting for it is fine. For a big batch (e.g. "Select
+  // All" on hundreds of unrenamed screenshots) that same loop would tie up
+  // the tab for the best part of an hour and lose all remaining progress the
+  // moment the tab closes or the connection drops, so those go through the
+  // same background queue as auto-rename-on-upload instead.
+  _AI_RENAME_SYNC_LIMIT: 10,
+
   async aiRenameSelected() {
     if (!this.selectedIds.size) return;
     const ids = [...this.selectedIds];
+
+    if (ids.length > this._AI_RENAME_SYNC_LIMIT) {
+      try {
+        const { queued } = await API.bulkQueueRename(ids);
+        showToast(`Queued ${queued} photo${queued !== 1 ? 's' : ''} for AI rename — see the Rename queue below`, 'success');
+        this.clearSelection();
+        this._loadRenameQueue();
+      } catch (e) {
+        showToast('Failed to queue: ' + e.message, 'error');
+      }
+      return;
+    }
+
     let renamed = 0;
     const failures = [];
     showToast(`Reading ${ids.length} photo${ids.length !== 1 ? 's' : ''} with AI…`, 'info');

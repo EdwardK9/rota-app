@@ -229,4 +229,5 @@ const API = {
   },
   getRenameQueue:      ()       => API.get('/api/photo-library/rename-queue'),
   retryQueuedRename:   (fileId) => API.post(`/api/photo-library/rename-queue/${fileId}/retry`, {}),
+  bulkQueueRename:     (ids)    => API.post('/api/photo-library/rename-queue/bulk', { ids }),
 };

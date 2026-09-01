@@ -2205,6 +2205,23 @@ router.get('/photo-library/rename-queue', (req, res) => {
   });
 });
 
+// POST /photo-library/rename-queue/bulk — flag existing photos (e.g. a large
+// "Select All" → "AI Rename" batch) for the background queue instead of the
+// caller looping a Gemini call per photo. A synchronous loop over hundreds of
+// photos ties up the browser tab for the best part of an hour and loses all
+// remaining progress the moment that tab closes or the connection drops —
+// the queue survives both.
+router.post('/photo-library/rename-queue/bulk', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array required' });
+  const placeholders = ids.map(() => '?').join(',');
+  const info = db.prepare(
+    `UPDATE photo_files SET queued_for_rename = 1, rename_processed_at = NULL, rename_error = NULL, rename_attempts = 0
+     WHERE id IN (${placeholders})`
+  ).run(...ids);
+  res.json({ queued: info.changes });
+});
+
 // POST /photo-library/rename-queue/:id/retry
 router.post('/photo-library/rename-queue/:id/retry', (req, res) => {
   const id = parseInt(req.params.id, 10);
