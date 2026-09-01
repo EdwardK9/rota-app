@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-01T16:25:22.453Z",
-  "commit": "9de6e61",
+  "generated_at": "2026-09-01T16:36:52.624Z",
+  "commit": "38c7b22",
   "entries": [
+    {
+      "version": "4.17.0",
+      "date": "2026-09-01",
+      "summary": "Rename queue for Photo Library, queue fixes",
+      "details": "- Team Upload's Processing Queue no longer shows completed screenshots --\n  finished items (imported or needing review) belong in Recent Imports, not\n  a queue of in-flight work.\n- \"Auto-rename with AI on upload\" (Photo Library) now uses the same\n  background-queue approach as the screenshot importer instead of looping\n  Gemini calls synchronously in the upload request -- same reliability risk,\n  same fix. A new \"Rename queue\" card shows waiting/failed thumbnails with a\n  Retry button; manual \"AI Rename\" on selected photos stays synchronous since\n  that's a PC-driven, wait-for-it action.\n- The auto-rename checkbox now persists via localStorage instead of\n  resetting to unchecked on every re-render/navigation.\n- team-upload and photo-library are now included in the router's\n  outgoing-view cleanup, so their background pollers actually stop when you\n  navigate away instead of running indefinitely."
+    },
     {
       "version": "4.16.0",
       "date": "2026-09-01",
