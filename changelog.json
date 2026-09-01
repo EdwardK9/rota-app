@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-01T16:36:52.624Z",
-  "commit": "38c7b22",
+  "generated_at": "2026-09-01T16:49:09.595Z",
+  "commit": "7d4cf0f",
   "entries": [
+    {
+      "version": "4.17.1",
+      "date": "2026-09-01",
+      "summary": "Make the rename queue's activity visible",
+      "details": "The rename queue had no filename captions and gave no confirmation when a\nphoto finished renaming, so it looked identical whether it was working or\nstalled. Added filenames under each queued thumbnail, a header line (\"2\nwaiting, 1 failed\"), and a toast when photos finish renaming."
+    },
     {
       "version": "4.17.0",
       "date": "2026-09-01",
