@@ -1948,16 +1948,21 @@ function savePhotoToFolder(folderId, buffer, mimeType, baseName, weekStart) {
   return info.lastInsertRowid;
 }
 
-// POST /photo-library/folders/:id/files — multi-file upload (field: "photos")
+// POST /photo-library/folders/:id/files — multi-file upload (field: "photos").
+// autoRename='1' flags the inserted rows for the background rename queue below
+// instead of the caller looping Gemini calls synchronously in this request —
+// same reliability fix as the screenshot-import queue: uploading has to stay
+// fast and hard to fail, especially from a phone.
 router.post('/photo-library/folders/:id/files', photoUpload.array('photos', 50), (req, res) => {
   const folderId = parseInt(req.params.id, 10);
   const files = req.files || [];
   if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+  const autoRename = req.body?.autoRename === '1' || req.body?.autoRename === 'true';
   try {
     const dir = fsPath.join(PHOTO_BASE, String(folderId));
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const insert = db.prepare(
-      'INSERT INTO photo_files (folder_id, filename, mime_type, file_path) VALUES (?,?,?,?)'
+      'INSERT INTO photo_files (folder_id, filename, mime_type, file_path, queued_for_rename) VALUES (?,?,?,?,?)'
     );
     const fileIds = [];
     db.transaction(() => {
@@ -1965,7 +1970,7 @@ router.post('/photo-library/folders/:id/files', photoUpload.array('photos', 50),
         const safeName = Date.now() + '_' + f.originalname.replace(/[^a-zA-Z0-9._\- ]/g, '_');
         const filePath = fsPath.join(dir, safeName);
         fs.writeFileSync(filePath, f.buffer);
-        const info = insert.run(folderId, f.originalname, f.mimetype, filePath);
+        const info = insert.run(folderId, f.originalname, f.mimetype, filePath, autoRename ? 1 : 0);
         fileIds.push(info.lastInsertRowid);
       }
     })();
@@ -1986,30 +1991,43 @@ router.get('/photo-library/files/:id/image', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /photo-library/files/:id/ai-rename — read the week range off an already-
-// uploaded screenshot with Gemini and rename it accordingly. Only touches the
-// display filename + week_start_date (sort key) — the file on disk is untouched.
+// Shared by the synchronous single-file endpoint below and the background
+// rename queue — reads the week range off a screenshot with Gemini and
+// renames it. Only touches the display filename + week_start_date (sort key)
+// — the file on disk is untouched. Returns { filename, weekStart }; throws
+// (with .status where relevant) on failure so callers report it their own way.
+async function renamePhotoFileWithGemini(f) {
+  if (!f.file_path || !fs.existsSync(f.file_path)) {
+    const err = new Error('Photo file not found'); err.status = 404; throw err;
+  }
+  const buffer = fs.readFileSync(f.file_path);
+  const { parsed } = await callGeminiVision(buffer, f.mime_type || 'image/jpeg');
+  const range = parsed ? weekRangeForFilename(parsed.date_range) : null;
+  if (!range) {
+    const err = new Error('Could not read a week range from this image'); err.status = 422; throw err;
+  }
+
+  const ext = fsPath.extname(f.filename) || '.jpg';
+  const existingNames = new Set(
+    db.prepare('SELECT filename FROM photo_files WHERE folder_id = ? AND id != ?').all(f.folder_id, f.id).map(r => r.filename)
+  );
+  let filename = range.label + ext;
+  let n = 2;
+  while (existingNames.has(filename)) { filename = `${range.label} (${n})${ext}`; n++; }
+
+  db.prepare('UPDATE photo_files SET filename=?, week_start_date=? WHERE id=?').run(filename, range.weekStart, f.id);
+  return { filename, weekStart: range.weekStart };
+}
+
+// POST /photo-library/files/:id/ai-rename — synchronous single-file rename,
+// used by the "AI Rename" button on manually-selected photos in the UI.
 router.post('/photo-library/files/:id/ai-rename', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   try {
     const f = db.prepare('SELECT * FROM photo_files WHERE id=?').get(id);
-    if (!f || !f.file_path || !fs.existsSync(f.file_path)) return res.status(404).json({ error: 'Not found' });
-
-    const buffer = fs.readFileSync(f.file_path);
-    const { parsed } = await callGeminiVision(buffer, f.mime_type || 'image/jpeg');
-    const range = parsed ? weekRangeForFilename(parsed.date_range) : null;
-    if (!range) return res.status(422).json({ error: 'Could not read a week range from this image' });
-
-    const ext = fsPath.extname(f.filename) || '.jpg';
-    const existingNames = new Set(
-      db.prepare('SELECT filename FROM photo_files WHERE folder_id = ? AND id != ?').all(f.folder_id, id).map(r => r.filename)
-    );
-    let filename = range.label + ext;
-    let n = 2;
-    while (existingNames.has(filename)) { filename = `${range.label} (${n})${ext}`; n++; }
-
-    db.prepare('UPDATE photo_files SET filename=?, week_start_date=? WHERE id=?').run(filename, range.weekStart, id);
-    res.json({ id, filename, week_start_date: range.weekStart });
+    if (!f) return res.status(404).json({ error: 'Not found' });
+    const { filename, weekStart } = await renamePhotoFileWithGemini(f);
+    res.json({ id, filename, week_start_date: weekStart });
   } catch (err) {
     console.error('Photo AI-rename error:', err);
     res.status(err.status || 500).json({ error: err.message });
@@ -2063,11 +2081,10 @@ router.post('/colleagues/screenshot-queue', upload.array('screenshots', 10), (re
   }
 });
 
-// GET /colleagues/screenshot-queue — waiting / failed / recently-finished
-// screenshots, for the Team Upload page's visual queue panel. "recent"
-// carries each screenshot's outcome (shifts inserted, conflicts still
-// pending) so the queue can be seen through end to end: uploaded → waiting →
-// done, without needing to cross-reference Recent Imports separately.
+// GET /colleagues/screenshot-queue — only what's still waiting or failed.
+// Finished screenshots (imported cleanly, or needing conflict review) belong
+// in Recent Imports, not here — this is a queue of in-flight work, not a
+// history log, so a completed item drops out the moment it's done.
 router.get('/colleagues/screenshot-queue', (req, res) => {
   const rows = db.prepare(`
     SELECT id, filename, uploaded_at, process_error, process_attempts
@@ -2075,23 +2092,9 @@ router.get('/colleagues/screenshot-queue', (req, res) => {
     WHERE queued_for_import = 1 AND processed_at IS NULL
     ORDER BY id ASC
   `).all();
-  const recent = db.prepare(`
-    SELECT pf.id, pf.filename, pf.processed_at, pf.import_batch_id AS batch_id,
-           ib.inserted_count, ib.pending_conflicts
-    FROM photo_files pf
-    LEFT JOIN import_batches ib ON ib.id = pf.import_batch_id
-    WHERE pf.queued_for_import = 1 AND pf.processed_at IS NOT NULL
-    ORDER BY pf.processed_at DESC
-    LIMIT 8
-  `).all().map(r => ({
-    id: r.id, filename: r.filename, processed_at: r.processed_at, batch_id: r.batch_id,
-    inserted_count: r.inserted_count || 0,
-    pending_conflict_count: r.pending_conflicts ? JSON.parse(r.pending_conflicts).length : 0,
-  }));
   res.json({
     pending: rows.filter(r => !r.process_error),
     failed:  rows.filter(r =>  r.process_error),
-    recent,
   });
 });
 
@@ -2175,6 +2178,78 @@ setInterval(() => { processScreenshotQueue().catch(e => console.error('[Screensh
 // Run once shortly after startup too, so anything left queued from before a
 // restart doesn't sit idle for a full 30s before the first attempt.
 setTimeout(() => { processScreenshotQueue().catch(e => console.error('[ScreenshotQueue] tick error:', e.message)); }, 5_000);
+
+// ─────────────────────────────────────────
+// AI-rename queue — "Auto-rename with AI on upload" (Photo Library)
+//
+// Same shape as the screenshot-import queue above, applied to renaming
+// instead of importing: uploading with the checkbox on used to loop a Gemini
+// call per file synchronously in the same request, which had exactly the
+// same "Failed to fetch on a phone" risk as the old screenshot importer did.
+// ─────────────────────────────────────────
+
+// GET /photo-library/rename-queue — waiting/failed AI-rename jobs across all
+// folders, for the Photo Library page's visual queue. Only in-flight work —
+// a finished rename just shows its new filename in the grid, same as any
+// other photo, so it isn't carried here once done.
+router.get('/photo-library/rename-queue', (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, filename, folder_id, rename_error, rename_attempts
+    FROM photo_files
+    WHERE queued_for_rename = 1 AND rename_processed_at IS NULL
+    ORDER BY id ASC
+  `).all();
+  res.json({
+    pending: rows.filter(r => !r.rename_error),
+    failed:  rows.filter(r =>  r.rename_error),
+  });
+});
+
+// POST /photo-library/rename-queue/:id/retry
+router.post('/photo-library/rename-queue/:id/retry', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const info = db.prepare(
+    'UPDATE photo_files SET rename_error = NULL, rename_attempts = 0 WHERE id = ? AND queued_for_rename = 1'
+  ).run(id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Queued rename not found' });
+  res.json({ ok: true });
+});
+
+const RENAME_QUEUE_MAX_ATTEMPTS = 3;
+const RENAME_QUEUE_BATCH_SIZE   = 3;
+let renameQueueRunning = false;
+
+async function processRenameQueue() {
+  if (renameQueueRunning) return;
+  renameQueueRunning = true;
+  try {
+    const rows = db.prepare(`
+      SELECT * FROM photo_files
+      WHERE queued_for_rename = 1 AND rename_processed_at IS NULL
+        AND (rename_error IS NULL OR rename_attempts < ?)
+      ORDER BY id ASC LIMIT ?
+    `).all(RENAME_QUEUE_MAX_ATTEMPTS, RENAME_QUEUE_BATCH_SIZE);
+
+    for (const row of rows) {
+      try {
+        await renamePhotoFileWithGemini(row);
+        db.prepare(
+          "UPDATE photo_files SET rename_processed_at = datetime('now'), rename_error = NULL WHERE id = ?"
+        ).run(row.id);
+      } catch (err) {
+        console.error('[RenameQueue] Failed to process', row.filename, '-', err.message);
+        db.prepare(
+          'UPDATE photo_files SET rename_error = ?, rename_attempts = rename_attempts + 1 WHERE id = ?'
+        ).run(err.message, row.id);
+      }
+    }
+  } finally {
+    renameQueueRunning = false;
+  }
+}
+
+setInterval(() => { processRenameQueue().catch(e => console.error('[RenameQueue] tick error:', e.message)); }, 30_000);
+setTimeout(() => { processRenameQueue().catch(e => console.error('[RenameQueue] tick error:', e.message)); }, 8_000);
 
 module.exports = router;
 // callGeminiText is shared with v3/didYouKnow.js. The vision counterpart isn't

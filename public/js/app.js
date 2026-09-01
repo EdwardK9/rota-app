@@ -143,7 +143,8 @@ const App = {
     // more set of intervals every time that view is revisited).
     // V3 views register themselves, so the router looks them up rather than
     // naming each one — a new V3 feature needs no change here.
-    const outgoingView = { dashboard: DashboardView, 'whos-in': WhosInView, clock: ClockInOutView }[this.currentView]
+    const outgoingView = { dashboard: DashboardView, 'whos-in': WhosInView, clock: ClockInOutView,
+      'team-upload': TeamUploadView, 'photo-library': PhotoLibrary }[this.currentView]
       || (typeof V3 !== 'undefined' ? V3.views[this.currentView] : null);
     outgoingView?.destroy?.();
 

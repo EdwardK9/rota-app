@@ -220,4 +220,13 @@ const API = {
   getPhotoFiles:        (folderId)      => API.get(`/api/photo-library/folders/${folderId}/files`),
   deletePhotoFile:      (id)            => API.delete(`/api/photo-library/files/${id}`),
   aiRenamePhotoFile:    (id)            => API.post(`/api/photo-library/files/${id}/ai-rename`, {}),
+  uploadPhotoFiles: (folderId, files, autoRename) => {
+    const fd = new FormData();
+    [...files].forEach(f => fd.append('photos', f));
+    if (autoRename) fd.append('autoRename', '1');
+    return fetch(`/api/photo-library/folders/${folderId}/files`, { method: 'POST', body: fd })
+      .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t))));
+  },
+  getRenameQueue:      ()       => API.get('/api/photo-library/rename-queue'),
+  retryQueuedRename:   (fileId) => API.post(`/api/photo-library/rename-queue/${fileId}/retry`, {}),
 };

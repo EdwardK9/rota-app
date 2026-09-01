@@ -491,17 +491,27 @@ RULES — follow exactly:
     }
   },
 
-  // Visual queue — a thumbnail per screenshot moving through waiting → done
-  // (or failed), so an upload from a phone is visibly happening on the PC
-  // rather than a status line easy to miss on a different tab. Polled
-  // alongside the import batch list so it stays live without a refresh.
+  // Visual queue — a thumbnail per screenshot still waiting or failed. Once a
+  // screenshot is done (imported cleanly, or needs conflict review) it drops
+  // out of here and shows up in Recent Imports instead — this is a queue of
+  // in-flight work, not a history log. Polled alongside the import batch list
+  // so it stays live without a refresh.
   async _loadScreenshotQueue() {
     const card = document.getElementById('tuQueueCard');
     const grid = document.getElementById('tuQueueGrid');
     if (!card || !grid) return;
     try {
-      const { pending, failed, recent } = await API.getScreenshotQueue();
-      if (!pending.length && !failed.length && !recent.length) { card.style.display = 'none'; return; }
+      const { pending, failed } = await API.getScreenshotQueue();
+      // A drop in the queue count means something just finished since the
+      // last check — refresh Recent Imports so it shows up there promptly
+      // rather than waiting for that list's own poll to happen to land.
+      const total = pending.length + failed.length;
+      if (this._lastScreenshotQueueCount !== undefined && total < this._lastScreenshotQueueCount) {
+        this._loadImportBatches();
+      }
+      this._lastScreenshotQueueCount = total;
+
+      if (!pending.length && !failed.length) { card.style.display = 'none'; return; }
       card.style.display = 'block';
 
       const thumb = id => `<img src="/api/photo-library/files/${id}/image" loading="lazy"
@@ -531,18 +541,6 @@ RULES — follow exactly:
           style="width:100%;border-radius:0;font-size:11px" title="${esc(f.process_error)}">Retry</button>
       `, 'var(--danger)')).join('');
 
-      html += recent.map(r => {
-        const needsReview = r.pending_conflict_count > 0;
-        return cardWrap(`
-          ${thumb(r.id)}
-          ${badge(needsReview ? `⚡ ${r.pending_conflict_count} to review` : `✓ ${r.inserted_count} imported`,
-            needsReview ? 'var(--warning)' : 'var(--success)', needsReview ? '#000' : '#fff')}
-          ${caption(r.filename)}
-          ${needsReview ? `<button class="btn btn-sm btn-ghost" data-review-batch-jump="${r.batch_id}"
-              style="width:100%;border-radius:0;font-size:11px">Review</button>` : ''}
-        `, needsReview ? 'var(--warning)' : 'transparent');
-      }).join('');
-
       grid.innerHTML = html;
 
       grid.querySelectorAll('[data-retry-screenshot]').forEach(btn =>
@@ -558,22 +556,7 @@ RULES — follow exactly:
           }
         })
       );
-      grid.querySelectorAll('[data-review-batch-jump]').forEach(btn =>
-        btn.addEventListener('click', () => this._jumpToBatchReview(parseInt(btn.dataset.reviewBatchJump, 10)))
-      );
     } catch (_) { /* non-critical — leave whatever was last shown */ }
-  },
-
-  // Scrolls Recent Imports into view and opens the review panel for a batch
-  // surfaced from the queue's "⚡ N to review" card, so the user doesn't have
-  // to go hunting for the matching row themselves.
-  async _jumpToBatchReview(batchId) {
-    await this._loadImportBatches();
-    const row = document.getElementById('tuBatchRow-' + batchId);
-    const btn = row?.querySelector(`[data-review-batch="${batchId}"]`);
-    if (!row || !btn) { showToast('Could not find that import in Recent Imports', 'error'); return; }
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    this._toggleBatchReview(batchId, btn);
   },
 
   // Parse a CSV exported from the team calendar back into grouped JSON

@@ -178,6 +178,22 @@ screenshotQueueMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* already exists */ }
 });
 
+// AI-rename queue — "Auto-rename with AI on upload" used to loop a Gemini call
+// per file synchronously in the same upload request, same reliability problem
+// as the import queue above (and the same fix): the upload just flags rows for
+// renaming, and a server-side loop does the actual Gemini read + rename
+// afterwards. Kept separate from the import-queue columns above since a photo
+// can only ever be in one of the two queues, never both.
+const renameQueueMigrations = [
+  'ALTER TABLE photo_files ADD COLUMN queued_for_rename INTEGER DEFAULT 0',
+  'ALTER TABLE photo_files ADD COLUMN rename_processed_at TEXT',
+  'ALTER TABLE photo_files ADD COLUMN rename_error TEXT',
+  'ALTER TABLE photo_files ADD COLUMN rename_attempts INTEGER DEFAULT 0',
+];
+renameQueueMigrations.forEach(sql => {
+  try { db.exec(sql); } catch (_) { /* already exists */ }
+});
+
 // Payslip documents — the original PDFs (or photos) of payslips, kept as a safe
 // copy and nothing more: nothing reads them, and no figure on the Payslips page
 // comes from them. Same split as the photo library: metadata here, the file

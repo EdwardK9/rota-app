@@ -5,6 +5,12 @@ const PhotoLibrary = {
   currentFolder: null,   // { id, name }
   currentFiles: [],
   selectedIds: new Set(),
+  _renameQueuePollTimer: null,
+
+  destroy() {
+    clearInterval(this._renameQueuePollTimer);
+    this._renameQueuePollTimer = null;
+  },
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -41,11 +47,18 @@ const PhotoLibrary = {
             <div class="drop-zone-hint">PNG, JPG — multiple files supported</div>
             <input type="file" id="plFileInput" accept="image/*" multiple style="display:none" />
           </div>
-          <label class="toggle-label" style="font-weight:400;margin-bottom:16px">
+          <label class="toggle-label" style="font-weight:400;margin-bottom:12px">
             <input type="checkbox" id="plAutoRenameOnUpload" />
             <span>🏷️ Auto-rename with AI on upload</span>
             <span class="toggle-hint">Reads the week from each screenshot, no shifts are imported</span>
           </label>
+
+          <!-- Rename queue (hidden until something's waiting/failed) -->
+          <div id="plRenameQueueCard" style="display:none;margin-bottom:16px;border:1px solid var(--border);
+               border-radius:8px;padding:12px 14px;background:var(--card-bg)">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">🏷️ Rename queue</div>
+            <div id="plRenameQueueGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px"></div>
+          </div>
 
           <!-- Selection toolbar (hidden until selection) -->
           <div id="plSelectionBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;
@@ -111,6 +124,18 @@ const PhotoLibrary = {
       dropZone.classList.remove('dragover');
       this.uploadFiles(e.dataTransfer.files);
     });
+
+    // Persist across navigation/reload — it was resetting to unchecked every
+    // time this view re-rendered, which just made it look broken.
+    const autoRenameCb = document.getElementById('plAutoRenameOnUpload');
+    try { autoRenameCb.checked = localStorage.getItem('pl_autoRenameOnUpload') === '1'; } catch (_) {}
+    autoRenameCb.addEventListener('change', () => {
+      try { localStorage.setItem('pl_autoRenameOnUpload', autoRenameCb.checked ? '1' : '0'); } catch (_) {}
+    });
+
+    this._loadRenameQueue();
+    clearInterval(this._renameQueuePollTimer);
+    this._renameQueuePollTimer = setInterval(() => this._loadRenameQueue(), 20_000);
   },
 
   // ── Folders ───────────────────────────────────────────────────────────────
@@ -335,23 +360,22 @@ const PhotoLibrary = {
   async uploadFiles(fileList) {
     if (!fileList || !fileList.length || !this.currentFolder) return;
     const autoRename = document.getElementById('plAutoRenameOnUpload')?.checked;
-    const formData = new FormData();
-    for (const f of fileList) formData.append('photos', f);
     try {
-      const res = await fetch(`/api/photo-library/folders/${this.currentFolder.id}/files`, {
-        method: 'POST', body: formData
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { inserted, fileIds } = await res.json();
-      showToast(`${inserted} photo${inserted !== 1 ? 's' : ''} uploaded`, 'success');
+      const { inserted } = await API.uploadPhotoFiles(this.currentFolder.id, fileList, autoRename);
+      showToast(
+        `${inserted} photo${inserted !== 1 ? 's' : ''} uploaded` +
+        (autoRename ? ' — reading week with AI in the background…' : ''),
+        'success'
+      );
       document.getElementById('plFileInput').value = '';
       await this.loadFiles();
       // Update folder list count in background
       this.loadFolders();
-
-      if (autoRename && fileIds?.length) {
-        await this._aiRenameFileIds(fileIds, { reload: true });
-      }
+      // Auto-renaming now happens server-side via the queue (see the "Rename
+      // queue" card) instead of looping Gemini calls in this request — that
+      // loop was exactly the kind of long, easy-to-interrupt request that
+      // broke on mobile for the screenshot importer.
+      if (autoRename) this._loadRenameQueue();
     } catch(e) {
       showToast('Upload failed: ' + e.message, 'error');
     }
@@ -388,17 +412,12 @@ const PhotoLibrary = {
   },
 
   // Reads the week range off each selected screenshot with Gemini and renames it —
-  // one at a time so a failure on one photo doesn't stop the rest.
+  // one at a time so a failure on one photo doesn't stop the rest. This stays
+  // synchronous (unlike auto-rename-on-upload below) — the user is at the PC,
+  // selecting specific photos, and waiting for the result right here.
   async aiRenameSelected() {
     if (!this.selectedIds.size) return;
-    await this._aiRenameFileIds([...this.selectedIds], { reload: false });
-    this.clearSelection();
-    await this.loadFiles();
-  },
-
-  // Shared by aiRenameSelected() and the "auto-rename on upload" checkbox — no
-  // shifts are imported here, this only reads the date range to rename the file.
-  async _aiRenameFileIds(ids, { reload }) {
+    const ids = [...this.selectedIds];
     let renamed = 0;
     const failures = [];
     showToast(`Reading ${ids.length} photo${ids.length !== 1 ? 's' : ''} with AI…`, 'info');
@@ -418,6 +437,64 @@ const PhotoLibrary = {
       failures.length && !renamed ? 'error' : 'success'
     );
     if (failures.length) console.warn('AI rename failures:', failures);
-    if (reload) await this.loadFiles();
+    this.clearSelection();
+    await this.loadFiles();
+  },
+
+  // Visual queue for background AI-renames (auto-rename-on-upload). Same
+  // pattern as Team Upload's Processing Queue: only in-flight work is shown —
+  // a finished rename just appears as its new filename in the photo grid
+  // above, so it drops out of this list the moment it's done.
+  async _loadRenameQueue() {
+    const card = document.getElementById('plRenameQueueCard');
+    const grid = document.getElementById('plRenameQueueGrid');
+    if (!card || !grid) return;
+    try {
+      const { pending, failed } = await API.getRenameQueue();
+      // A drop in the queue count means something just finished since the last
+      // check — refresh the photo grid so its new AI-picked filename shows up
+      // without the user having to leave and come back.
+      const total = pending.length + failed.length;
+      if (this._lastRenameQueueCount !== undefined && total < this._lastRenameQueueCount && this.currentFolder) {
+        this.loadFiles();
+      }
+      this._lastRenameQueueCount = total;
+
+      if (!pending.length && !failed.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+
+      const thumb = id => `<img src="/api/photo-library/files/${id}/image" loading="lazy"
+        style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block" />`;
+      const cardWrap = (inner, borderColor) => `
+        <div style="position:relative;border-radius:6px;overflow:hidden;background:var(--bg);
+          border:1px solid ${borderColor}">${inner}</div>`;
+      const badge = (text, bg, fg) => `<div style="position:absolute;top:3px;left:3px;right:3px;
+        padding:1px 4px;border-radius:3px;font-size:9px;font-weight:600;text-align:center;
+        background:${bg};color:${fg};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${text}</div>`;
+
+      let html = '';
+      html += pending.map(p => cardWrap(`${thumb(p.id)}${badge('⏳', 'rgba(0,0,0,0.55)', '#fff')}`, 'var(--border)')).join('');
+      html += failed.map(f => cardWrap(`
+        ${thumb(f.id)}
+        ${badge('⚠️', 'var(--danger)', '#fff')}
+        <button class="btn btn-sm btn-ghost" data-retry-rename="${f.id}"
+          style="width:100%;border-radius:0;font-size:10px;padding:2px" title="${esc(f.rename_error)}">Retry</button>
+      `, 'var(--danger)')).join('');
+
+      grid.innerHTML = html;
+      grid.querySelectorAll('[data-retry-rename]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await API.retryQueuedRename(parseInt(btn.dataset.retryRename, 10));
+            showToast('Queued for another attempt', 'success');
+            this._loadRenameQueue();
+          } catch (e) {
+            btn.disabled = false;
+            showToast('Retry failed: ' + e.message, 'error');
+          }
+        })
+      );
+    } catch (_) { /* non-critical — leave whatever was last shown */ }
   },
 };
