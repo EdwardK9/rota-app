@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-02T20:53:43.967Z",
-  "commit": "6c49a16",
+  "generated_at": "2026-09-02T21:56:44.100Z",
+  "commit": "93eb8b3",
   "entries": [
+    {
+      "version": "4.22.0",
+      "date": "2026-09-02",
+      "summary": "Let the queues wait out the free tier instead of fighting it",
+      "details": "No billing, so the answer is patience: keep going until the backlog is done,\nhowever long the free tier makes that take.\n\nBoth background queues now share one throttle. They spend the same allowance,\nso being told \"no\" in one is a reason for the other to hold off too —\notherwise they take turns burning a locked-out quota every 30 seconds and\nneither finishes. A refusal pauses both for a minute, doubling to fifteen if\nit keeps happening, and the first success clears it. Google's own \"retry in\n644ms\" is treated as a floor, not advice: the free tier's window is\nper-minute, so obeying it literally walks straight back into the same wall.\n\nThe screenshot-import queue had the same bug the rename queue had in v4.20.0\n— a rate-limit error still cost that screenshot one of its three attempts —\nso it's fixed there too.\n\nRename batch is 5 a tick (10/min against the free tier's 20), leaving room\nfor the screenshot queue and anything done by hand.\n\nThe queue card now says when it's sitting out a quota window and how long is\nleft, rather than looking stalled. Photos that genuinely can't be read still\ngive up after three attempts — retrying those forever would spend the\nallowance the readable ones need."
+    },
     {
       "version": "4.21.0",
       "date": "2026-09-02",
