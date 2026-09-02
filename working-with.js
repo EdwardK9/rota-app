@@ -2222,6 +2222,17 @@ router.post('/photo-library/rename-queue/bulk', (req, res) => {
   res.json({ queued: info.changes });
 });
 
+// POST /photo-library/rename-queue/retry-all — clear every failed job at once.
+// A quota outage fails jobs by the hundred; retrying those one card at a time
+// isn't a real option, least of all on a phone.
+router.post('/photo-library/rename-queue/retry-all', (req, res) => {
+  const info = db.prepare(`
+    UPDATE photo_files SET rename_error = NULL, rename_attempts = 0
+    WHERE queued_for_rename = 1 AND rename_processed_at IS NULL AND rename_error IS NOT NULL
+  `).run();
+  res.json({ retried: info.changes });
+});
+
 // POST /photo-library/rename-queue/:id/retry
 router.post('/photo-library/rename-queue/:id/retry', (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -2240,6 +2251,19 @@ function isTransientGeminiError(err) {
   const msg = err?.message || '';
   return err?.status === 429 || err?.status === 503 || err?.status === 504 ||
     /quota|rate.?limit|resource[_ ]exhausted|too many requests|overloaded|try again later|didn't respond within/i.test(msg);
+}
+
+// Google's quota error is three sentences and two support URLs — none of it
+// readable in a 96px queue card on a phone. Keep the one fact that matters.
+function waitingMessage(err) {
+  const msg = err?.message || '';
+  if (/quota/i.test(msg)) {
+    const limit = msg.match(/limit:\s*(\d+)/);
+    return 'Gemini quota reached' + (limit ? ` (${limit[1]}/min on the free tier)` : '') +
+           ' — waiting, will retry itself';
+  }
+  if (/rate.?limit|too many requests/i.test(msg)) return 'Gemini rate limit — waiting, will retry itself';
+  return 'Waiting to retry — ' + msg;
 }
 
 const RENAME_QUEUE_MAX_ATTEMPTS = 3;
@@ -2274,7 +2298,7 @@ async function processRenameQueue() {
         const transient = isTransientGeminiError(err);
         db.prepare(
           'UPDATE photo_files SET rename_error = ?, rename_attempts = rename_attempts + ? WHERE id = ?'
-        ).run(transient ? 'Waiting to retry — ' + err.message : err.message, transient ? 0 : 1, row.id);
+        ).run(transient ? waitingMessage(err) : err.message, transient ? 0 : 1, row.id);
         if (transient) break;
       }
     }

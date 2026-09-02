@@ -125,12 +125,22 @@ const PhotoLibrary = {
       this.uploadFiles(e.dataTransfer.files);
     });
 
-    // Persist across navigation/reload — it was resetting to unchecked every
-    // time this view re-rendered, which just made it look broken.
+    // Remembered server-side, not just in localStorage: this kept coming back
+    // unticked on the phone, and per-browser storage is exactly the thing that
+    // gets cleared out from under you (or is simply a different browser). The
+    // local copy stays as an instant fallback if settings didn't load.
     const autoRenameCb = document.getElementById('plAutoRenameOnUpload');
-    try { autoRenameCb.checked = localStorage.getItem('pl_autoRenameOnUpload') === '1'; } catch (_) {}
-    autoRenameCb.addEventListener('change', () => {
-      try { localStorage.setItem('pl_autoRenameOnUpload', autoRenameCb.checked ? '1' : '0'); } catch (_) {}
+    let saved = App.settings?.photo_auto_rename;
+    if (saved === undefined || saved === null || saved === '') {
+      try { saved = localStorage.getItem('pl_autoRenameOnUpload'); } catch (_) {}
+    }
+    autoRenameCb.checked = saved === '1';
+    autoRenameCb.addEventListener('change', async () => {
+      const val = autoRenameCb.checked ? '1' : '0';
+      try { localStorage.setItem('pl_autoRenameOnUpload', val); } catch (_) {}
+      if (App.settings) App.settings.photo_auto_rename = val;
+      try { await API.saveSettings({ photo_auto_rename: val }); }
+      catch (_) { /* the local copy still holds it for this browser */ }
     });
 
     this._loadRenameQueue();
@@ -740,7 +750,22 @@ const PhotoLibrary = {
         const parts = [];
         if (pending.length) parts.push(`⏳ ${pending.length} waiting`);
         if (failed.length)  parts.push(`⚠️ ${failed.length} failed`);
-        header.textContent = '🏷️ Rename queue — ' + parts.join(', ');
+        header.innerHTML = `<span>🏷️ Rename queue — ${parts.join(', ')}</span>` +
+          (failed.length > 1
+            ? ` <button class="btn btn-sm btn-ghost" id="plRetryAllBtn"
+                 style="font-size:11px;padding:2px 8px;margin-left:8px">↻ Retry all ${failed.length}</button>`
+            : '');
+        document.getElementById('plRetryAllBtn')?.addEventListener('click', async (e) => {
+          e.target.disabled = true;
+          try {
+            const { retried } = await API.retryAllQueuedRenames();
+            showToast(`${retried} queued for another attempt`, 'success');
+            this._loadRenameQueue();
+          } catch (err) {
+            e.target.disabled = false;
+            showToast('Retry failed: ' + err.message, 'error');
+          }
+        });
       }
 
       const why = err => err
