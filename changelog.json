@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-02T19:14:40.897Z",
-  "commit": "175562c",
+  "generated_at": "2026-09-02T19:35:47.059Z",
+  "commit": "1d9db3b",
   "entries": [
+    {
+      "version": "4.20.0",
+      "date": "2026-09-02",
+      "summary": "Rearrangeable sidebar, and a rename queue that waits out a busy API",
+      "details": "Sidebar: \"✏️ Edit menu\" at the bottom turns the nav into an editor — drag ⠿\nto move any tab, make your own groups (＋ Group), rename or delete them\n(deleting keeps the tabs, they move back out to the top level), and Reset\nputs it all back. Saved in settings so the layout follows you between the\nphone and the desktop. The default layout is still index.html's markup, read\nat boot, so a tab added later appears on its own instead of being invisible\nto a saved layout.\n\nRename queue: a quota, rate-limit or overload error from Gemini says nothing\nabout the photo it happened on, but it still burned one of that photo's\nthree attempts — three ticks 30s apart and a whole queued batch could be\nmarked failed without a single image having been looked at. Those errors now\nleave the attempt count alone, end the tick (whatever is throttling us\napplies to everything behind it too), and show as \"Waiting to retry — ...\" on\nthe card. The queue also splits waiting from failed by attempts rather than\nby \"has an error at all\"."
+    },
     {
       "version": "4.19.0",
       "date": "2026-09-02",
