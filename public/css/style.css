@@ -988,8 +988,9 @@ textarea { resize: vertical; min-height: 72px; }
    ───────────────────────────────────────── */
 .cal-day-headers {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--sidebar-bg);
+  padding-right: 68px;   /* the weekly-totals column, so headings line up with cells */
 }
 
 .cal-header-cell {
@@ -1006,7 +1007,7 @@ textarea { resize: vertical; min-height: 72px; }
 
 .cal-cells {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .cal-cell {
@@ -1104,6 +1105,15 @@ textarea { resize: vertical; min-height: 72px; }
   .cal-cell { min-height: 72px; padding: 4px; }
   .cal-shift-block { padding: 3px 5px; }
   .cal-shift-meta { display: none; }
+  .cal-day-headers { padding-right: 50px; }
+  .cal-header-cell { font-size: 11px; letter-spacing: 0; padding: 8px 0; }
+  /* A seventh of a phone screen can't hold "12:15 – 18:45" on one line, and
+     letting it wrap freely breaks it into three (the dash lands on its own
+     line). Stack start over end instead, and drop the dash between them. */
+  .cal-shift-times { white-space: normal; }
+  .cal-shift-times .cal-t-start,
+  .cal-shift-times .cal-t-end { display: block; }
+  .cal-shift-times .cal-t-dash { display: none; }
 }
 
 /* ─────────────────────────────────────────
@@ -1352,6 +1362,7 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 }
 .cal-cells-wrap .cal-cells {
   flex: 1;
+  min-width: 0;   /* a flex item won't shrink past its content without this */
 }
 .cal-week-totals {
   display: flex;

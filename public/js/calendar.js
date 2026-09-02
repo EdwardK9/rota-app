@@ -265,7 +265,7 @@ const CalendarView = {
         const hoursStr = shift.hours_worked    ? fmtHours(shift.hours_worked) : '';
         innerHtml += `
           <div class="cal-shift-block ${shift.completed ? 'cal-shift-done' : 'cal-shift-upcoming'}">
-            <div class="cal-shift-times">${shift.start_time} – ${shift.end_time}</div>
+            <div class="cal-shift-times"><span class="cal-t-start">${shift.start_time}</span><span class="cal-t-dash"> – </span><span class="cal-t-end">${shift.end_time}</span></div>
             <div class="cal-shift-meta">
               ${hoursStr ? `<span>${hoursStr}</span>` : ''}
               ${payStr   ? `<span class="cal-shift-pay">${payStr}</span>` : ''}
