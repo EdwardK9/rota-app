@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-02T20:35:22.933Z",
-  "commit": "8cc8d58",
+  "generated_at": "2026-09-02T20:49:04.687Z",
+  "commit": "716caff",
   "entries": [
+    {
+      "version": "4.20.2",
+      "date": "2026-09-02",
+      "summary": "Stat cards three across on a phone, not one per row",
+      "details": "Below 480px every stat card was forced full width, so Shifts opened with\nthirteen of them — thirteen screenfuls of scrolling before the shift table.\nThey're now auto-filled at a 104px minimum: three across on a normal phone,\ntwo on the narrowest, with smaller labels and values to match. Thirteen cards\ngo from thirteen rows to five.\n\nThe rule needs !important: Reports, Insights and What If set\ngrid-template-columns inline, and an inline style beats a stylesheet rule\nhowever specific it is. Tablet (2-up) and desktop are untouched."
+    },
     {
       "version": "4.20.1",
       "date": "2026-09-02",
