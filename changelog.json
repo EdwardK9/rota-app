@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-02T19:35:47.059Z",
-  "commit": "1d9db3b",
+  "generated_at": "2026-09-02T20:35:22.933Z",
+  "commit": "8cc8d58",
   "entries": [
+    {
+      "version": "4.20.1",
+      "date": "2026-09-02",
+      "summary": "Fix the month calendar's columns on a phone",
+      "details": "Two things had the grid coming apart at phone width:\n\nThe day-name header spanned the full width while the cells sat in a flex row\nnext to the 68px weekly-totals column, so the headings were already a slice\nof a column out of step with the days underneath them — on a wide screen too,\njust less visibly.\n\nAnd `1fr` is `minmax(auto, 1fr)`: a cell can't be narrower than its own\nmin-content, and the shift chips are `white-space: nowrap`. So every column\nholding a shift grew to fit \"12:15 – 18:45\" (~105px), the row overflowed the\nscreen with Saturday and Sunday off the right-hand edge, and September's\nMonday column — which has no shifts at all — collapsed to a 20px sliver.\n\nColumns are now minmax(0, 1fr), the header reserves the totals gutter, and at\nphone width the times stack (start over end, no dash) instead of wrapping\ninto three lines around the dash."
+    },
     {
       "version": "4.20.0",
       "date": "2026-09-02",
