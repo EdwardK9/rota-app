@@ -40,27 +40,6 @@ const App = {
       console.warn('Could not load settings:', e.message);
     }
 
-    // Wire navigation
-    document.querySelectorAll('.nav-link').forEach(link => {
-      link.addEventListener('click', e => {
-        e.preventDefault();
-        this.navigate(link.dataset.view);
-      });
-    });
-
-    // Collapsible nav groups — restore saved open/closed state, wire toggles
-    const _savedGroups = JSON.parse(localStorage.getItem('navGroups') || '{}');
-    document.querySelectorAll('.nav-group').forEach(g => {
-      const key = g.dataset.group;
-      if (_savedGroups[key]) g.classList.add('open');
-      g.querySelector('.nav-group-header').addEventListener('click', () => {
-        const open = g.classList.toggle('open');
-        const s = JSON.parse(localStorage.getItem('navGroups') || '{}');
-        s[key] = open;
-        localStorage.setItem('navGroups', JSON.stringify(s));
-      });
-    });
-
     // Sidebar mobile toggle
     const closeSidebar = () => {
       document.getElementById('sidebar').classList.remove('open');
@@ -113,10 +92,37 @@ const App = {
       }, { passive: true });
     })();
 
-    // Close sidebar on nav link tap on mobile
-    document.querySelectorAll('.nav-link').forEach(link => {
-      link.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
-    });
+    // Nav wiring, kept re-runnable: NavCustomise rebuilds the sidebar markup
+    // whenever the layout is edited, which throws these listeners away with the
+    // old DOM, so it calls back into this after every render.
+    this._wireNav = () => {
+      document.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', e => {
+          e.preventDefault();
+          if (NavCustomise._editing) return;   // you're arranging the menu, not using it
+          this.navigate(link.dataset.view);
+          if (window.innerWidth <= 768) closeSidebar();
+        });
+      });
+
+      // Collapsible nav groups — restore saved open/closed state, wire toggles
+      const savedGroups = JSON.parse(localStorage.getItem('navGroups') || '{}');
+      document.querySelectorAll('.nav-group').forEach(g => {
+        const key = g.dataset.group;
+        if (savedGroups[key]) g.classList.add('open');
+        g.querySelector('.nav-group-header').addEventListener('click', () => {
+          if (NavCustomise._editing) return;
+          const open = g.classList.toggle('open');
+          const s = JSON.parse(localStorage.getItem('navGroups') || '{}');
+          s[key] = open;
+          localStorage.setItem('navGroups', JSON.stringify(s));
+        });
+      });
+    };
+
+    // Renders the saved sidebar layout (or the default markup's own order) and
+    // wires it up via _wireNav.
+    NavCustomise.apply(this.settings);
 
     // Modal close
     document.getElementById('modalClose').addEventListener('click', () => Modal.close());

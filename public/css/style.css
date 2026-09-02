@@ -1851,3 +1851,39 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 }
 .pl-viewer-btn:hover { background: rgba(255,255,255,.22); }
 .pl-viewer-btn:active { background: rgba(255,255,255,.3); }
+
+/* Custom sidebar layout (NavCustomise) */
+#navEditBar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.nav-edit-action {
+  flex: 1 1 auto; min-height: 30px; padding: 4px 8px;
+  border: 1px solid rgba(255,255,255,.18); border-radius: 7px;
+  background: rgba(255,255,255,.07); color: inherit;
+  font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.nav-edit-action:hover { background: rgba(255,255,255,.16); }
+.nav-edit-action.nav-edit-save { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+/* Rows get a drag handle only while editing */
+.nav-editing .nav-links > li,
+.nav-editing .nav-sublinks > li { position: relative; }
+.nav-drag {
+  position: absolute; left: 2px; top: 6px; z-index: 2;
+  width: 18px; text-align: center; cursor: grab;
+  font-size: 13px; line-height: 20px; opacity: .55;
+  touch-action: none;   /* the handle drags; it must not scroll the sidebar */
+}
+.nav-drag:active { cursor: grabbing; opacity: 1; }
+.nav-editing .nav-link,
+.nav-editing .nav-group-header { padding-left: 24px; }
+.nav-editing .nav-group > .nav-sublinks { max-height: none; }
+.nav-dragging { opacity: .45; outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: 8px; }
+.nav-empty-slot {
+  margin: 2px 10px 2px 26px; padding: 6px 8px; border: 1px dashed rgba(255,255,255,.25);
+  border-radius: 7px; font-size: 11px; opacity: .6;
+}
+.nav-edit-actions { position: absolute; right: 6px; top: 5px; display: flex; gap: 2px; z-index: 2; }
+.nav-edit-btn {
+  border: 0; background: transparent; color: inherit;
+  font-size: 12px; line-height: 1; padding: 4px; cursor: pointer; opacity: .7;
+}
+.nav-edit-btn:hover { opacity: 1; }

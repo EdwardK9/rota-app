@@ -2200,8 +2200,8 @@ router.get('/photo-library/rename-queue', (req, res) => {
     ORDER BY id ASC
   `).all();
   res.json({
-    pending: rows.filter(r => !r.rename_error),
-    failed:  rows.filter(r =>  r.rename_error),
+    pending: rows.filter(r => (r.rename_attempts || 0) <  RENAME_QUEUE_MAX_ATTEMPTS),
+    failed:  rows.filter(r => (r.rename_attempts || 0) >= RENAME_QUEUE_MAX_ATTEMPTS),
   });
 });
 
@@ -2232,6 +2232,16 @@ router.post('/photo-library/rename-queue/:id/retry', (req, res) => {
   res.json({ ok: true });
 });
 
+// Errors that mean "not now" rather than "not ever": out of quota, rate
+// limited, the model busy, the request timing out. isGeminiOverloadError is
+// deliberately narrower — it decides whether to fall back to another model,
+// and a project-wide quota error follows you to every model there is.
+function isTransientGeminiError(err) {
+  const msg = err?.message || '';
+  return err?.status === 429 || err?.status === 503 || err?.status === 504 ||
+    /quota|rate.?limit|resource[_ ]exhausted|too many requests|overloaded|try again later|didn't respond within/i.test(msg);
+}
+
 const RENAME_QUEUE_MAX_ATTEMPTS = 3;
 const RENAME_QUEUE_BATCH_SIZE   = 3;
 let renameQueueRunning = false;
@@ -2255,9 +2265,17 @@ async function processRenameQueue() {
         ).run(row.id);
       } catch (err) {
         console.error('[RenameQueue] Failed to process', row.filename, '-', err.message);
+        // A quota/rate-limit/overload error says nothing about this photo — it's
+        // the API being unavailable this minute. Burning an attempt on it (three
+        // in a row, 30s apart) is how a whole queued batch could end up marked
+        // failed without a single photo having actually been looked at. Record
+        // why it's waiting, keep the attempt count, and stop the tick: whatever
+        // is throttling us applies to every job behind this one too.
+        const transient = isTransientGeminiError(err);
         db.prepare(
-          'UPDATE photo_files SET rename_error = ?, rename_attempts = rename_attempts + 1 WHERE id = ?'
-        ).run(err.message, row.id);
+          'UPDATE photo_files SET rename_error = ?, rename_attempts = rename_attempts + ? WHERE id = ?'
+        ).run(transient ? 'Waiting to retry — ' + err.message : err.message, transient ? 0 : 1, row.id);
+        if (transient) break;
       }
     }
   } finally {

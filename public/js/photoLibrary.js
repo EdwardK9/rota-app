@@ -743,15 +743,21 @@ const PhotoLibrary = {
         header.textContent = '🏷️ Rename queue — ' + parts.join(', ');
       }
 
+      const why = err => err
+        ? `<div style="padding:0 4px 3px;font-size:9px;line-height:1.25;color:var(--danger);
+             display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden"
+             title="${esc(err)}">${esc(err)}</div>`
+        : '';
+
       let html = '';
-      html += pending.map(p => cardWrap(`${thumb(p.id)}${badge('⏳', 'rgba(0,0,0,0.55)', '#fff')}${caption(p.filename)}`, 'var(--border)')).join('');
+      html += pending.map(p => cardWrap(
+        `${thumb(p.id)}${badge('⏳', 'rgba(0,0,0,0.55)', '#fff')}${caption(p.filename)}${why(p.rename_error)}`,
+        'var(--border)')).join('');
       html += failed.map(f => cardWrap(`
         ${thumb(f.id)}
         ${badge('⚠️', 'var(--danger)', '#fff')}
         ${caption(f.filename)}
-        <div style="padding:0 4px 3px;font-size:9px;line-height:1.25;color:var(--danger);
-          display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden"
-          title="${esc(f.rename_error)}">${esc(f.rename_error)}</div>
+        ${why(f.rename_error)}
         <button class="btn btn-sm btn-ghost" data-retry-rename="${f.id}"
           style="width:100%;border-radius:0;font-size:10px;padding:2px" title="${esc(f.rename_error)}">Retry</button>
       `, 'var(--danger)')).join('');
