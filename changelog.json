@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-02T20:49:04.687Z",
-  "commit": "716caff",
+  "generated_at": "2026-09-02T20:53:43.967Z",
+  "commit": "6c49a16",
   "entries": [
+    {
+      "version": "4.21.0",
+      "date": "2026-09-02",
+      "summary": "Retry-all for the rename queue, readable quota errors, sticky auto-rename",
+      "details": "The rename failures were Gemini's free-tier quota — 20 requests a minute —\nwhich v4.20.0 stopped counting as the photo's fault. Three follow-ons now\nthat the error is known:\n\nRetry all. A quota outage fails jobs by the hundred and the only way back was\none Retry button per card, which isn't a real option on a phone. The queue\nheader grows a \"↻ Retry all N\" button whenever more than one has given up.\n\nReadable errors. Google's version is three sentences and two support URLs;\nnone of it fits in a 96px card. A quota failure now reads \"Gemini quota\nreached (20/min on the free tier) — waiting, will retry itself\".\n\nThe auto-rename toggle is remembered server-side. It kept coming back\nunticked on the phone and it persists correctly in every path I could\nreproduce, so the local copy is what's being lost — per-browser storage is\nexactly the thing that gets cleared out from under you, or is simply a\ndifferent browser. It now saves to settings like any other preference, with\nlocalStorage kept as an instant fallback."
+    },
     {
       "version": "4.20.2",
       "date": "2026-09-02",
