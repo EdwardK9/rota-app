@@ -667,7 +667,19 @@ textarea { resize: vertical; min-height: 72px; }
    Responsive — 480px
    ───────────────────────────────────────── */
 @media (max-width: 480px) {
-  .stats-grid { grid-template-columns: 1fr; }
+  /* Stat cards: three across (two on the narrowest phones) rather than one
+     full-width box per row — six of them filled the whole screen before you
+     reached the thing you opened the page for. !important is deliberate:
+     Reports, Insights and What If set grid-template-columns inline, and an
+     inline style beats a stylesheet rule however specific it is. */
+  .stats-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)) !important;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat-card  { padding: 10px 11px; }
+  .stat-label { font-size: 10px; letter-spacing: 0.3px; margin-bottom: 3px; }
+  .stat-value { font-size: 17px; overflow-wrap: anywhere; }
 
   /* Shifts table: also hide Total Hrs on very small screens (keep Hrs Worked) */
   #shiftsTable th:nth-child(8),
