@@ -284,6 +284,9 @@ const PhotoLibrary = {
         : 'No photos in this folder yet — drop some above.';
     } else {
       empty.style.display = 'none';
+      // Hover-reveal for the per-photo buttons only works with a real pointer;
+      // on a phone they have to be permanently visible or they don't exist.
+      const hoverless = window.matchMedia('(hover: none)').matches;
       grid.innerHTML = visible.map(f => {
         const sel = this.selectedIds.has(f.id);
         return `
@@ -297,12 +300,18 @@ const PhotoLibrary = {
             ${sel ? `<div style="position:absolute;top:6px;right:6px;width:22px;height:22px;
                        border-radius:50%;background:var(--primary);display:flex;align-items:center;
                        justify-content:center;font-size:13px">✓</div>` : ''}
+            <button class="pl-hover-btn" data-view-id="${f.id}"
+               style="position:absolute;bottom:26px;left:5px;width:26px;height:26px;border:0;
+                      border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;display:flex;
+                      align-items:center;justify-content:center;font-size:13px;cursor:pointer;
+                      opacity:${hoverless ? 1 : 0};transition:opacity 0.15s;z-index:2"
+               title="View bigger">🔍</button>
             <a href="/api/photo-library/files/${f.id}/image" download="${esc(f.filename)}"
-               class="pl-dl-btn"
+               class="pl-hover-btn"
                style="position:absolute;bottom:26px;right:5px;width:26px;height:26px;
                       border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;display:flex;
                       align-items:center;justify-content:center;font-size:14px;text-decoration:none;
-                      opacity:0;transition:opacity 0.15s;z-index:2"
+                      opacity:${hoverless ? 1 : 0};transition:opacity 0.15s;z-index:2"
                title="Download"
                onclick="event.stopPropagation()">⬇</a>
             <div style="padding:5px 7px;font-size:11px;color:var(--text-muted);
@@ -312,14 +321,244 @@ const PhotoLibrary = {
       }).join('');
       grid.querySelectorAll('.pl-photo-card').forEach(el => {
         el.addEventListener('click', () => this.toggleSelect(parseInt(el.dataset.fileId)));
-        const dlBtn = el.querySelector('.pl-dl-btn');
-        if (dlBtn) {
-          el.addEventListener('mouseenter', () => dlBtn.style.opacity = '1');
-          el.addEventListener('mouseleave', () => dlBtn.style.opacity = '0');
+        const btns = el.querySelectorAll('.pl-hover-btn');
+        if (!hoverless && btns.length) {
+          el.addEventListener('mouseenter', () => btns.forEach(b => b.style.opacity = '1'));
+          el.addEventListener('mouseleave', () => btns.forEach(b => b.style.opacity = '0'));
         }
       });
+      grid.querySelectorAll('[data-view-id]').forEach(btn =>
+        btn.addEventListener('click', e => {
+          e.stopPropagation();   // viewing isn't selecting
+          this.openViewer(parseInt(btn.dataset.viewId, 10));
+        })
+      );
     }
     this.updateSelectionBar();
+  },
+
+  // ── Photo viewer ──────────────────────────────────────────────────────────
+  // Full-screen viewer with pinch/wheel zoom and drag-to-pan. Deliberately not
+  // built on Modal: it needs the whole screen, its own pointer gestures, and
+  // mustn't close on a stray tap while you're dragging a zoomed-in screenshot
+  // around — which is the point of it, since a rota screenshot is unreadable at
+  // thumbnail size on a phone.
+  _viewer: null,
+
+  openViewer(fileId) {
+    const files = this._visibleFiles();
+    const idx = files.findIndex(f => f.id === fileId);
+    if (idx < 0) return;
+    if (!this._viewer) this._buildViewer();
+    this._viewer.files = files;
+    this._viewer.index = idx;
+    this._viewer.root.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    this._showViewerPhoto();
+  },
+
+  closeViewer() {
+    if (!this._viewer) return;
+    this._viewer.root.style.display = 'none';
+    this._viewer.img.removeAttribute('src');
+    document.body.style.overflow = '';
+  },
+
+  _buildViewer() {
+    const root = document.createElement('div');
+    root.id = 'plViewer';
+    root.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.94);'
+      + 'display:none;flex-direction:column;touch-action:none;user-select:none;-webkit-user-select:none';
+    root.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;color:#fff;font-size:13px;flex:0 0 auto">
+        <span id="plViewerName" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;opacity:0.85"></span>
+        <span id="plViewerZoom" style="opacity:0.6;font-variant-numeric:tabular-nums"></span>
+        <button data-vz="out" class="pl-viewer-btn" title="Zoom out">−</button>
+        <button data-vz="in"  class="pl-viewer-btn" title="Zoom in">+</button>
+        <button data-vz="fit" class="pl-viewer-btn" style="width:auto;padding:0 10px;font-size:12px">Fit</button>
+        <a id="plViewerDl" class="pl-viewer-btn" style="text-decoration:none" title="Download">⬇</a>
+        <button data-vz="close" class="pl-viewer-btn" title="Close (Esc)">✕</button>
+      </div>
+      <div id="plViewerStage" style="flex:1;min-height:0;position:relative;overflow:hidden;
+           display:flex;align-items:center;justify-content:center;cursor:grab">
+        <img id="plViewerImg" draggable="false" alt=""
+             style="max-width:100%;max-height:100%;object-fit:contain;display:block;
+                    transform-origin:center center;will-change:transform;-webkit-user-drag:none" />
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;
+                  color:#fff;font-size:12px;flex:0 0 auto">
+        <button data-vz="prev" class="pl-viewer-btn" title="Previous">←</button>
+        <span id="plViewerCount" style="opacity:0.6;min-width:70px;text-align:center"></span>
+        <button data-vz="next" class="pl-viewer-btn" title="Next">→</button>
+      </div>`;
+    document.body.appendChild(root);
+
+    const v = this._viewer = {
+      root,
+      img:   root.querySelector('#plViewerImg'),
+      stage: root.querySelector('#plViewerStage'),
+      name:  root.querySelector('#plViewerName'),
+      zoomLabel: root.querySelector('#plViewerZoom'),
+      count: root.querySelector('#plViewerCount'),
+      dl:    root.querySelector('#plViewerDl'),
+      files: [], index: 0,
+      scale: 1, tx: 0, ty: 0,
+      pointers: new Map(), pinchStart: null, dragStart: null, lastTap: 0,
+    };
+
+    root.querySelectorAll('[data-vz]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const a = btn.dataset.vz;
+      if      (a === 'close') this.closeViewer();
+      else if (a === 'in')    this._zoomBy(1.4);
+      else if (a === 'out')   this._zoomBy(1 / 1.4);
+      else if (a === 'fit')   this._resetZoom();
+      else if (a === 'prev')  this._stepViewer(-1);
+      else if (a === 'next')  this._stepViewer(1);
+    }));
+
+    // Wheel / trackpad zoom, anchored on the cursor
+    v.stage.addEventListener('wheel', e => {
+      e.preventDefault();
+      this._zoomBy(Math.exp(-e.deltaY / 400), e.clientX, e.clientY);
+    }, { passive: false });
+
+    v.stage.addEventListener('pointerdown', e => {
+      v.stage.setPointerCapture(e.pointerId);
+      v.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (v.pointers.size === 2) {
+        const [a, b] = [...v.pointers.values()];
+        v.pinchStart = { dist: Math.hypot(a.x - b.x, a.y - b.y), scale: v.scale };
+        v.dragStart = null;
+      } else if (v.pointers.size === 1) {
+        v.dragStart = { x: e.clientX, y: e.clientY, tx: v.tx, ty: v.ty, moved: false };
+        v.stage.style.cursor = 'grabbing';
+      }
+    });
+
+    v.stage.addEventListener('pointermove', e => {
+      if (!v.pointers.has(e.pointerId)) return;
+      v.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (v.pointers.size >= 2 && v.pinchStart) {
+        const [a, b] = [...v.pointers.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (v.pinchStart.dist > 0) {
+          this._zoomTo(v.pinchStart.scale * (dist / v.pinchStart.dist), (a.x + b.x) / 2, (a.y + b.y) / 2);
+        }
+      } else if (v.dragStart) {
+        const dx = e.clientX - v.dragStart.x, dy = e.clientY - v.dragStart.y;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) v.dragStart.moved = true;
+        // At fit size there's nothing to pan, so let the gesture read as a swipe
+        // instead of dragging the image out from under the finger.
+        if (v.scale > 1.02) {
+          v.tx = v.dragStart.tx + dx;
+          v.ty = v.dragStart.ty + dy;
+          this._applyTransform();
+        }
+      }
+    });
+
+    const endPointer = e => {
+      if (!v.pointers.has(e.pointerId)) return;
+      v.pointers.delete(e.pointerId);
+      v.stage.style.cursor = 'grab';
+      if (v.pointers.size < 2) v.pinchStart = null;
+      if (v.pointers.size === 0 && v.dragStart) {
+        const start = v.dragStart;
+        v.dragStart = null;
+        if (!start.moved) {
+          const now = Date.now();
+          if (now - v.lastTap < 300) {          // double-tap toggles fit / 250%
+            v.lastTap = 0;
+            if (v.scale > 1.02) this._resetZoom(); else this._zoomTo(2.5, e.clientX, e.clientY);
+          } else {
+            v.lastTap = now;
+          }
+        } else if (v.scale <= 1.02 && Math.abs(e.clientX - start.x) > 60) {
+          this._stepViewer(e.clientX < start.x ? 1 : -1);   // swipe between photos
+        } else {
+          this._clampPan();
+        }
+      }
+    };
+    v.stage.addEventListener('pointerup', endPointer);
+    v.stage.addEventListener('pointercancel', endPointer);
+    v.stage.addEventListener('dblclick', e => {
+      if (v.scale > 1.02) this._resetZoom(); else this._zoomTo(2.5, e.clientX, e.clientY);
+    });
+
+    document.addEventListener('keydown', e => {
+      if (root.style.display === 'none') return;
+      if      (e.key === 'Escape')     this.closeViewer();
+      else if (e.key === 'ArrowLeft')  this._stepViewer(-1);
+      else if (e.key === 'ArrowRight') this._stepViewer(1);
+      else if (e.key === '+' || e.key === '=') this._zoomBy(1.4);
+      else if (e.key === '-')          this._zoomBy(1 / 1.4);
+      else if (e.key === '0')          this._resetZoom();
+    });
+  },
+
+  _showViewerPhoto() {
+    const v = this._viewer;
+    const f = v.files[v.index];
+    if (!f) return;
+    v.img.src = `/api/photo-library/files/${f.id}/image`;
+    v.name.textContent = f.filename;
+    v.name.title = f.filename;
+    v.dl.href = `/api/photo-library/files/${f.id}/image`;
+    v.dl.setAttribute('download', f.filename);
+    v.count.textContent = `${v.index + 1} / ${v.files.length}`;
+    this._resetZoom();
+  },
+
+  _stepViewer(dir) {
+    const v = this._viewer;
+    if (!v.files.length) return;
+    v.index = (v.index + dir + v.files.length) % v.files.length;
+    this._showViewerPhoto();
+  },
+
+  _resetZoom() {
+    const v = this._viewer;
+    v.scale = 1; v.tx = 0; v.ty = 0;
+    this._applyTransform();
+  },
+
+  _zoomBy(factor, cx, cy) { this._zoomTo(this._viewer.scale * factor, cx, cy); },
+
+  // Zoom towards (cx, cy) in client coords, so the point under the cursor or
+  // between the fingers stays put — what makes reading one column of a rota work.
+  _zoomTo(target, cx, cy) {
+    const v = this._viewer;
+    const next = Math.min(8, Math.max(1, target));
+    const rect = v.stage.getBoundingClientRect();
+    if (cx == null) { cx = rect.left + rect.width / 2; cy = rect.top + rect.height / 2; }
+    const ox = cx - (rect.left + rect.width / 2);
+    const oy = cy - (rect.top + rect.height / 2);
+    const ratio = next / v.scale;
+    v.tx = ox - (ox - v.tx) * ratio;
+    v.ty = oy - (oy - v.ty) * ratio;
+    v.scale = next;
+    this._clampPan();
+  },
+
+  // Keep the image from being dragged off-screen: centred at fit size, and free
+  // to move by however much of it overflows the stage once zoomed in.
+  _clampPan() {
+    const v = this._viewer;
+    const rect = v.stage.getBoundingClientRect();
+    const maxX = Math.max(0, (v.img.offsetWidth  * v.scale - rect.width)  / 2);
+    const maxY = Math.max(0, (v.img.offsetHeight * v.scale - rect.height) / 2);
+    v.tx = Math.min(maxX, Math.max(-maxX, v.tx));
+    v.ty = Math.min(maxY, Math.max(-maxY, v.ty));
+    this._applyTransform();
+  },
+
+  _applyTransform() {
+    const v = this._viewer;
+    v.img.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${v.scale})`;
+    v.zoomLabel.textContent = v.scale > 1.02 ? `${Math.round(v.scale * 100)}%` : '';
   },
 
   toggleSelect(fileId) {
@@ -510,6 +749,9 @@ const PhotoLibrary = {
         ${thumb(f.id)}
         ${badge('⚠️', 'var(--danger)', '#fff')}
         ${caption(f.filename)}
+        <div style="padding:0 4px 3px;font-size:9px;line-height:1.25;color:var(--danger);
+          display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden"
+          title="${esc(f.rename_error)}">${esc(f.rename_error)}</div>
         <button class="btn btn-sm btn-ghost" data-retry-rename="${f.id}"
           style="width:100%;border-radius:0;font-size:10px;padding:2px" title="${esc(f.rename_error)}">Retry</button>
       `, 'var(--danger)')).join('');

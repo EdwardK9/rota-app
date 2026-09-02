@@ -318,20 +318,30 @@ const ClockInOutView = {
       await this.loadHistory();
       await this.loadAnalytics();
 
-      // If there's a linked shift, ask about break and mark it complete
-      if (this.shift?.id) {
-        const breakResult = await this._promptBreak(this.shift.break_scheduled_minutes || 30);
-        if (breakResult !== null) {
-          await API.patch('/api/shifts/bulk-complete', {
-            ids: [this.shift.id],
-            completed: true,
-            break_taken: breakResult.break_taken,
-            break_taken_minutes: breakResult.break_taken_minutes,
-          });
-          showToast('Shift marked complete ✓', 'success');
-        }
-      }
-    } catch(e) { showToast('Failed to clock out: ' + e.message, 'error'); }
+    } catch(e) { showToast('Failed to clock out: ' + e.message, 'error'); return; }
+
+    // If there's a linked shift, ask about the break and mark it complete — and say
+    // so when that doesn't happen, rather than leaving the shift silently incomplete.
+    if (!this.shift?.id) {
+      showToast("No shift on today's rota to mark complete", 'warning');
+      return;
+    }
+    const breakResult = await this._promptBreak(this.shift.break_scheduled_minutes || 30);
+    if (breakResult === null) {
+      showToast('Shift NOT marked complete (break question cancelled)', 'warning');
+      return;
+    }
+    try {
+      await API.patch('/api/shifts/bulk-complete', {
+        ids: [this.shift.id],
+        completed: true,
+        break_taken: breakResult.break_taken,
+        break_taken_minutes: breakResult.break_taken_minutes,
+      });
+      showToast('Shift marked complete ✓', 'success');
+    } catch (e) {
+      showToast('Marking the shift complete failed: ' + e.message, 'error');
+    }
   },
 
   _promptBreak(scheduledMins) {

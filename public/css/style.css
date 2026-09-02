@@ -1840,3 +1840,14 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 .audit-stat-box { transition: transform .1s, box-shadow .1s; }
 .audit-stat-box:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,.12); }
 .audit-stat-box.audit-stat-active { outline: 2px solid var(--primary); outline-offset: -2px; background: rgba(99,102,241,.08); }
+
+/* Photo Library full-screen viewer (pinch/wheel zoom + drag to pan) */
+.pl-viewer-btn {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 8px; cursor: pointer;
+  background: rgba(255,255,255,.12); color: #fff; font-size: 16px; line-height: 1;
+  transition: background .15s;
+}
+.pl-viewer-btn:hover { background: rgba(255,255,255,.22); }
+.pl-viewer-btn:active { background: rgba(255,255,255,.3); }

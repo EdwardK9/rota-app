@@ -105,7 +105,7 @@ const DashboardView = {
     }
 
     this.renderMonthSummary(monthShifts, todayStr);
-    this.renderNextIn(nextIn, nextInAnchor);
+    this.renderNextIn(nextIn, nextInAnchor, todayStr);
     this.renderPaydayPredictor(); // fire-and-forget — non-critical widget, own data fetch
   },
 
@@ -472,11 +472,20 @@ const DashboardView = {
     if (diff < -this._thr('out','early') || diff > this._thr('out','late')) note = await this._promptReason(diff, true);
     try {
       await API.post('/api/clock/out', { time: hhmm, note });
-      // Ask about the break and mark the linked shift complete (same as the Clock In/Out page)
-      const shift = clockData?.shift;
-      if (shift?.id) {
-        const breakResult = await this._promptBreak(shift.break_scheduled_minutes || 0);
-        if (breakResult !== null) {
+    } catch(e) { showToast('Clock out failed', 'error'); return; }
+
+    // Ask about the break and mark the linked shift complete (same as the Clock In/Out page).
+    // Every way this can fall through says so out loud — a shift quietly staying
+    // incomplete is worse than a noisy toast, since you only notice weeks later.
+    const shift = clockData?.shift;
+    if (!shift?.id) {
+      showToast("Clocked out ✓ — no shift on today's rota to mark complete", 'warning');
+    } else {
+      const breakResult = await this._promptBreak(shift.break_scheduled_minutes || 0);
+      if (breakResult === null) {
+        showToast('Clocked out ✓ — shift NOT marked complete (break question cancelled)', 'warning');
+      } else {
+        try {
           await API.patch('/api/shifts/bulk-complete', {
             ids: [shift.id],
             completed: true,
@@ -484,10 +493,12 @@ const DashboardView = {
             break_taken_minutes: breakResult.break_taken_minutes,
           });
           showToast('Shift marked complete ✓', 'success');
+        } catch (e) {
+          showToast('Clocked out, but marking the shift complete failed: ' + e.message, 'error');
         }
       }
-      await this.render();
-    } catch(e) { showToast('Clock out failed', 'error'); }
+    }
+    await this.render();
   },
 
   // Break prompt on clock-out (mirrors the Clock In/Out page)
@@ -634,7 +645,9 @@ const DashboardView = {
     Modal.open(`Working with — ${dayFull}`, body);
   },
 
-  renderNextIn(data, todayStr) {
+  // anchorStr = first day of the roster window (already rolled over to tomorrow after
+  // the evening cutoff); todayStr = the real calendar date, used only for the labels.
+  renderNextIn(data, anchorStr, todayStr) {
     const el = document.getElementById('dash-next-in');
     if (!el) return;
     if (!data || !data.days?.length) {
@@ -642,7 +655,8 @@ const DashboardView = {
       return;
     }
 
-    const tomorrowStr = _fmtDateDash(new Date(new Date(todayStr + 'T12:00:00').getTime() + 86400000));
+    const nextDay = (dateStr) => _fmtDateDash(new Date(new Date(dateStr + 'T12:00:00').getTime() + 86400000));
+    const tomorrowStr = nextDay(todayStr);
     const isLeave = (r) => r.shift_type === 'leave' || r.start_time === '00:00' || r.start_time === '00:00:00';
 
     const dayLabel = (dateStr) => {
@@ -661,8 +675,8 @@ const DashboardView = {
       if (!byDate.has(r.date)) byDate.set(r.date, []);
       byDate.get(r.date).push(r);
     }
-    // Always show Today + Tomorrow headers, even when a day is empty
-    for (const d of [todayStr, tomorrowStr]) if (!byDate.has(d)) byDate.set(d, []);
+    // Always show both days of the window, even when a day is empty
+    for (const d of [anchorStr, nextDay(anchorStr)]) if (!byDate.has(d)) byDate.set(d, []);
 
     const daySections = [...byDate.keys()].sort().map(dateStr => {
       // Working shifts only — annual leave isn't shown here (Ed: "doesn't need to show holiday")
@@ -671,7 +685,7 @@ const DashboardView = {
       const rows = shifts.length ? shifts.map(r => `
         <div class="dash-nextin-row">
           <span class="dash-nextin-name">${esc(r.name)}</span>
-          <span class="dash-nextin-date ${dateStr === todayStr ? 'dash-nextin-today' : ''}">
+          <span class="dash-nextin-date ${dateStr === anchorStr ? 'dash-nextin-today' : ''}">
             ${r.start_time} – ${r.end_time}
           </span>
         </div>`).join('')
