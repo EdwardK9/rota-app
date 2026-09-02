@@ -716,7 +716,7 @@ const PhotoLibrary = {
     const grid = document.getElementById('plRenameQueueGrid');
     if (!card || !grid) return;
     try {
-      const { pending, failed } = await API.getRenameQueue();
+      const { pending, failed, paused_seconds: pausedSecs = 0 } = await API.getRenameQueue();
       // A drop in the queue count means something just finished since the last
       // check (a failure stays in `failed` rather than disappearing, so this
       // only fires on a genuine success) — refresh the photo grid so the new
@@ -750,6 +750,13 @@ const PhotoLibrary = {
         const parts = [];
         if (pending.length) parts.push(`⏳ ${pending.length} waiting`);
         if (failed.length)  parts.push(`⚠️ ${failed.length} failed`);
+        // The queue carries on with the app closed — it's a loop on the server,
+        // not something this page drives — so when it's sitting out a quota
+        // window, say so rather than looking stalled.
+        if (pausedSecs > 0) {
+          const mins = Math.floor(pausedSecs / 60), secs = pausedSecs % 60;
+          parts.push(`⏸️ waiting for Gemini quota, retrying in ${mins ? mins + 'm ' : ''}${secs}s`);
+        }
         header.innerHTML = `<span>🏷️ Rename queue — ${parts.join(', ')}</span>` +
           (failed.length > 1
             ? ` <button class="btn btn-sm btn-ghost" id="plRetryAllBtn"

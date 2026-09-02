@@ -2109,6 +2109,53 @@ router.post('/colleagues/screenshot-queue/:id/retry', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Shared Gemini throttle ────────────────────────────────────────────────
+// Errors that mean "not now" rather than "not ever": out of quota, rate
+// limited, the model busy, the request timing out. isGeminiOverloadError is
+// deliberately narrower — it decides whether to fall back to another model,
+// and a project-wide quota error follows you to every model there is.
+function isTransientGeminiError(err) {
+  const msg = err?.message || '';
+  return err?.status === 429 || err?.status === 503 || err?.status === 504 ||
+    /quota|rate.?limit|resource[_ ]exhausted|too many requests|overloaded|try again later|didn't respond within/i.test(msg);
+}
+
+// Google's quota error is three sentences and two support URLs — none of it
+// readable in a 96px queue card on a phone. Keep the one fact that matters.
+function waitingMessage(err) {
+  const msg = err?.message || '';
+  if (/quota/i.test(msg)) {
+    const limit = msg.match(/limit:\s*(\d+)/);
+    return 'Gemini quota reached' + (limit ? ` (${limit[1]}/min on the free tier)` : '') +
+           ' — waiting, will retry itself';
+  }
+  if (/rate.?limit|too many requests/i.test(msg)) return 'Gemini rate limit — waiting, will retry itself';
+  return 'Waiting to retry — ' + msg;
+}
+
+// Both background queues spend the same free-tier allowance, so being told
+// "no" in one is a reason for the other to hold off too — otherwise they take
+// turns burning a locked-out quota every 30 seconds, and neither finishes.
+// Backoff doubles from a minute up to fifteen, and the first success clears it.
+let geminiPausedUntil = 0;
+let geminiBackoffMs   = 0;
+const GEMINI_BACKOFF_MIN_MS = 60_000;
+const GEMINI_BACKOFF_MAX_MS = 15 * 60_000;
+
+function geminiPaused()      { return Date.now() < geminiPausedUntil; }
+function geminiPauseSecsLeft() { return Math.max(0, Math.ceil((geminiPausedUntil - Date.now()) / 1000)); }
+function noteGeminiThrottled(err) {
+  // Google sometimes says how long to wait. Take it as a floor, never below a
+  // minute: the free tier's window is per-minute, and its own "retry in 644ms"
+  // just puts you straight back into the same wall.
+  const m = (err?.message || '').match(/retry in ([\d.]+)\s*(ms|s)?/i);
+  const hinted = m ? (m[2] === 'ms' ? parseFloat(m[1]) : parseFloat(m[1]) * 1000) : 0;
+  geminiBackoffMs = Math.min(Math.max(geminiBackoffMs * 2, hinted, GEMINI_BACKOFF_MIN_MS), GEMINI_BACKOFF_MAX_MS);
+  geminiPausedUntil = Date.now() + geminiBackoffMs;
+  console.warn(`[Gemini] throttled — pausing both queues for ${Math.round(geminiBackoffMs / 1000)}s: ${err?.message || ''}`);
+}
+function noteGeminiOk() { geminiBackoffMs = 0; geminiPausedUntil = 0; }
+
 const SCREENSHOT_QUEUE_MAX_ATTEMPTS = 3;
 const SCREENSHOT_QUEUE_BATCH_SIZE   = 3; // per tick — enough to keep multi-file uploads moving without hammering Gemini
 
@@ -2149,7 +2196,7 @@ async function processOneQueuedScreenshot(row) {
 let screenshotQueueRunning = false;
 
 async function processScreenshotQueue() {
-  if (screenshotQueueRunning) return;
+  if (screenshotQueueRunning || geminiPaused()) return;
   screenshotQueueRunning = true;
   try {
     const rows = db.prepare(`
@@ -2162,11 +2209,19 @@ async function processScreenshotQueue() {
     for (const row of rows) {
       try {
         await processOneQueuedScreenshot(row);
+        noteGeminiOk();
       } catch (err) {
         console.error('[ScreenshotQueue] Failed to process', row.filename, '-', err.message);
+        // Same rule as the rename queue: being rate-limited says nothing about
+        // this screenshot, so it mustn't cost the screenshot one of its three
+        // attempts. Record why it's waiting and stop — the API isn't taking
+        // anything else this minute either.
+        const transient = isTransientGeminiError(err);
+        if (transient) noteGeminiThrottled(err);
         db.prepare(
-          'UPDATE photo_files SET process_error = ?, process_attempts = process_attempts + 1 WHERE id = ?'
-        ).run(err.message, row.id);
+          'UPDATE photo_files SET process_error = ?, process_attempts = process_attempts + ? WHERE id = ?'
+        ).run(transient ? waitingMessage(err) : err.message, transient ? 0 : 1, row.id);
+        if (transient) break;
       }
     }
   } finally {
@@ -2202,6 +2257,8 @@ router.get('/photo-library/rename-queue', (req, res) => {
   res.json({
     pending: rows.filter(r => (r.rename_attempts || 0) <  RENAME_QUEUE_MAX_ATTEMPTS),
     failed:  rows.filter(r => (r.rename_attempts || 0) >= RENAME_QUEUE_MAX_ATTEMPTS),
+    // So the card can say "waiting for quota" rather than looking stalled
+    paused_seconds: geminiPaused() ? geminiPauseSecsLeft() : 0,
   });
 });
 
@@ -2243,35 +2300,15 @@ router.post('/photo-library/rename-queue/:id/retry', (req, res) => {
   res.json({ ok: true });
 });
 
-// Errors that mean "not now" rather than "not ever": out of quota, rate
-// limited, the model busy, the request timing out. isGeminiOverloadError is
-// deliberately narrower — it decides whether to fall back to another model,
-// and a project-wide quota error follows you to every model there is.
-function isTransientGeminiError(err) {
-  const msg = err?.message || '';
-  return err?.status === 429 || err?.status === 503 || err?.status === 504 ||
-    /quota|rate.?limit|resource[_ ]exhausted|too many requests|overloaded|try again later|didn't respond within/i.test(msg);
-}
-
-// Google's quota error is three sentences and two support URLs — none of it
-// readable in a 96px queue card on a phone. Keep the one fact that matters.
-function waitingMessage(err) {
-  const msg = err?.message || '';
-  if (/quota/i.test(msg)) {
-    const limit = msg.match(/limit:\s*(\d+)/);
-    return 'Gemini quota reached' + (limit ? ` (${limit[1]}/min on the free tier)` : '') +
-           ' — waiting, will retry itself';
-  }
-  if (/rate.?limit|too many requests/i.test(msg)) return 'Gemini rate limit — waiting, will retry itself';
-  return 'Waiting to retry — ' + msg;
-}
-
 const RENAME_QUEUE_MAX_ATTEMPTS = 3;
-const RENAME_QUEUE_BATCH_SIZE   = 3;
+// Ten a minute against the free tier's twenty, leaving room for the screenshot
+// queue and anything you do by hand. Overshooting isn't fatal any more — the
+// shared backoff catches it — but it wastes calls out of the same allowance.
+const RENAME_QUEUE_BATCH_SIZE   = 5;
 let renameQueueRunning = false;
 
 async function processRenameQueue() {
-  if (renameQueueRunning) return;
+  if (renameQueueRunning || geminiPaused()) return;
   renameQueueRunning = true;
   try {
     const rows = db.prepare(`
@@ -2284,6 +2321,7 @@ async function processRenameQueue() {
     for (const row of rows) {
       try {
         await renamePhotoFileWithGemini(row);
+        noteGeminiOk();
         db.prepare(
           "UPDATE photo_files SET rename_processed_at = datetime('now'), rename_error = NULL WHERE id = ?"
         ).run(row.id);
@@ -2296,6 +2334,7 @@ async function processRenameQueue() {
         // why it's waiting, keep the attempt count, and stop the tick: whatever
         // is throttling us applies to every job behind this one too.
         const transient = isTransientGeminiError(err);
+        if (transient) noteGeminiThrottled(err);
         db.prepare(
           'UPDATE photo_files SET rename_error = ?, rename_attempts = rename_attempts + ? WHERE id = ?'
         ).run(transient ? waitingMessage(err) : err.message, transient ? 0 : 1, row.id);
