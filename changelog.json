@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-01T16:58:18.121Z",
-  "commit": "6d2a9bb",
+  "generated_at": "2026-09-02T19:14:40.897Z",
+  "commit": "175562c",
   "entries": [
+    {
+      "version": "4.19.0",
+      "date": "2026-09-02",
+      "summary": "Photo viewer, correct Next In day labels, honest clock-out",
+      "details": "Photo Library: tap 🔍 on any photo to open it full-screen, with pinch /\nwheel / +- zoom up to 8x, drag to pan, swipe or arrows between photos, and\ndouble-tap to jump to 250%. The per-photo buttons no longer hide behind\n:hover on touch devices, where they were unreachable.\n\nDashboard \"Next In\": after the evening rollover cutoff the roster window\nstarts at tomorrow, but the headings still said \"Today\"/\"Tomorrow\" — so at\n20:00 on a Wednesday it listed Thursday's shifts under TODAY. The window is\nunchanged; only the labels now follow the real calendar date.\n\nClock out: marking the linked shift complete could silently not happen —\nno shift on today's rota, the break question dismissed, or the\nbulk-complete request failing (which reported \"clock out failed\" instead).\nEach case now says what happened, on both the dashboard and the Clock\nIn/Out page.\n\nRename queue: failed jobs show the error on the card instead of only in a\ntitle tooltip, which a phone can't show."
+    },
     {
       "version": "4.18.0",
       "date": "2026-09-01",
