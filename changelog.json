@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-03T19:07:43.293Z",
-  "commit": "301a128",
+  "generated_at": "2026-09-03T19:13:16.229Z",
+  "commit": "b6b0ecd",
   "entries": [
+    {
+      "version": "4.23.2",
+      "date": "2026-09-03",
+      "summary": "On This Day echoes now stay on the date",
+      "details": "\"Same shift, other years\" searched every past shift on any date, matching on\nstart and end time alone. On a 12:15–18:45 Thursday in September that came\nback with the previous October, July, June and November — seven shifts, none\nof them this date, all labelled \"1 year ago\" because a year difference is all\nthey had in common. The date is the entire premise of the page; matching on\ntime alone threw it away.\n\nThe candidates are now the flashback rows — this calendar date, or the\nnearest same weekday, in each previous year — narrowed to the ones whose\nstart and end are both within 30 minutes of today's. The window is still\nthere because a slot drifts: 12:15–18:45 and 12:45–18:45 on the same date a\nyear apart are plainly the same shift, and that pair is what the same\nSeptember date actually returns now.\n\nOrdered most recent year first, since they all share a date and closeness\nonly breaks a tie within one. Heading says which date rule is in force."
+    },
     {
       "version": "4.23.1",
       "date": "2026-09-03",
