@@ -151,7 +151,8 @@ const App = {
     // naming each one — a new V3 feature needs no change here.
     const outgoingView = { dashboard: DashboardView, 'whos-in': WhosInView, clock: ClockInOutView,
       'team-upload': TeamUploadView, 'photo-library': PhotoLibrary }[this.currentView]
-      || (typeof V3 !== 'undefined' ? V3.views[this.currentView] : null);
+      || (typeof V3 !== 'undefined' ? V3.views[this.currentView] : null)
+      || (typeof V5 !== 'undefined' ? V5.views[this.currentView] : null);
     outgoingView?.destroy?.();
 
     // Hide all views
@@ -166,6 +167,11 @@ const App = {
     // V3 hub — so keep that one entry highlighted while you're inside any of them.
     if (typeof V3 !== 'undefined' && V3.views[view]) {
       document.querySelector('.nav-link[data-view="v3-hub"]')?.classList.add('active');
+    }
+
+    // Same for V5.0 — its five views are all reached through the V5 hub.
+    if (typeof V5 !== 'undefined' && V5.views[view]) {
+      document.querySelector('.nav-link[data-view="v5-hub"]')?.classList.add('active');
     }
 
     // Same idea for V2.0 — those views aren't in a registry the way V3 is, so
@@ -210,6 +216,7 @@ const App = {
     };
     // V3 views supply their own titles at registration time
     if (typeof V3 !== 'undefined') Object.assign(titles, V3.titles);
+    if (typeof V5 !== 'undefined') Object.assign(titles, V5.titles);
     document.getElementById('topbarTitle').textContent = titles[view] || view;
     this.currentView = view;
 
@@ -252,8 +259,10 @@ const App = {
       case 'clock':         await ClockInOutView.init(); break;
       case 'key':           await KeyView.init(); break;
       default:
-        // V3.0 features — resolved from the registry rather than a case each
+        // V3.0 / V5.0 features — resolved from their registries rather than a
+        // case each, so a new feature in either set needs no change here.
         if (typeof V3 !== 'undefined' && V3.views[view]) await V3.views[view].init();
+        else if (typeof V5 !== 'undefined' && V5.views[view]) await V5.views[view].init();
         break;
     }
     } catch(navErr) {

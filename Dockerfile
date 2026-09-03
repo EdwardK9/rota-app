@@ -10,6 +10,7 @@ COPY changelog.json ./
 # *.js above matches top-level files only — it does not recurse — so any server-side
 # code in a subdirectory has to be copied explicitly or the image builds without it.
 COPY v3/ ./v3/
+COPY v5/ ./v5/
 COPY public/ ./public/
 RUN mkdir -p /app/data
 EXPOSE 3000

@@ -1,0 +1,128 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   V5.0 Features — styles
+
+   Loaded after v3.css. V5 reuses the .v3-* tiles, bars, charts and hub cards
+   rather than shipping a second copy of them, so what's here is only the parts
+   V5 needs that V3 has no equivalent of: the ranked bar list, the scatter plot,
+   the privacy switches and the notice banners.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Good/bad emphasis, shared by every V5 page ─────────────────────────── */
+.v5-good { color: var(--success); }
+.v5-bad  { color: var(--danger); }
+
+/* A trailing unit or denominator inside a big tile figure, e.g. "12/30" or
+   "3 d" — small and muted so the number itself still reads as the value. */
+.v5-of {
+  font-size: 0.55em; font-weight: 600; color: var(--text-muted);
+  letter-spacing: 0;
+}
+
+/* ── Ranked bar list ────────────────────────────────────────────────────── */
+/* The shape most V5 answers take: a label, a proportional bar and a figure.
+   A grid rather than flex so the bars all start at the same x regardless of
+   how long the labels are. */
+.v5-ranked { display: flex; flex-direction: column; gap: 8px; }
+.v5-ranked-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 34%) 1fr minmax(64px, auto);
+  align-items: center; gap: 10px;
+}
+.v5-ranked-label {
+  font-size: 13px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.v5-ranked-icon { margin-right: 5px; }
+.v5-ranked-track {
+  height: 10px; border-radius: 999px; background: var(--bg);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.v5-ranked-track > span {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--info, var(--primary)));
+  transition: width 0.5s ease;
+}
+.v5-ranked-value {
+  font-size: 12.5px; color: var(--text-muted); text-align: right;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .v5-ranked-row { grid-template-columns: minmax(80px, 40%) 1fr auto; gap: 8px; }
+  .v5-ranked-value { font-size: 11.5px; }
+}
+
+/* ── Sparkline ──────────────────────────────────────────────────────────── */
+/* For long daily series. The bars shrink (flex: 1 1 0) rather than holding a
+   fixed basis like .v3-chart-col, because .main-content is a flex item with the
+   default min-width:auto — a row of 60 non-shrinking columns doesn't scroll
+   inside its own box, it drags the whole page sideways. */
+.v5-spark {
+  display: flex; align-items: flex-end; gap: 1px;
+  height: 90px; padding-top: 10px;
+}
+.v5-spark-bar {
+  flex: 1 1 0; min-width: 0; min-height: 2px;
+  background: var(--info); border-radius: 2px 2px 0 0;
+}
+.v5-spark-empty { background: var(--border); }
+.v5-spark-axis {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text-muted); margin-top: 6px;
+}
+
+/* ── Scatter plot (Clock Map) ───────────────────────────────────────────── */
+.v5-plot-wrap { display: flex; justify-content: center; }
+.v5-plot {
+  width: 100%; max-width: 360px; height: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+}
+.v5-plot-ring { fill: none; stroke: var(--border); stroke-dasharray: 3 4; }
+.v5-plot-axis { stroke: var(--border); stroke-width: 1; }
+.v5-plot-label { font-size: 10px; fill: var(--text-muted); }
+
+.v5-dot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  margin-right: 5px; vertical-align: -1px;
+}
+
+/* ── Prose tables ───────────────────────────────────────────────────────── */
+/* The app's default `td { white-space: nowrap }` is right for a table of times
+   and figures, but a table whose cells are sentences needs to wrap or it is
+   just a very wide horizontal scroll. */
+.v5-table-prose td { white-space: normal; line-height: 1.5; }
+.v5-table-prose td:first-child { min-width: 180px; }
+
+/* ── Notice banners ─────────────────────────────────────────────────────── */
+.v5-banner {
+  border: 1px solid var(--border); border-left: 4px solid var(--info, var(--primary));
+  background: var(--card-bg); border-radius: var(--radius);
+  padding: 12px 14px; font-size: 13.5px; line-height: 1.55; margin-bottom: 16px;
+}
+.v5-banner-off { border-left-color: var(--warning); }
+.v5-banner a { color: var(--primary); }
+
+/* ── Privacy switches ───────────────────────────────────────────────────── */
+.v5-switch-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.v5-switch-row:last-of-type { border-bottom: none; }
+.v5-switch-row input[type="checkbox"] {
+  width: 18px; height: 18px; margin-top: 2px; flex: 0 0 auto; cursor: pointer;
+}
+.v5-switch-body { display: flex; flex-direction: column; gap: 3px; }
+.v5-switch-label { font-size: 14px; font-weight: 600; }
+.v5-switch-hint  { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+
+/* A switch whose parent switch is off is still readable, just clearly inert —
+   greying it out entirely would hide what it does. */
+.v5-switch-disabled { cursor: default; }
+.v5-switch-disabled .v5-switch-label,
+.v5-switch-disabled .v5-switch-hint { opacity: 0.5; }
+
+/* ── Settings-page block ────────────────────────────────────────────────── */
+/* The same switches appear in Settings; they share the markup above but sit in
+   a card there, so they need the top rule back. */
+#v5SettingsBlock .v5-switch-row:first-of-type { padding-top: 0; }

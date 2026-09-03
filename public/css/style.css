@@ -97,6 +97,11 @@ body {
 .main-content {
   margin-left: var(--sidebar-width);
   flex: 1;
+  /* A flex item defaults to min-width:auto, which means it refuses to shrink
+     below its widest content — so a wide table dragged the whole page sideways
+     instead of scrolling inside its own .table-wrapper, which is the entire
+     point of that wrapper. min-width:0 lets the scroll containers do their job. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 100vh;

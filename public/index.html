@@ -15,6 +15,8 @@
   <link rel="stylesheet" href="/css/style.css?v=20260821a" />
   <!-- V3.0 feature styles — separate file so the whole feature set stays liftable -->
   <link rel="stylesheet" href="/css/v3.css?v=20260821d" />
+  <!-- V5.0 usage-analytics styles — same reasoning, kept as its own file -->
+  <link rel="stylesheet" href="/css/v5.css?v=20260903a" />
 </head>
 <body>
   <!-- Sidebar -->
@@ -93,6 +95,12 @@
            button to a page that lists them all is both shorter and easier to find. -->
       <li><a href="#" class="nav-link" data-view="v3-hub">
         <span class="nav-icon">✨</span><span class="nav-label">V3.0 Features</span>
+      </a></li>
+
+      <!-- V5.0 analytics — the app looking at itself. Same hub-page treatment
+           as V2/V3 so it costs one sidebar row rather than five. -->
+      <li><a href="#" class="nav-link" data-view="v5-hub">
+        <span class="nav-icon">📈</span><span class="nav-label">V5.0 Analytics</span>
       </a></li>
 
       <li class="nav-group" data-group="tools">
@@ -190,6 +198,14 @@
       <div id="view-pay-audit" class="view hidden"></div>
       <div id="view-tax-check" class="view hidden"></div>
       <div id="view-health-check" class="view hidden"></div>
+
+      <!-- V5.0 Features -->
+      <div id="view-v5-hub" class="view hidden"></div>
+      <div id="view-v5-usage" class="view hidden"></div>
+      <div id="view-v5-screens" class="view hidden"></div>
+      <div id="view-v5-habits" class="view hidden"></div>
+      <div id="view-v5-locations" class="view hidden"></div>
+      <div id="view-v5-privacy" class="view hidden"></div>
   </main>
 
   <!-- Modal -->
@@ -276,6 +292,20 @@
   <script src="/js/v3/payAudit.js?v=20260826a" defer></script>
   <script src="/js/v3/taxCheck.js?v=20260826a" defer></script>
   <script src="/js/v3/healthCheck.js?v=20260826a" defer></script>
+
+  <!-- V5.0 Features. v5core.js defines the V5 namespace and the register()
+       each view calls at load time, so it must come first — same contract as
+       v3core.js. tracker.js is the one file here that runs on every page load
+       rather than only when a V5 view is open; it wraps App.navigate, so it is
+       started from a DOMContentLoaded handler after app.js has routed. -->
+  <script src="/js/v5/v5core.js?v=20260903a" defer></script>
+  <script src="/js/v5/hub.js?v=20260903a" defer></script>
+  <script src="/js/v5/usage.js?v=20260903a" defer></script>
+  <script src="/js/v5/screens.js?v=20260903a" defer></script>
+  <script src="/js/v5/habits.js?v=20260903a" defer></script>
+  <script src="/js/v5/locations.js?v=20260903a" defer></script>
+  <script src="/js/v5/privacy.js?v=20260903a" defer></script>
+  <script src="/js/v5/tracker.js?v=20260903a" defer></script>
 
   <script src="/js/navCustomise.js?v=20260902a" defer></script>
   <script src="/js/app.js?v=20260821d" defer></script>

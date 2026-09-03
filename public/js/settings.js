@@ -155,6 +155,63 @@ const SettingsView = {
           </div>
         </div>
 
+        <!-- V5.0 Usage & Location Analytics -->
+        <div class="settings-section" data-search="usage analytics location gps tracking privacy v5 telemetry clock map habits screen time data retention">
+          <div class="card">
+            <div class="card-header"><h2>📈 Usage &amp; Location</h2></div>
+            <div class="card-body" id="v5SettingsBlock">
+              <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
+                Controls what the app records about how you use it — the data behind
+                <a href="#" id="v5SettingsHubLink">V5.0 Analytics</a>. All of it stays in your own
+                database on your own server and is never sent anywhere else.
+              </p>
+
+              <label class="v5-switch-row">
+                <input type="checkbox" id="setV5Analytics" />
+                <span class="v5-switch-body">
+                  <span class="v5-switch-label">Usage analytics</span>
+                  <span class="v5-switch-hint">App opens, how long each visit lasts, and which screens you open for how long. Turning this off stops all recording, location included.</span>
+                </span>
+              </label>
+
+              <label class="v5-switch-row">
+                <input type="checkbox" id="setV5Location" />
+                <span class="v5-switch-body">
+                  <span class="v5-switch-label">📍 Location tracking</span>
+                  <span class="v5-switch-hint">Takes a GPS fix when you clock in and when you clock out — nothing in between. <strong>Off by default.</strong> Your phone will ask permission the first time.</span>
+                </span>
+              </label>
+
+              <label class="v5-switch-row">
+                <input type="checkbox" id="setV5LocationOpen" />
+                <span class="v5-switch-body">
+                  <span class="v5-switch-label">Location when the app opens</span>
+                  <span class="v5-switch-hint">Also take a fix every time you open the app. Far more data, and rarely worth it — leave off unless you have a reason.</span>
+                </span>
+              </label>
+
+              <div class="form-group" style="max-width:240px;margin-top:16px">
+                <label>Keep data for</label>
+                <select id="setV5Retention">
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
+                  <option value="180">6 months</option>
+                  <option value="365">1 year</option>
+                  <option value="730">2 years</option>
+                  <option value="0">Forever</option>
+                </select>
+                <div class="form-hint">Anything older is deleted automatically.</div>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-primary" id="saveV5AnalyticsBtn">Save</button>
+                <button class="btn btn-ghost" id="v5ManageDataBtn">🔒 Manage &amp; delete collected data</button>
+                <span id="v5AnalyticsStatus" style="font-size:13px;color:var(--text-muted)"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- NFC / Quick-Tap Clock In/Out -->
         <div class="settings-section" data-search="nfc tag quick tap token url shortcut bookmark">
           <div class="card">
@@ -593,6 +650,13 @@ const SettingsView = {
     document.getElementById('recalcShiftsBtn').addEventListener('click', () => this.recalcShifts());
     document.getElementById('saveClockThresholdsBtn').addEventListener('click', () => this.saveClockThresholds());
 
+    // V5.0 usage & location
+    document.getElementById('saveV5AnalyticsBtn')?.addEventListener('click', () => this.saveV5Analytics());
+    document.getElementById('v5ManageDataBtn')?.addEventListener('click', () => App.navigate('v5-privacy'));
+    document.getElementById('v5SettingsHubLink')?.addEventListener('click', e => { e.preventDefault(); App.navigate('v5-hub'); });
+    document.getElementById('setV5Analytics')?.addEventListener('change', () => this._syncV5Switches());
+    document.getElementById('setV5Location')?.addEventListener('change', () => this._syncV5Switches());
+
     // NFC Clock In/Out
     document.getElementById('nfcGenerateBtn')?.addEventListener('click', () => this.generateNfcToken());
     document.getElementById('nfcCopyBtn')?.addEventListener('click', () => this.copyNfcUrl());
@@ -891,6 +955,7 @@ const SettingsView = {
       this.populateGeneral();
       this.populateCommute();
       this.populateClockThresholds();
+      this.populateV5Analytics();
       this.renderPayRates();
       this.renderMilestones();
       this.renderDelivSchedules();
@@ -1505,6 +1570,70 @@ const SettingsView = {
     document.getElementById('setClockInLate').value   = this.settings.clock_in_late_threshold   ?? oldLate;
     document.getElementById('setClockOutEarly').value = this.settings.clock_out_early_threshold ?? oldEarly;
     document.getElementById('setClockOutLate').value  = this.settings.clock_out_late_threshold  ?? oldLate;
+  },
+
+  /* ── V5.0 usage & location ────────────────────────────────────────────
+     The same three switches live on the V5 Data & Privacy page, which also
+     shows the row counts. Both write the same settings keys, and both tell the
+     running tracker straight away so a change takes effect on the next event
+     rather than the next page load. */
+
+  populateV5Analytics() {
+    // Usage tracking defaults on; location defaults OFF — an unset key must not
+    // read as "yes, record my position".
+    const on = (key, dflt) => {
+      const v = this.settings[key];
+      return v === undefined || v === '' ? dflt : (v === '1' || v === 'true');
+    };
+    const el = id => document.getElementById(id);
+    if (!el('setV5Analytics')) return;
+    el('setV5Analytics').checked    = on('v5_analytics_enabled', true);
+    el('setV5Location').checked     = on('v5_location_enabled', false);
+    el('setV5LocationOpen').checked = on('v5_location_on_open', false);
+    el('setV5Retention').value      = this.settings.v5_retention_days ?? '365';
+    this._syncV5Switches();
+  },
+
+  /** Location depends on analytics, and location-on-open depends on location —
+   *  greyed out live so the relationship is visible while you're deciding. */
+  _syncV5Switches() {
+    const a = document.getElementById('setV5Analytics');
+    const l = document.getElementById('setV5Location');
+    const o = document.getElementById('setV5LocationOpen');
+    if (!a || !l || !o) return;
+    l.disabled = !a.checked;
+    o.disabled = !a.checked || !l.checked;
+    l.closest('.v5-switch-row').classList.toggle('v5-switch-disabled', l.disabled);
+    o.closest('.v5-switch-row').classList.toggle('v5-switch-disabled', o.disabled);
+  },
+
+  async saveV5Analytics() {
+    const status = document.getElementById('v5AnalyticsStatus');
+    const a = document.getElementById('setV5Analytics').checked;
+    const l = document.getElementById('setV5Location').checked && a;
+    const o = document.getElementById('setV5LocationOpen').checked && l;
+    status.textContent = 'Saving…';
+    try {
+      await API.saveSettings({
+        v5_analytics_enabled: a ? '1' : '0',
+        v5_location_enabled:  l ? '1' : '0',
+        v5_location_on_open:  o ? '1' : '0',
+        v5_retention_days:    document.getElementById('setV5Retention').value,
+      });
+      this.settings = await API.getSettings();
+      if (window.App) App.settings = this.settings;
+      // The running tracker is told directly, so switching location off stops
+      // the next clock-in asking for GPS without needing a reload.
+      if (typeof V5Tracker !== 'undefined') {
+        V5Tracker.setConfig({ analytics: a, location: l, locationOnOpen: o });
+      }
+      this.populateV5Analytics();
+      status.textContent = '✓ Saved';
+      showToast('Usage settings saved', 'success');
+    } catch (e) {
+      status.textContent = '';
+      showToast(e.message, 'error');
+    }
   },
 
   renderDelivSchedules() {

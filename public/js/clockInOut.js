@@ -293,12 +293,18 @@ const ClockInOutView = {
     if (diff > this._thr('in','late') || diff < -this._thr('in','early')) {
       note = await this._promptReason(diff, false);
     }
+    // Ask for the GPS fix in parallel with the clock-in itself rather than
+    // before it: a slow or refused fix must never delay (or block) actually
+    // clocking in. V5Tracker resolves to null and records nothing if location
+    // tracking is switched off, so there is no permission prompt either.
+    const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('in') : null;
     try {
       this.entry = await API.post('/api/clock/in', { time: hhmm, note });
       this.renderToday();
       showToast('Clocked in ✓', 'success');
       await this.loadHistory();
     } catch(e) { showToast('Failed to clock in: ' + e.message, 'error'); }
+    fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_in', detail: hhmm }); });
   },
 
   async clockOut() {
@@ -311,6 +317,8 @@ const ClockInOutView = {
     if (diff < -this._thr('out','early') || diff > this._thr('out','late')) {
       note = await this._promptReason(diff, true);
     }
+    const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('out') : null;
+    fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_out', detail: hhmm }); });
     try {
       this.entry = await API.post('/api/clock/out', { time: hhmm, note });
       this.renderToday();
