@@ -110,6 +110,27 @@ router.post('/commute/geocode', async (req, res) => {
 // Open-Meteo's practical forecast horizon — beyond this, don't bother calling out.
 const MAX_FORECAST_DAYS = 15;
 
+// Is this date a delivery day? Same rule the Insights page uses: the newest
+// delivery_schedules row whose effective_from has been reached wins, falling
+// back to the legacy single delivery_days setting when no schedules exist.
+function isDeliveryDay(dateStr) {
+  const dow = String(new Date(dateStr + 'T12:00:00').getDay());   // 0=Sun … 6=Sat
+  const schedules = db.prepare(
+    'SELECT effective_from, days FROM delivery_schedules ORDER BY effective_from DESC'
+  ).all();
+  const applicable = schedules.find(s => s.effective_from <= dateStr);
+  const days = applicable
+    ? applicable.days
+    : (schedules.length ? null : (getSetting('delivery_days') || '3,4,5'));
+  if (!days) return false;
+  return days.split(',').map(d => d.trim()).includes(dow);
+}
+
+// Delivery lands before the store opens, so the weather that matters for it is
+// the early morning — not whenever the shift happens to start. Unloading a cage
+// in the rain at 06:00 is the thing worth knowing about the night before.
+const DELIVERY_HOUR = 6;
+
 router.get('/commute/weather', async (req, res) => {
   const { date, start, end } = req.query;
   if (!date || !start || !end) return res.status(400).json({ error: 'date, start, end required' });
@@ -152,10 +173,22 @@ router.get('/commute/weather', async (req, res) => {
       };
     };
 
+    // On a delivery day, add the weather at the store for the delivery slot
+    // itself — the shift might not start until 09:00, but the cages are being
+    // unloaded outside at 06:00 either way.
+    let delivery = null;
+    if (isDeliveryDay(date)) {
+      const delivTime = new Date(`${date}T00:00:00`);
+      delivTime.setHours(DELIVERY_HOUR, 0, 0, 0);
+      delivery = build(workForecast[nearestHourKey(delivTime)], delivTime);
+    }
+
     res.json({
       available: true,
       commute_to: build(toPoint, toTime),
       commute_home: build(homePoint, homeTime),
+      is_delivery_day: !!delivery,
+      delivery,
     });
   } catch (e) {
     res.status(502).json({ available: false, error: e.message });

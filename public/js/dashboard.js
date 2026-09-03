@@ -379,7 +379,11 @@ const DashboardView = {
         <span>${icon} ${label} (${point.time}): ${Math.round(point.temp)}°C ${point.icon}</span>${alertsHtml}
       </div>`;
     };
-    const rows = leg('🚗', 'Commute To', weather.commute_to) + leg('🚶', 'Commute Home', weather.commute_home);
+    const rows = leg('🚗', 'Commute To', weather.commute_to)
+      + leg('🚶', 'Commute Home', weather.commute_home)
+      // Delivery weather only appears on delivery days — the server decides
+      // that from the delivery schedule, so there's nothing to check here.
+      + leg('📦', 'Delivery', weather.delivery);
     if (!rows) return '';
     return `<div class="dash-weather-box">${rows}</div>`;
   },

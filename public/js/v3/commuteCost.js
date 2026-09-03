@@ -45,6 +45,60 @@ V3.register('commute-cost', '⛽ Commute Cost', {
     }
   },
 
+  // Petrol vs electricity on the same miles. Both columns are always costed —
+  // switching "Fuel type" changes which one the rest of the page uses, not
+  // whether the other can be worked out — so this answers "should I switch?"
+  // without having to flip the setting back and forth and remember two numbers.
+  _comparisonCard(d) {
+    const c = d.comparison;
+    if (!c || !d.total_miles) return '';
+    const col = (o, icon, name) => {
+      const win = c.cheaper === o.fuel_type;
+      return `
+        <div style="flex:1;min-width:130px;padding:12px;border-radius:10px;
+                    border:1px solid ${win ? 'var(--success)' : 'var(--border)'};
+                    background:${win ? 'color-mix(in srgb, var(--success) 8%, transparent)' : 'transparent'}">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
+            ${icon} ${name}${win ? ' <span style="color:var(--success);font-weight:600">· cheaper</span>' : ''}
+          </div>
+          <div style="font-size:22px;font-weight:700">${fmtCurrency(o.total_cost)}</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.8;margin-top:6px">
+            ${o.pence_per_mile}p/mile energy<br>
+            ${fmtCurrency(o.per_shift)} per shift<br>
+            ${o.units.amount} ${o.units.label}<br>
+            ${o.minutes_per_shift} min/shift worked for it
+          </div>
+        </div>`;
+    };
+    const be = c.break_even;
+    return `
+      <div class="card">
+        <div class="card-header"><h2>⚡ Electricity vs petrol</h2></div>
+        <div class="card-body">
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            ${col(c.petrol, '⛽', 'Petrol')}
+            ${col(c.electric, '🔌', 'Electric')}
+          </div>
+          <div style="margin-top:14px;font-size:13px;line-height:1.8;color:var(--text-muted)">
+            ${c.cheaper
+              ? `Over these ${d.total_miles} miles, <strong style="color:var(--text)">${c.cheaper === 'electric' ? 'charging' : 'filling up'}
+                 saves ${fmtCurrency(c.saving)}</strong> — about
+                 ${fmtCurrency(d.shifts ? c.saving / d.shifts : 0)} a shift.`
+              : 'The two work out at exactly the same cost over these miles.'}
+          </div>
+          <div class="v3-section-title">⚖️ Where they'd break even</div>
+          <ul style="font-size:13px;line-height:1.9;padding-left:20px;color:var(--text-muted)">
+            ${be.elec_price_per_kwh != null ? `<li>At <strong style="color:var(--text)">${be.elec_price_per_kwh}p/kWh</strong>
+              electricity would cost the same per mile as petrol does now (you pay ${d.settings.elec_price_per_kwh}p).</li>` : ''}
+            ${be.fuel_price_ppl != null ? `<li>At <strong style="color:var(--text)">${be.fuel_price_ppl}p/litre</strong>
+              petrol would cost the same per mile as charging does now (you pay ${d.settings.fuel_price_ppl}p).</li>` : ''}
+          </ul>
+          <div class="v3-note">Both columns use the same wear &amp; tear and parking figures — only the energy differs.
+            Set the MPG, fuel price, miles/kWh and electricity price under “Your car” for these to mean anything.</div>
+        </div>
+      </div>`;
+  },
+
   render() {
     const d = this.data;
     const el = document.getElementById('view-commute-cost');
@@ -101,6 +155,8 @@ V3.register('commute-cost', '⛽ Commute Cost', {
             <div class="v3-note">${esc(d.hmrc.note)} Distances come from each shift's mileage field, doubled for the return leg.</div>
           </div>
         </div>
+
+        ${this._comparisonCard(d)}
 
         <div class="card">
           <div class="card-header"><h2>🚗 Your car</h2></div>

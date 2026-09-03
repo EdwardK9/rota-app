@@ -320,15 +320,32 @@ const ClockInOutView = {
 
     } catch(e) { showToast('Failed to clock out: ' + e.message, 'error'); return; }
 
-    // If there's a linked shift, ask about the break and mark it complete — and say
-    // so when that doesn't happen, rather than leaving the shift silently incomplete.
+    // The server has already marked the day's shift complete (assuming the
+    // scheduled break) so it can't be left open by a dismissed dialog or a
+    // closed tab. All that's left here is to ask what break was actually taken
+    // and correct it if the answer isn't "the full one".
+    const autoCompleted = this.entry?.completed_shift || null;
+    // this.shift is whatever was loaded when the view opened; the clock-out
+    // response is current. Prefer it, and fall back to a re-fetch rather than
+    // giving up because a page left open since this morning has stale state.
+    if (autoCompleted) this.shift = autoCompleted;
+    if (!this.shift?.id) {
+      try { this.shift = (await API.get('/api/clock/today'))?.shift || null; } catch (_) {}
+    }
     if (!this.shift?.id) {
       showToast("No shift on today's rota to mark complete", 'warning');
       return;
     }
+    if (autoCompleted) showToast('Shift marked complete ✓', 'success');
+
     const breakResult = await this._promptBreak(this.shift.break_scheduled_minutes || 30);
     if (breakResult === null) {
-      showToast('Shift NOT marked complete (break question cancelled)', 'warning');
+      showToast(
+        autoCompleted
+          ? 'Kept the scheduled break — edit the shift if that\'s wrong'
+          : 'Shift NOT marked complete (break question cancelled)',
+        'warning'
+      );
       return;
     }
     try {
@@ -338,7 +355,7 @@ const ClockInOutView = {
         break_taken: breakResult.break_taken,
         break_taken_minutes: breakResult.break_taken_minutes,
       });
-      showToast('Shift marked complete ✓', 'success');
+      showToast(autoCompleted ? 'Break saved ✓' : 'Shift marked complete ✓', 'success');
     } catch (e) {
       showToast('Marking the shift complete failed: ' + e.message, 'error');
     }

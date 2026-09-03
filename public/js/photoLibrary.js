@@ -307,15 +307,12 @@ const PhotoLibrary = {
             <img src="/api/photo-library/files/${f.id}/image"
                  style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block"
                  loading="lazy" />
-            ${sel ? `<div style="position:absolute;top:6px;right:6px;width:22px;height:22px;
-                       border-radius:50%;background:var(--primary);display:flex;align-items:center;
-                       justify-content:center;font-size:13px">✓</div>` : ''}
-            <button class="pl-hover-btn" data-view-id="${f.id}"
-               style="position:absolute;bottom:26px;left:5px;width:26px;height:26px;border:0;
-                      border-radius:50%;background:rgba(0,0,0,0.55);color:#fff;display:flex;
-                      align-items:center;justify-content:center;font-size:13px;cursor:pointer;
-                      opacity:${hoverless ? 1 : 0};transition:opacity 0.15s;z-index:2"
-               title="View bigger">🔍</button>
+            <button data-select-id="${f.id}" title="${sel ? 'Deselect' : 'Select'}"
+               style="position:absolute;top:6px;right:6px;width:26px;height:26px;padding:0;
+                      border:2px solid ${sel ? 'var(--primary)' : 'rgba(255,255,255,0.85)'};
+                      border-radius:50%;background:${sel ? 'var(--primary)' : 'rgba(0,0,0,0.4)'};
+                      color:#fff;display:flex;align-items:center;justify-content:center;
+                      font-size:14px;line-height:1;cursor:pointer;z-index:3">${sel ? '✓' : ''}</button>
             <a href="/api/photo-library/files/${f.id}/image" download="${esc(f.filename)}"
                class="pl-hover-btn"
                style="position:absolute;bottom:26px;right:5px;width:26px;height:26px;
@@ -329,18 +326,27 @@ const PhotoLibrary = {
                  title="${esc(f.filename)}">${esc(f.filename)}</div>
           </div>`;
       }).join('');
+      // Tapping the photo opens it full-screen — the obvious gesture, and the
+      // only way to actually read a rota screenshot on a phone. Selecting is
+      // the deliberate act now: the circle in the corner, or a tap anywhere on
+      // the card once something is already selected (so building up a multi-
+      // select doesn't mean hitting a 26px target over and over).
       grid.querySelectorAll('.pl-photo-card').forEach(el => {
-        el.addEventListener('click', () => this.toggleSelect(parseInt(el.dataset.fileId)));
+        el.addEventListener('click', () => {
+          const id = parseInt(el.dataset.fileId, 10);
+          if (this.selectedIds.size > 0) this.toggleSelect(id);
+          else this.openViewer(id);
+        });
         const btns = el.querySelectorAll('.pl-hover-btn');
         if (!hoverless && btns.length) {
           el.addEventListener('mouseenter', () => btns.forEach(b => b.style.opacity = '1'));
           el.addEventListener('mouseleave', () => btns.forEach(b => b.style.opacity = '0'));
         }
       });
-      grid.querySelectorAll('[data-view-id]').forEach(btn =>
+      grid.querySelectorAll('[data-select-id]').forEach(btn =>
         btn.addEventListener('click', e => {
-          e.stopPropagation();   // viewing isn't selecting
-          this.openViewer(parseInt(btn.dataset.viewId, 10));
+          e.stopPropagation();   // selecting isn't viewing
+          this.toggleSelect(parseInt(btn.dataset.selectId, 10));
         })
       );
     }

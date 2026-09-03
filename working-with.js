@@ -1909,13 +1909,126 @@ router.get('/photo-library/folders/:id/files', (req, res) => {
 // Turn a Gemini date_range string ("Aug 17 - Aug 23, 2026") into a Monday date + a
 // DD.MM.YYYY - DD.MM.YYYY display name, or null if it can't be parsed.
 function weekRangeForFilename(dateRange) {
-  const weekDates = resolveWeekDates(dateRange);
+  const weekDates = resolveWeekDates(dateRange) || resolveWeekDatesLoose(dateRange);
   if (!weekDates) return null;
+  return labelForWeekDates(weekDates);
+}
+
+function labelForWeekDates(weekDates) {
   const toDDMMYYYY = iso => {
     const [y, m, d] = iso.split('-');
     return `${d}.${m}.${y}`;
   };
   return { weekStart: weekDates[0], label: `${toDDMMYYYY(weekDates[0])} - ${toDDMMYYYY(weekDates[6])}` };
+}
+
+// resolveWeekDates only understands "Month DD, YYYY" at the very end of the
+// string — which is what the Rotageek header happens to look like, and nothing
+// else. Every other way a week can be written ("25 Aug – 31 Aug 2026",
+// "25/08/2026 - 31/08/2026", "Aug 25 – 31, 2026", or a header with no year at
+// all) parsed to null, and null is the 422 that failed a whole rename queue
+// without ever being a problem with the photo. This is the wider net: find the
+// last date anywhere in the string, filling in month/year from earlier in it
+// when the end date doesn't carry its own.
+const SHORT_MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+function resolveWeekDatesLoose(dateRange) {
+  if (!dateRange) return null;
+  const s = String(dateRange).trim();
+  const monIdx = name => SHORT_MONTHS.indexOf(String(name).toLowerCase().slice(0, 3));
+
+  const found = [];   // { y, m, d } in source order, m/y possibly null
+  const push = (d, m, y) => found.push({ d, m, y });
+
+  // ISO / numeric, either separator order: 2026-08-31, 31/08/2026, 31.08.2026
+  for (const m of s.matchAll(/(\d{4})-(\d{1,2})-(\d{1,2})/g)) push(+m[3], +m[2] - 1, +m[1]);
+  for (const m of s.matchAll(/(\d{1,2})[./](\d{1,2})[./](\d{4})/g)) push(+m[1], +m[2] - 1, +m[3]);
+  // "Aug 31[,] [2026]" and "31 Aug[,] [2026]"
+  for (const m of s.matchAll(/([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/g)) {
+    const mi = monIdx(m[1]);
+    if (mi >= 0) push(+m[2], mi, m[3] ? +m[3] : null);
+  }
+  for (const m of s.matchAll(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,})\.?,?\s*(\d{4})?/g)) {
+    const mi = monIdx(m[2]);
+    if (mi >= 0) push(+m[1], mi, m[3] ? +m[3] : null);
+  }
+  // A bare trailing day with no month of its own — "Aug 25 – 31, 2026"
+  if (!found.length) return null;
+  const bare = s.match(/[-–—to]\s*(\d{1,2})(?:st|nd|rd|th)?\s*,?\s*(\d{4})?\s*$/i);
+  if (bare) push(+bare[1], null, bare[2] ? +bare[2] : null);
+
+  // Everything the string does state, to fill in what the end date doesn't.
+  const anyMonth = found.find(f => f.m !== null)?.m ?? null;
+  const anyYear  = found.find(f => f.y !== null)?.y ?? null;
+
+  const end = found[found.length - 1];
+  const day   = end.d;
+  const month = end.m ?? anyMonth;
+  // No year anywhere is normal on a phone screenshot. The photo is a rota, so
+  // the week is near today — pick the candidate year whose date is closest to
+  // now rather than assuming the current one and being 6 months out each New Year.
+  let year = end.y ?? anyYear;
+  if (month === null || !Number.isFinite(day)) return null;
+  if (year == null) {
+    const now = new Date();
+    year = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
+      .reduce((best, y) => {
+        const dist = cy => Math.abs(new Date(cy, month, day) - now);
+        return dist(y) < dist(best) ? y : best;
+      });
+  }
+
+  const endDate = new Date(year, month, day);
+  if (isNaN(endDate)) return null;
+  const dates = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(endDate);
+    d.setDate(endDate.getDate() - i);
+    dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  }
+  return dates;
+}
+
+// The rename queue only ever needed the week off the top of the screenshot, but
+// it was asking with OLLAMA_PROMPT — the full "transcribe every shift on this
+// rota" instruction. That's a much harder job to get exactly right, it costs
+// several times the tokens out of the same free-tier allowance, and any slip
+// anywhere in the transcription came back as a JSON parse failure and therefore
+// as "could not read a week range". Asking only for the thing we use is both
+// cheaper and far more likely to succeed.
+const WEEK_RANGE_PROMPT = `This image is a screenshot of a work rota for one week.
+
+Find the week it covers. It is usually written as a header near the top, e.g.
+"Feb 23, 2026 – Mar 1, 2026" or "23 Feb - 1 Mar". If there is no header, work it
+out from the day/date labels down the left-hand side.
+
+Return ONLY this JSON, nothing else:
+{"week_start":"YYYY-MM-DD","week_end":"YYYY-MM-DD","header":"<the header text exactly as shown, or empty string>"}
+
+Rules:
+- week_start is the MONDAY of that week, week_end is the SUNDAY — exactly 7 days apart.
+- If no year is shown anywhere, use the year that makes the dates match the weekdays shown.
+- If you genuinely cannot tell which week it is, return {"week_start":null,"week_end":null,"header":""}.`;
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Prefer the ISO dates the model was asked for; fall back to parsing the header
+// text it echoed back, so a model that ignores the schema but does read the
+// header still gets the photo renamed.
+function weekRangeFromParsed(parsed) {
+  if (!parsed) return null;
+  const start = typeof parsed.week_start === 'string' ? parsed.week_start.trim() : '';
+  if (ISO_DATE_RE.test(start) && !isNaN(new Date(start + 'T12:00:00'))) {
+    const d0 = new Date(start + 'T12:00:00');
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(d0);
+      d.setDate(d0.getDate() + i);
+      dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+    return labelForWeekDates(dates);
+  }
+  return weekRangeForFilename(parsed.header || parsed.date_range);
 }
 
 function getOrCreatePhotoFolder(name) {
@@ -2001,10 +2114,16 @@ async function renamePhotoFileWithGemini(f) {
     const err = new Error('Photo file not found'); err.status = 404; throw err;
   }
   const buffer = fs.readFileSync(f.file_path);
-  const { parsed } = await callGeminiVision(buffer, f.mime_type || 'image/jpeg');
-  const range = parsed ? weekRangeForFilename(parsed.date_range) : null;
+  const { parsed, rawText } = await callGeminiVision(buffer, f.mime_type || 'image/jpeg', WEEK_RANGE_PROMPT);
+  const range = weekRangeFromParsed(parsed);
   if (!range) {
-    const err = new Error('Could not read a week range from this image'); err.status = 422; throw err;
+    // Say what it actually came back with. "Could not read a week range" on its
+    // own is unactionable in the queue card — you can't tell a photo that isn't
+    // a rota from a header in a format the parser doesn't know.
+    const saw = (rawText || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const err = new Error('Could not read a week range from this image' + (saw ? ` — Gemini said: ${saw}` : ''));
+    err.status = 422;
+    throw err;
   }
 
   const ext = fsPath.extname(f.filename) || '.jpg';

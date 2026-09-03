@@ -124,6 +124,50 @@ router.get('/commute-cost', (req, res) => {
   const litres = cfg.fuel_type !== 'electric' && cfg.mpg > 0 ? round1(totalMiles / cfg.mpg * LITRES_PER_GALLON) : 0;
   const kwh    = cfg.fuel_type === 'electric' && cfg.miles_per_kwh > 0 ? round1(totalMiles / cfg.miles_per_kwh) : 0;
 
+  // ── Petrol vs electricity, side by side ──────────────────────────────────
+  // Both sets of figures are stored regardless of which fuel_type is selected,
+  // so the same mileage can be costed both ways without changing any setting.
+  // Wear and parking are identical either way, so they're carried through
+  // rather than dropped — the totals then answer the actual question ("what
+  // would this same year of commuting have cost me on the other one?") instead
+  // of only comparing the energy line.
+  const sideBySide = fuelType => {
+    const alt = { ...cfg, fuel_type: fuelType };
+    const perMile = costPerMileFor(alt);
+    const energy  = round2(totalMiles * perMile);
+    const total   = round2(energy + wearCost + parkingCost);
+    return {
+      fuel_type: fuelType,
+      // Pence per mile — £/mile rounds to nothing useful at this scale.
+      pence_per_mile: Math.round(perMile * 100 * 100) / 100,
+      energy_cost: energy,
+      total_cost: total,
+      per_shift: shifts.length ? round2(total / shifts.length) : 0,
+      units: fuelType === 'electric'
+        ? { label: 'kWh', amount: alt.miles_per_kwh > 0 ? round1(totalMiles / alt.miles_per_kwh) : 0 }
+        : { label: 'litres', amount: alt.mpg > 0 ? round1(totalMiles / alt.mpg * LITRES_PER_GALLON) : 0 },
+      minutes_per_shift: effectiveHourly > 0 && shifts.length
+        ? Math.round(((total / shifts.length) / effectiveHourly) * 60) : 0,
+    };
+  };
+  const petrol   = sideBySide('petrol');
+  const electric = sideBySide('electric');
+  const cheaper  = electric.total_cost === petrol.total_cost
+    ? null : (electric.total_cost < petrol.total_cost ? 'electric' : 'petrol');
+
+  // The price at which the two swap places, so the comparison survives the next
+  // energy-price change without having to re-run it by hand.
+  const petrolPerMile = costPerMileFor({ ...cfg, fuel_type: 'petrol' });
+  const elecPerMile   = costPerMileFor({ ...cfg, fuel_type: 'electric' });
+  const breakEven = {
+    // p/kWh at which electricity costs the same per mile as petrol does now
+    elec_price_per_kwh: cfg.miles_per_kwh > 0
+      ? Math.round(petrolPerMile * cfg.miles_per_kwh * 100 * 100) / 100 : null,
+    // p/litre at which petrol costs the same per mile as electricity does now
+    fuel_price_ppl: cfg.mpg > 0
+      ? Math.round((elecPerMile * cfg.mpg / LITRES_PER_GALLON) * 100 * 100) / 100 : null,
+  };
+
   res.json({
     year: year || 'all',
     settings: cfg,
@@ -156,6 +200,13 @@ router.get('/commute-cost', (req, res) => {
       would_reimburse: round2(totalMiles * HMRC_RATE_PER_MILE),
       difference: round2(totalMiles * HMRC_RATE_PER_MILE - totalCost),
       note: 'For comparison only — ordinary commuting to a permanent workplace is not claimable.',
+    },
+    comparison: {
+      petrol,
+      electric,
+      cheaper,
+      saving: round2(Math.abs(petrol.total_cost - electric.total_cost)),
+      break_even: breakEven,
     },
     monthly,
     today: localDateStr(),

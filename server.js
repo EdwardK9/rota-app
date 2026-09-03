@@ -4413,6 +4413,48 @@ app.post('/api/clock/in', (req, res) => {
   res.json(db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(date));
 });
 
+// Clocking out is what "I've finished that shift" means, but marking the shift
+// itself complete used to happen only in the browser, after the clock-out call
+// came back — behind a break-length modal. Dismiss that modal, lose signal, lock
+// the phone, or close the tab, and the clock entry saved while the shift stayed
+// open, which is exactly the "I clocked out and it didn't mark it done" case.
+// So the server does it too: assume the scheduled break, which is the common
+// case, and let the client's follow-up PATCH correct it if the answer differs.
+// Never touches an already-completed shift.
+function _autoCompleteShiftForClockOut(date, clockOutTime) {
+  const dayShifts = db.prepare(
+    'SELECT * FROM shifts WHERE date = ? ORDER BY start_time ASC'
+  ).all(date);
+  if (!dayShifts.length) return null;
+
+  const shift = _nearestShiftByField(dayShifts, 'end_time', clockOutTime) || dayShifts[0];
+  if (!shift || shift.completed) return null;
+
+  const actualBreak     = resolveBreakMinutes('full', shift.break_scheduled_minutes, shift.break_taken_minutes);
+  const hours_worked    = calcHoursWorked(shift.start_time, shift.end_time, actualBreak);
+  const hours_paid      = calcHoursWorked(shift.start_time, shift.end_time, shift.break_scheduled_minutes);
+  const effectiveRate   = shift.hourly_rate ? shift.hourly_rate * (shift.is_bank_holiday ? 2 : 1) : null;
+  const calculated_pay  = effectiveRate ? Math.round(hours_paid * effectiveRate * 100) / 100 : null;
+
+  db.prepare(`
+    UPDATE shifts SET completed=1, break_taken=?, break_taken_minutes=?,
+      hours_worked=?, hours_paid=?, calculated_pay=?, updated_at=datetime('now')
+    WHERE id=?
+  `).run('full', actualBreak, hours_worked, hours_paid, calculated_pay, shift.id);
+
+  const updated = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift.id);
+  logAudit({
+    shift_id: updated.id,
+    action: 'completed',
+    changed_fields: ['completed', 'break_taken', 'break_taken_minutes'],
+    old_values: { completed: shift.completed, break_taken: shift.break_taken, break_taken_minutes: shift.break_taken_minutes },
+    new_values: { completed: 1, break_taken: 'full', break_taken_minutes: actualBreak },
+    source: 'clock-out',
+  });
+  gcal.safeUpsert(updated);
+  return updated;
+}
+
 // POST /api/clock/out
 app.post('/api/clock/out', (req, res) => {
   const date = req.body.date || localDateStr();
@@ -4424,8 +4466,16 @@ app.post('/api/clock/out', (req, res) => {
       clocked_out = excluded.clocked_out,
       note = COALESCE(excluded.note, note)
   `).run(date, time, note);
+  let completedShift = null;
+  try {
+    completedShift = _autoCompleteShiftForClockOut(date, time);
+  } catch (e) {
+    // Clocking out must still succeed even if completing the shift can't.
+    console.error('[Clock] auto-complete on clock-out failed:', e.message);
+  }
   webhooksRouter.fireShiftEndedWebhook({ end_time: time }).catch(() => {});
-  res.json(db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(date));
+  const entry = db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(date);
+  res.json({ ...entry, completed_shift: completedShift });
 });
 
 // PATCH /api/clock/:id
@@ -4842,6 +4892,26 @@ function _icsEscape(s) {
   return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 }
 
+// A subscribed calendar decides whether a VEVENT it has already imported has
+// CHANGED by looking at SEQUENCE (and LAST-MODIFIED), not by diffing the
+// fields. Without them, a client that has cached "Work 09:00–17:00" for
+// shift-42 is entitled to keep showing it forever even though the feed now
+// says 12:00–20:00 — which is exactly the "it made one for next week and never
+// picked up the new time" behaviour. SEQUENCE has to be a non-negative integer
+// that only ever goes up for a given UID, so: seconds since 2020 at the row's
+// last edit. Small enough to stay inside a 32-bit int, which some clients
+// still assume.
+const ICS_SEQUENCE_EPOCH = Date.UTC(2020, 0, 1);
+
+function _icsTimestamps(row) {
+  const modified = row.updated_at || row.created_at || null;
+  // SQLite datetime('now') is 'YYYY-MM-DD HH:MM:SS' in UTC.
+  const ms = modified ? Date.parse(modified.replace(' ', 'T') + 'Z') : NaN;
+  const at = Number.isFinite(ms) ? new Date(ms) : new Date();
+  const utc = at.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  return { stamp: utc, sequence: Math.max(0, Math.floor((at.getTime() - ICS_SEQUENCE_EPOCH) / 1000)) };
+}
+
 app.get('/calendar.ics', (req, res) => {
   const token = icalToken();
   if (token && req.query.token !== token) {
@@ -4890,10 +4960,13 @@ app.get('/calendar.ics', (req, res) => {
       const st = (s.start_time || '09:00').replace(':', '') + '00';
       const et = (s.end_time || '17:00').replace(':', '') + '00';
       const brk = s.break_scheduled_minutes ? ` (${s.break_scheduled_minutes}m break)` : '';
+      const ts = _icsTimestamps(s);
       lines.push(
         'BEGIN:VEVENT',
         `UID:shift-${s.id}@rota-tracker`,
         `DTSTAMP:${stamp}`,
+        `SEQUENCE:${ts.sequence}`,
+        `LAST-MODIFIED:${ts.stamp}`,
         `DTSTART;TZID=Europe/London:${d}T${st}`,
         `DTEND;TZID=Europe/London:${d}T${et}`,
         `SUMMARY:${_icsEscape('Work ' + (s.start_time || '') + '\u2013' + (s.end_time || ''))}`,
@@ -4905,10 +4978,13 @@ app.get('/calendar.ics', (req, res) => {
       // DTEND for all-day events is exclusive -> day after end_date
       const endExcl = new Date(l.end_date + 'T00:00:00Z');
       endExcl.setUTCDate(endExcl.getUTCDate() + 1);
+      const ts = _icsTimestamps(l);
       lines.push(
         'BEGIN:VEVENT',
         `UID:leave-${l.id}@rota-tracker`,
         `DTSTAMP:${stamp}`,
+        `SEQUENCE:${ts.sequence}`,
+        `LAST-MODIFIED:${ts.stamp}`,
         `DTSTART;VALUE=DATE:${l.start_date.replace(/-/g, '')}`,
         `DTEND;VALUE=DATE:${endExcl.toISOString().slice(0, 10).replace(/-/g, '')}`,
         `SUMMARY:${_icsEscape((l.leave_type === 'annual' ? 'Annual Leave' : l.leave_type) + (l.notes ? ' \u2014 ' + l.notes : ''))}`,
@@ -4919,6 +4995,11 @@ app.get('/calendar.ics', (req, res) => {
 
     res.set('Content-Type', 'text/calendar; charset=utf-8');
     res.set('Content-Disposition', 'inline; filename="rota.ics"');
+    // The feed is rebuilt from the database on every request, so there is never
+    // a good reason for anything between here and the calendar app to hand back
+    // an older copy.
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
     res.send(lines.join('\r\n'));
   } catch (e) {
     res.status(500).send('Error building calendar: ' + e.message);

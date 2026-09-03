@@ -687,7 +687,8 @@ textarea { resize: vertical; min-height: 72px; }
 
   /* Calendar: tighter cells */
   .cal-cell { min-height: 58px; padding: 3px; }
-  .cal-shift-block { padding: 2px 4px; font-size: 10.5px; }
+  .cal-shift-block { padding: 2px 1px; font-size: 10.5px; }
+  .cal-shift-times { font-size: 10px; }
   .cal-day-num { font-size: 12px; }
 
   /* Modal full-screen on tiny phones */
@@ -1115,7 +1116,7 @@ textarea { resize: vertical; min-height: 72px; }
 
 @media (max-width: 600px) {
   .cal-cell { min-height: 72px; padding: 4px; }
-  .cal-shift-block { padding: 3px 5px; }
+  .cal-shift-block { padding: 3px 2px; }
   .cal-shift-meta { display: none; }
   .cal-day-headers { padding-right: 50px; }
   .cal-header-cell { font-size: 11px; letter-spacing: 0; padding: 8px 0; }
@@ -1123,6 +1124,12 @@ textarea { resize: vertical; min-height: 72px; }
      letting it wrap freely breaks it into three (the dash lands on its own
      line). Stack start over end instead, and drop the dash between them. */
   .cal-shift-times { white-space: normal; }
+  /* Stacking the times isn't enough on its own: on a 375px screen a day column
+     is ~44px, and after the cell and block padding "11:15" at 12px had 25px to
+     fit into and was simply cut in half by overflow:hidden — the shift times,
+     the one thing the calendar exists to show, unreadable on a phone. Size the
+     text to the column that actually exists rather than the one we'd like. */
+  .cal-shift-times { font-size: 10.5px; letter-spacing: -0.2px; text-align: center; }
   .cal-shift-times .cal-t-start,
   .cal-shift-times .cal-t-end { display: block; }
   .cal-shift-times .cal-t-dash { display: none; }
