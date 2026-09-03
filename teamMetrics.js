@@ -10,7 +10,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 const express = require('express');
-const { db, effectiveHourlyRate, shiftCost } = require('./db');
+const { db, effectiveHourlyRate, shiftCost, ROLES, ROLE_LABELS } = require('./db');
 const router = express.Router();
 
 function getSetting(key, fallback) {
@@ -31,7 +31,9 @@ function shiftDurationHours(row, hoursPerDay) {
 }
 
 const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const TIER_LABELS = { management: 'Management', supervisor: 'Supervisor', floor_staff: 'Floor Staff' };
+// Was three hardcoded tiers; the four roles now come from db.js so this can't
+// drift out of step with what people are actually assigned to.
+const TIER_LABELS = ROLE_LABELS;
 
 router.get('/team-metrics', (req, res) => {
   const weekParam = req.query.week || new Date().toISOString().slice(0, 10);
@@ -52,7 +54,8 @@ router.get('/team-metrics', (req, res) => {
   // Colleague shifts for the week, joined with their pay profile + job tier.
   // Leave doesn't count towards store spend (we don't track colleague leave pay).
   const rows = db.prepare(`
-    SELECT cs.*, c.pay_type, c.hourly_rate, c.annual_salary, c.nominal_weekly_hours, c.job_tier, c.name
+    SELECT cs.*, c.pay_type, c.hourly_rate, c.annual_salary, c.nominal_weekly_hours,
+           c.job_tier, c.pay_override, c.name
     FROM colleague_shifts cs
     JOIN colleagues c ON c.id = cs.colleague_id
     WHERE cs.date >= ? AND cs.date <= ? AND cs.shift_type != 'leave'
@@ -61,7 +64,7 @@ router.get('/team-metrics', (req, res) => {
 
   let totalStoreSpend = 0, totalStoreHours = 0;
   const dailySpend = {}; weekDates.forEach(d => { dailySpend[d] = 0; });
-  const tierSpend = { management: 0, supervisor: 0, floor_staff: 0 };
+  const tierSpend = Object.fromEntries(ROLES.map(r => [r, 0]));
   const missingPayProfile = new Set();
 
   // Coverage heatmap: hours 06:00-23:00 (18 slots) x 7 days
@@ -70,7 +73,9 @@ router.get('/team-metrics', (req, res) => {
   weekDates.forEach(d => { heatmap[d] = {}; HOURS.forEach(h => { heatmap[d][h] = { headcount: 0, cost: 0 }; }); });
 
   for (const row of rows) {
-    const rate = effectiveHourlyRate(row);
+    // Costed at the rate in force on the shift's own date, not today's —
+    // otherwise a pay rise quietly backdates itself over every past week.
+    const rate = effectiveHourlyRate(row, row.date);
     const durationHrs = shiftDurationHours(row, hoursPerDay);
     const hasRate = rate != null;
     if (!hasRate) missingPayProfile.add(row.name);
@@ -80,7 +85,7 @@ router.get('/team-metrics', (req, res) => {
       totalStoreSpend += cost;
       totalStoreHours += durationHrs;
       dailySpend[row.date] = Math.round((dailySpend[row.date] + cost) * 100) / 100;
-      const tier = TIER_LABELS[row.job_tier] ? row.job_tier : 'floor_staff';
+      const tier = TIER_LABELS[row.job_tier] ? row.job_tier : 'assistant';
       tierSpend[tier] += cost;
     }
 

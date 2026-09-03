@@ -129,6 +129,92 @@ function contractHoursForDate(dateStr) {
   return r ? r.contracted_hours_per_week : null;
 }
 
+/* ── Whose shifts? ────────────────────────────────────────────────────── */
+
+/**
+ * Every V3 module is written against the `shifts` table — my shifts, with a
+ * break, a rate and a pay figure on each row. Colleague shifts live in a much
+ * thinner table: date, times, store, nothing else. Rather than teach eight
+ * modules a second data model, this returns a FROM-clause fragment that makes
+ * a colleague's shifts look exactly like mine, so the existing SQL and the
+ * existing paidHours/shiftPay maths carry over untouched.
+ *
+ * The two derived columns are the whole trick:
+ *   break_scheduled_minutes — the same policy everyone is on (autoBreakMinutes)
+ *   hourly_rate             — the rate for their ROLE as of that shift's date,
+ *                             or their own if they're flagged as an exception
+ *
+ * distance_miles is deliberately always NULL: mileage is a property of MY
+ * commute, and there's no colleague equivalent to be had. Anything costing a
+ * journey should skip colleagues rather than invent a number for them.
+ *
+ * Pass the result where a table name goes: `FROM ${shiftsSource(id)} s`.
+ */
+function shiftsSource(colleagueId) {
+  if (!colleagueId) return 'shifts';
+  const id = parseInt(colleagueId, 10);
+  if (!Number.isInteger(id)) return 'shifts';
+
+  // Minutes between start and end, wrapping past midnight — the SQL twin of
+  // spanMins() above.
+  const DUR = `(((CAST(substr(cs.end_time,1,2) AS INTEGER) * 60 + CAST(substr(cs.end_time,4,2) AS INTEGER))
+                - (CAST(substr(cs.start_time,1,2) AS INTEGER) * 60 + CAST(substr(cs.start_time,4,2) AS INTEGER))
+                + 1440) % 1440)`;
+
+  // Mirrors autoBreakMinutes() in db.js: >8h → 45, >6h → 30, >4h30 → 15, else 0.
+  const BREAK = `(CASE WHEN ${DUR} > 480 THEN 45
+                       WHEN ${DUR} > 360 THEN 30
+                       WHEN ${DUR} > 270 THEN 15
+                       ELSE 0 END)`;
+
+  // Their own figures only when flagged as an exception; otherwise the role's
+  // rate as of this shift's date, so past shifts keep their historic cost.
+  const OWN_RATE = `(CASE WHEN c.pay_type = 'salaried'
+                          THEN CASE WHEN c.annual_salary > 0 AND c.nominal_weekly_hours > 0
+                                    THEN ROUND(c.annual_salary / (52.0 * c.nominal_weekly_hours), 2) END
+                          ELSE c.hourly_rate END)`;
+  const ROLE_RATE = `(SELECT CASE WHEN rp.pay_type = 'salaried'
+                                  THEN CASE WHEN rp.annual_salary > 0 AND rp.nominal_weekly_hours > 0
+                                            THEN ROUND(rp.annual_salary / (52.0 * rp.nominal_weekly_hours), 2) END
+                                  ELSE rp.hourly_rate END
+                        FROM role_pay rp
+                       WHERE rp.role = c.job_tier AND rp.effective_date <= cs.date
+                       ORDER BY rp.effective_date DESC LIMIT 1)`;
+  const RATE = `(CASE WHEN c.pay_override = 1 THEN ${OWN_RATE} ELSE COALESCE(${ROLE_RATE}, ${OWN_RATE}) END)`;
+
+  const PAID_HOURS = `ROUND(MAX(0, ${DUR} - ${BREAK}) / 60.0, 2)`;
+
+  return `(
+    SELECT
+      cs.id                       AS id,
+      cs.date                     AS date,
+      cs.start_time               AS start_time,
+      cs.end_time                 AS end_time,
+      ${BREAK}                    AS break_scheduled_minutes,
+      'full'                      AS break_taken,
+      ${BREAK}                    AS break_taken_minutes,
+      ${PAID_HOURS}               AS hours_worked,
+      ${PAID_HOURS}               AS hours_paid,
+      ${RATE}                     AS hourly_rate,
+      ROUND(${PAID_HOURS} * COALESCE(${RATE}, 0), 2) AS calculated_pay,
+      -- A rostered shift in the past is one they worked; there's no per-colleague
+      -- completion flag to consult, and treating everything as incomplete would
+      -- empty every "completed = 1" query the modules run.
+      CASE WHEN cs.date <= date('now') THEN 1 ELSE 0 END AS completed,
+      0                           AS is_bank_holiday,
+      NULL                        AS notes,
+      NULL                        AS distance_miles,
+      cs.store                    AS store,
+      cs.created_at               AS created_at,
+      cs.created_at               AS updated_at
+    FROM colleague_shifts cs
+    JOIN colleagues c ON c.id = cs.colleague_id
+    WHERE cs.colleague_id = ${id}
+      AND cs.shift_type = 'shift'
+      AND (cs.store IS NULL OR cs.store = '')
+  )`;
+}
+
 /* ── Numbers ──────────────────────────────────────────────────────────── */
 
 const round1 = n => Math.round((n + Number.EPSILON) * 10) / 10;
@@ -141,6 +227,6 @@ module.exports = {
   getSetting, getNumSetting, setSetting,
   localDateStr, parseDate, addDays, daysBetween, mondayOf, dowIndex, isWeekend,
   toMins, fromMins, spanMins, overlapMins,
-  paidHours, shiftPay, rateForDate, contractHoursForDate,
+  paidHours, shiftPay, rateForDate, contractHoursForDate, shiftsSource,
   round1, round2, pct, clamp,
 };

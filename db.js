@@ -327,8 +327,115 @@ synergyMigrations.forEach(sql => {
 // -----------------------------------------
 // V2.0 Phase 3 -- Job tier, for the Pay Distribution donut chart
 // One of 'management' | 'supervisor' | 'floor_staff' (default).
+// v4.24.0 replaces those three with the four real roles below; the column name
+// is kept so nothing that already reads job_tier has to change.
 // -----------------------------------------
 try { db.exec("ALTER TABLE colleagues ADD COLUMN job_tier TEXT DEFAULT 'floor_staff'"); } catch (_) { /* already exists */ }
+
+// -----------------------------------------
+// v4.24.0 -- Roles and role pay
+//
+// Pay used to be set per person, which meant giving fourteen people the same
+// number by hand and doing it again on every rise. It's a property of the
+// ROLE: every store assistant is on the same hourly rate, both managers on
+// the same salary. So the rate lives on the role, dated the same way as your
+// own pay_rates so past shifts keep costing what they actually cost, and a
+// colleague only carries a figure of their own when they're genuinely an
+// exception (pay_override).
+// -----------------------------------------
+const ROLES = ['bm', 'am', 'duty', 'assistant'];
+const ROLE_LABELS = {
+  bm:        'Branch Manager',
+  am:        'Assistant Manager',
+  duty:      'Duty Manager',
+  assistant: 'Store Assistant',
+};
+// Managers are salaried, the shop floor is hourly. This is the default a new
+// role rate starts on, not a restriction — the pay type is editable per row.
+const ROLE_DEFAULT_PAY_TYPE = { bm: 'salaried', am: 'salaried', duty: 'hourly', assistant: 'hourly' };
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS role_pay (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL,
+    effective_date TEXT NOT NULL,
+    pay_type TEXT NOT NULL DEFAULT 'hourly',
+    hourly_rate REAL,
+    annual_salary REAL,
+    nominal_weekly_hours REAL,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(role, effective_date)
+  );
+`);
+
+try { db.exec('ALTER TABLE colleagues ADD COLUMN pay_override INTEGER DEFAULT 0'); } catch (_) { /* already exists */ }
+
+// One-off: fold the old three tiers into the four roles. 'supervisor' is the
+// duty manager and 'floor_staff' the store assistant. 'management' covered
+// both BM and AM, and nothing in the data says which is which, so they all
+// land on AM — there is only one branch manager and it's a one-click fix,
+// whereas guessing would silently mis-cost whoever it picked.
+const TIER_TO_ROLE = { supervisor: 'duty', floor_staff: 'assistant', management: 'am' };
+for (const [tier, role] of Object.entries(TIER_TO_ROLE)) {
+  db.prepare('UPDATE colleagues SET job_tier = ? WHERE job_tier = ?').run(role, tier);
+}
+
+// Seed each role's opening rate from whatever its people are already on, so
+// switching to role pay changes nobody's numbers on day one. The most common
+// value wins — an outlier is exactly what pay_override is for, and it gets
+// set below. Only ever runs while role_pay is empty.
+if (!db.prepare('SELECT COUNT(*) AS c FROM role_pay').get().c) {
+  const seedDate = '1970-01-01';   // before any shift, so it applies to all history
+  const insertRate = db.prepare(`
+    INSERT INTO role_pay (role, effective_date, pay_type, hourly_rate, annual_salary, nominal_weekly_hours, notes)
+    VALUES (?, ?, ?, ?, ?, ?, 'Carried over from per-person pay')
+  `);
+  for (const role of ROLES) {
+    const people = db.prepare('SELECT * FROM colleagues WHERE job_tier = ?').all(role);
+    const payType = ROLE_DEFAULT_PAY_TYPE[role];
+    // Modal non-null value for whichever field this pay type uses.
+    const field = payType === 'salaried' ? 'annual_salary' : 'hourly_rate';
+    const counts = new Map();
+    for (const p of people) {
+      if (p[field] == null) continue;
+      counts.set(p[field], (counts.get(p[field]) || 0) + 1);
+    }
+    const modal = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    const hoursCounts = new Map();
+    for (const p of people) {
+      if (p.nominal_weekly_hours == null) continue;
+      hoursCounts.set(p.nominal_weekly_hours, (hoursCounts.get(p.nominal_weekly_hours) || 0) + 1);
+    }
+    const modalHours = [...hoursCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 37.5;
+
+    insertRate.run(
+      role, seedDate, payType,
+      payType === 'hourly' ? modal : null,
+      payType === 'salaried' ? modal : null,
+      payType === 'salaried' ? modalHours : null
+    );
+
+    // Anyone not on the modal figure keeps their own, flagged as an exception.
+    if (modal != null) {
+      db.prepare(
+        `UPDATE colleagues SET pay_override = 1
+         WHERE job_tier = ? AND ${field} IS NOT NULL AND ${field} != ?`
+      ).run(role, modal);
+    }
+  }
+}
+
+/** The role's pay row in force on a given date, or null. */
+function rolePayForDate(role, date) {
+  if (!role) return null;
+  return db.prepare(`
+    SELECT * FROM role_pay
+    WHERE role = ? AND effective_date <= ?
+    ORDER BY effective_date DESC
+    LIMIT 1
+  `).get(role, date) || null;
+}
 
 // Migrations -- add new shift / payslip columns (safe to re-run)
 const shiftMigrations = [
@@ -507,24 +614,63 @@ function calcHoursWorked(start_time, end_time, breakMins) {
 
 // -----------------------------------------
 // Helper: effective hourly rate for a colleague (V2.0 pay profiles)
-// Hourly staff: their stored hourly_rate, as-is.
+// Hourly staff: the stored hourly_rate, as-is.
 // Salaried staff: Annual Salary / (52 * Nominal Weekly Hours), rounded to 2dp.
 // Returns null if the inputs needed for that pay type aren't set yet.
 // -----------------------------------------
-function effectiveHourlyRate(colleague) {
-  if (!colleague) return null;
-  if (colleague.pay_type === 'salaried') {
-    if (!colleague.annual_salary || !colleague.nominal_weekly_hours) return null;
-    return Math.round((colleague.annual_salary / (52 * colleague.nominal_weekly_hours)) * 100) / 100;
+function rateFromPayFields(src) {
+  if (!src) return null;
+  if (src.pay_type === 'salaried') {
+    if (!src.annual_salary || !src.nominal_weekly_hours) return null;
+    return Math.round((src.annual_salary / (52 * src.nominal_weekly_hours)) * 100) / 100;
   }
-  return colleague.hourly_rate != null ? colleague.hourly_rate : null;
+  return src.hourly_rate != null ? src.hourly_rate : null;
+}
+
+// The colleague's own figures are consulted only when they're flagged as an
+// exception; otherwise the rate comes from their role, as of `date`. Passing a
+// date matters — costing a shift from March against today's rate would quietly
+// backdate every pay rise. Falls back to the colleague's own fields when the
+// role has no rate on file yet, so nothing goes to null mid-migration.
+function effectiveHourlyRate(colleague, date) {
+  if (!colleague) return null;
+  if (colleague.pay_override) return rateFromPayFields(colleague);
+  const onDate = date || new Date().toISOString().slice(0, 10);
+  const roleRate = rateFromPayFields(rolePayForDate(colleague.job_tier, onDate));
+  return roleRate != null ? roleRate : rateFromPayFields(colleague);
 }
 
 /** Cost of a single shift for this colleague: duration (hrs) * effective hourly rate. */
-function shiftCost(colleague, durationHours) {
-  const rate = effectiveHourlyRate(colleague);
+function shiftCost(colleague, durationHours, date) {
+  const rate = effectiveHourlyRate(colleague, date);
   if (rate == null || durationHours == null) return null;
   return Math.round(durationHours * rate * 100) / 100;
 }
 
-module.exports = { db, getPayRateForDate, calcHoursWorked, effectiveHourlyRate, shiftCost };
+/**
+ * Auto-calculate break duration from shift length — the rota's break policy:
+ *   ≤ 4h30 → 0 min · 4h30–6h → 15 min · 6h–8h → 30 min · over 8h → 45 min
+ * Break increases only when the length EXCEEDS the boundary (strict >), so a
+ * 6h00 shift is 15 min and an 8h00 shift is 30 min.
+ *
+ * Lives here rather than in server.js because colleague shift costing needs it
+ * too, and the policy is the same for everyone — a copy that could drift is
+ * the last thing pay maths needs.
+ */
+function autoBreakMinutes(startTime, endTime) {
+  if (!startTime || !endTime) return 0;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  let mins = (eh * 60 + em) - (sh * 60 + sm);
+  if (mins < 0) mins += 24 * 60;
+  const T430 = 4 * 60 + 30;
+  if (mins > 8 * 60) return 45;
+  if (mins > 6 * 60) return 30;
+  if (mins > T430)   return 15;
+  return 0;
+}
+
+module.exports = {
+  db, getPayRateForDate, calcHoursWorked, effectiveHourlyRate, shiftCost,
+  autoBreakMinutes, rolePayForDate, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE,
+};

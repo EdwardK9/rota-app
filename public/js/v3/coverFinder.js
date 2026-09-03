@@ -23,9 +23,9 @@ V3.register('cover-finder', '🔁 Cover Finder', {
     }
   },
 
+  // Role codes now, not the old snake_case tiers — title-casing 'bm' gave "Bm".
   tier(t) {
-    if (!t) return '';
-    return t.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+    return ({ bm: 'Branch Manager', am: 'Assistant Manager', duty: 'Duty Manager', assistant: 'Store Assistant' })[t] || '';
   },
 
   shortDate(dateStr) {

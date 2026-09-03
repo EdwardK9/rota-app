@@ -77,7 +77,7 @@ V3.register('briefing', '🎒 Shift Briefing', {
                 <div class="v3-record-body">
                   <div class="v3-record-value" style="font-size:15px">${esc(c.name)}</div>
                   <div class="v3-record-title">${c.start_time}–${c.end_time}${
-                    c.job_tier && c.job_tier !== 'floor_staff' ? ' · ' + esc(c.job_tier.replace('_', ' ')) : ''}</div>
+                    c.job_tier && c.job_tier !== 'assistant' ? ' · ' + esc(({bm:'Branch Manager',am:'Assistant Manager',duty:'Duty Manager'})[c.job_tier] || c.job_tier) : ''}</div>
                 </div>
                 <div class="v3-record-meta">
                   <div><strong>${Math.round(c.overlap_mins / 60 * 10) / 10}h</strong></div>

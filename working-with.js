@@ -12,7 +12,7 @@
 
 const express  = require('express');
 const multer   = require('multer');
-const { db, effectiveHourlyRate } = require('./db');
+const { db, effectiveHourlyRate, rolePayForDate, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
 const router   = express.Router();
 
 // multer — store upload in memory (screenshots are typically <5 MB)
@@ -95,9 +95,93 @@ function decorateColleague(c) {
     ...c,
     tags,
     synergy_rating: c.synergy_rating ?? 0,
+    role: c.job_tier || 'assistant',
+    role_label: ROLE_LABELS[c.job_tier] || ROLE_LABELS.assistant,
+    pay_override: !!c.pay_override,
+    // Where the rate came from, so the UI can say "£13.48 · from Store
+    // Assistant" rather than leaving you to guess why editing this person's
+    // own figure changed nothing.
+    pay_source: c.pay_override ? 'personal' : 'role',
     effective_hourly_rate: effectiveHourlyRate(c),
   };
 }
+
+// ─────────────────────────────────────────
+// Role pay — the rate for a role, dated, so past shifts keep costing what they
+// actually cost. Same shape as your own pay_rates: rows are effective FROM a
+// date, and the newest one on or before a shift's date wins.
+// ─────────────────────────────────────────
+
+router.get('/role-pay', (req, res) => {
+  const rows = db.prepare('SELECT * FROM role_pay ORDER BY role ASC, effective_date DESC').all();
+  const today = new Date().toISOString().slice(0, 10);
+  res.json({
+    roles: ROLES.map(r => ({
+      role: r,
+      label: ROLE_LABELS[r],
+      default_pay_type: ROLE_DEFAULT_PAY_TYPE[r],
+      current: rolePayForDate(r, today),
+      people: db.prepare(
+        "SELECT COUNT(*) AS c FROM colleagues WHERE job_tier = ? AND (left_date IS NULL OR left_date = '')"
+      ).get(r).c,
+    })),
+    rates: rows,
+  });
+});
+
+function validateRolePay(body) {
+  const { role, effective_date, pay_type } = body;
+  if (!ROLES.includes(role)) return 'role must be one of: ' + ROLES.join(', ');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effective_date || '')) return 'effective_date must be YYYY-MM-DD';
+  if (!['hourly', 'salaried'].includes(pay_type)) return "pay_type must be 'hourly' or 'salaried'";
+  if (pay_type === 'hourly') {
+    if (!(parseFloat(body.hourly_rate) > 0)) return 'hourly_rate must be greater than zero';
+  } else {
+    if (!(parseFloat(body.annual_salary) > 0)) return 'annual_salary must be greater than zero';
+    if (!(parseFloat(body.nominal_weekly_hours) > 0)) return 'nominal_weekly_hours must be greater than zero';
+  }
+  return null;
+}
+
+router.post('/role-pay', (req, res) => {
+  const err = validateRolePay(req.body);
+  if (err) return res.status(400).json({ error: err });
+  const { role, effective_date, pay_type, hourly_rate, annual_salary, nominal_weekly_hours, notes } = req.body;
+  try {
+    // Re-saving the same role and date replaces that row rather than failing on
+    // the unique constraint — correcting a typo shouldn't need a delete first.
+    const info = db.prepare(`
+      INSERT INTO role_pay (role, effective_date, pay_type, hourly_rate, annual_salary, nominal_weekly_hours, notes)
+      VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(role, effective_date) DO UPDATE SET
+        pay_type = excluded.pay_type,
+        hourly_rate = excluded.hourly_rate,
+        annual_salary = excluded.annual_salary,
+        nominal_weekly_hours = excluded.nominal_weekly_hours,
+        notes = excluded.notes
+    `).run(
+      role, effective_date, pay_type,
+      pay_type === 'hourly'   ? parseFloat(hourly_rate)   : null,
+      pay_type === 'salaried' ? parseFloat(annual_salary) : null,
+      pay_type === 'salaried' ? parseFloat(nominal_weekly_hours) : null,
+      notes || null
+    );
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/role-pay/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM role_pay WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  // Deleting the only rate a role has would silently drop everyone in it to no
+  // pay at all, which reads as a bug rather than as a choice.
+  const left = db.prepare('SELECT COUNT(*) AS c FROM role_pay WHERE role = ?').get(row.role).c;
+  if (left <= 1) {
+    return res.status(400).json({ error: `${ROLE_LABELS[row.role]} needs at least one rate — edit this one instead of deleting it` });
+  }
+  db.prepare('DELETE FROM role_pay WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
 
 router.get('/colleagues', (req, res) => {
   const includeLeft = req.query.include_left === '1';
@@ -124,7 +208,7 @@ router.put('/colleagues/:id', (req, res) => {
   const {
     name, birthday, contract_hours, sort_order, left_date, start_date,
     pay_type, hourly_rate, annual_salary, nominal_weekly_hours,
-    tags, synergy_rating, notes, job_tier,
+    tags, synergy_rating, notes, job_tier, pay_override,
   } = req.body;
   const existing = db.prepare('SELECT * FROM colleagues WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -138,16 +222,17 @@ router.put('/colleagues/:id', (req, res) => {
   if (resolvedSynergy !== null && resolvedSynergy !== undefined && (resolvedSynergy < -2 || resolvedSynergy > 2)) {
     return res.status(400).json({ error: 'synergy_rating must be between -2 and 2' });
   }
-  const resolvedJobTier = job_tier !== undefined ? job_tier : (existing.job_tier || 'floor_staff');
-  if (resolvedJobTier && !['management', 'supervisor', 'floor_staff'].includes(resolvedJobTier)) {
-    return res.status(400).json({ error: "job_tier must be 'management', 'supervisor' or 'floor_staff'" });
+  // job_tier holds the role: bm | am | duty | assistant (see db.js ROLES).
+  const resolvedJobTier = job_tier !== undefined ? job_tier : (existing.job_tier || 'assistant');
+  if (resolvedJobTier && !ROLES.includes(resolvedJobTier)) {
+    return res.status(400).json({ error: 'job_tier must be one of: ' + ROLES.join(', ') });
   }
 
   db.prepare(`
     UPDATE colleagues SET
       name = ?, birthday = ?, contract_hours = ?, sort_order = ?, left_date = ?, start_date = ?,
       pay_type = ?, hourly_rate = ?, annual_salary = ?, nominal_weekly_hours = ?,
-      tags = ?, synergy_rating = ?, notes = ?, job_tier = ?
+      tags = ?, synergy_rating = ?, notes = ?, job_tier = ?, pay_override = ?
     WHERE id = ?
   `).run(
     name ?? existing.name,
@@ -164,6 +249,7 @@ router.put('/colleagues/:id', (req, res) => {
     resolvedSynergy,
     notes !== undefined ? notes : existing.notes,
     resolvedJobTier,
+    pay_override !== undefined ? (pay_override ? 1 : 0) : (existing.pay_override ? 1 : 0),
     req.params.id
   );
   res.json(decorateColleague(db.prepare('SELECT * FROM colleagues WHERE id = ?').get(req.params.id)));

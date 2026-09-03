@@ -50,7 +50,8 @@ router.get('/v1/export/team-analytics.csv', (req, res) => {
 
   const hoursPerDay = parseFloat(getSetting('hours_per_day', '7.4')) || 7.4;
   const rows = db.prepare(`
-    SELECT cs.*, c.name, c.pay_type, c.hourly_rate, c.annual_salary, c.nominal_weekly_hours
+    SELECT cs.*, c.name, c.pay_type, c.hourly_rate, c.annual_salary, c.nominal_weekly_hours,
+           c.job_tier, c.pay_override
     FROM colleague_shifts cs
     JOIN colleagues c ON c.id = cs.colleague_id
     WHERE cs.date >= ? AND cs.date <= ? AND cs.shift_type != 'leave'
@@ -64,7 +65,7 @@ router.get('/v1/export/team-analytics.csv', (req, res) => {
 
   for (const r of rows) {
     const hours = Math.round(shiftDurationHours(r, hoursPerDay) * 100) / 100;
-    const rate = effectiveHourlyRate(r);
+    const rate = effectiveHourlyRate(r, r.date);
     const cost = rate != null ? Math.round(hours * rate * 100) / 100 : '';
     const flags = (flagsLookup[r.colleague_id]?.flagsByDate[r.date] || []).join('; ');
     const isAllDay = r.shift_type === 'all_day';

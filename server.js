@@ -9,7 +9,7 @@ const http    = require('http');
 const zlib    = require('zlib');
 const { execSync, execFileSync } = require('child_process');
 const packageJson = require('./package.json');
-const { db, getPayRateForDate, calcHoursWorked } = require('./db');
+const { db, getPayRateForDate, calcHoursWorked, autoBreakMinutes } = require('./db');
 const { leaveHoursByMonth, leaveHoursByWeek } = require('./leaveHours');
 const workingWithRouter = require('./working-with');
 const commuteRouter = require('./commute');
@@ -21,6 +21,8 @@ const exportsV2Router = require('./exportsV2');
 const payslipFilesRouter = require('./payslipFiles');
 // V3.0 feature set — self-contained under v3/, mounted as a single router.
 const v3Router = require('./v3');
+// V5.0 usage-analytics feature set — self-contained under v5/, same deal.
+const v5Router = require('./v5');
 const gcal = require('./google-calendar');
 
 const app = express();
@@ -67,6 +69,7 @@ app.use('/api', webhooksRouter);
 app.use('/api', exportsV2Router);
 app.use('/api', payslipFilesRouter);
 app.use('/api/v3', v3Router);
+app.use('/api/v5', v5Router);
 
 // Version readout + changelog — lets the running app be identified at a glance
 // (sidebar footer, and the "What's New" page behind clicking it), so it's
@@ -2120,26 +2123,9 @@ function parseICS(text) {
   return events;
 }
 
-/**
- * Auto-calculate break duration from shift length:
- *   ≤ 4 h → 0 min
- *   4–6 h → 15 min
- *   > 6 h → 30 min
- */
-function autoBreakMinutes(startTime, endTime) {
-  if (!startTime || !endTime) return 0;
-  const [sh, sm] = startTime.split(':').map(Number);
-  const [eh, em] = endTime.split(':').map(Number);
-  let mins = (eh * 60 + em) - (sh * 60 + sm);
-  if (mins < 0) mins += 24 * 60;
-  // Break increases only when the shift length EXCEEDS the boundary (strict >),
-  // so a 6h00 shift = 15 min and an 8h00 shift = 30 min (per the rota break policy).
-  const T430 = 4 * 60 + 30; // 270 min
-  if (mins > 8*60)  return 45;  // over 8h      → 45 min
-  if (mins > 6*60)  return 30;  // over 6h–8h   → 30 min
-  if (mins > T430)  return 15;  // over 4h30–6h → 15 min
-  return 0;                     // 4h30 or less → no break
-}
+// autoBreakMinutes now lives in db.js (imported at the top of this file):
+// colleague shift costing needs the same break policy, and two copies of the
+// thresholds is the last thing pay maths needs.
 
 // ─────────────────────────────────────────
 // UK Bank Holidays (server-side, cached) — used so shifts created/updated by the
