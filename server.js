@@ -4422,13 +4422,17 @@ app.post('/api/clock/in', (req, res) => {
 // case, and let the client's follow-up PATCH correct it if the answer differs.
 // Never touches an already-completed shift.
 function _autoCompleteShiftForClockOut(date, clockOutTime) {
+  // Only ever a candidate if it isn't already done. On a split-shift day the
+  // nearest shift by end time is often the morning one you already completed,
+  // and picking it would mean the afternoon shift you just clocked out of stays
+  // open — the exact thing this is here to prevent.
   const dayShifts = db.prepare(
-    'SELECT * FROM shifts WHERE date = ? ORDER BY start_time ASC'
+    'SELECT * FROM shifts WHERE date = ? AND (completed IS NULL OR completed = 0) ORDER BY start_time ASC'
   ).all(date);
   if (!dayShifts.length) return null;
 
   const shift = _nearestShiftByField(dayShifts, 'end_time', clockOutTime) || dayShifts[0];
-  if (!shift || shift.completed) return null;
+  if (!shift) return null;
 
   const actualBreak     = resolveBreakMinutes('full', shift.break_scheduled_minutes, shift.break_taken_minutes);
   const hours_worked    = calcHoursWorked(shift.start_time, shift.end_time, actualBreak);
