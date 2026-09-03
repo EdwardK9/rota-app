@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-03T18:55:49.567Z",
-  "commit": "e1b0c25",
+  "generated_at": "2026-09-03T19:07:43.293Z",
+  "commit": "301a128",
   "entries": [
+    {
+      "version": "4.23.1",
+      "date": "2026-09-03",
+      "summary": "Pick an incomplete shift when auto-completing on clock-out",
+      "details": "On a split-shift day the shift nearest the clock-out time is often the\nmorning one that's already done, and choosing it left the afternoon shift\nopen — the case the auto-complete exists to prevent. Only shifts that aren't\nalready complete are candidates now."
+    },
     {
       "version": "4.23.0",
       "date": "2026-09-03",
