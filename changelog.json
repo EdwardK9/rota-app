@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-03T19:13:16.229Z",
-  "commit": "b6b0ecd",
+  "generated_at": "2026-09-03T19:24:14.044Z",
+  "commit": "ce90fc4",
   "entries": [
+    {
+      "version": "4.24.0",
+      "date": "2026-09-03",
+      "summary": "Pay belongs to the role, not to fourteen people one at a time",
+      "details": "Four real roles — Branch Manager, Assistant Manager, Duty Manager, Store\nAssistant — replace the old three-way management/supervisor/floor_staff tier,\nand the rate now hangs off the role. Set the store assistant rate once and\nevery store assistant is costed from it; set the AM salary once and both\nassistant managers get it. Managers default to salaried, the shop floor to\nhourly, but the pay type is per-rate rather than fixed to the role.\n\nRates are dated the same way pay_rates already are: a row applies FROM a date\nand the newest one on or before a shift's date wins, so a rise doesn't\nsilently rewrite what last year's shifts cost. Everything that costs a\ncolleague shift — team metrics, the CSV export — now asks for the rate as of\nthat shift's own date rather than today's.\n\nNobody's numbers moved on the upgrade. Each role's opening rate is seeded\nfrom what its people were already on (the most common value), dated 1970 so\nit covers all history, and anyone who was on something different keeps their\nown figure behind a \"paid differently to the rest of this role\" tick. That\ncheckbox is the only thing that now shows the per-person pay fields — the\ncommon case is four numbers in one place instead of fourteen scattered ones.\n\nThe old three tiers fold in as supervisor→Duty Manager and\nfloor_staff→Store Assistant. 'management' covered both BM and AM and nothing\nin the data says which is which, so both land on Assistant Manager: there's\none branch manager and it's a one-click fix, where guessing would quietly\nmis-cost whoever it picked.\n\nAlso here, groundwork for running the V3 features as someone else:\nshiftsSource() in v3/helpers.js returns a FROM-clause that makes a\ncolleague's shifts look exactly like mine — break from the shared policy,\nrate from their role as of each date — so the existing module SQL and the\nexisting paidHours/shiftPay maths carry over without a second data model.\ndistance_miles is always NULL there on purpose: mileage is a property of my\ncommute and there is no colleague equivalent to invent.\n\nautoBreakMinutes moved from server.js to db.js, since colleague costing needs\nthe same policy and two copies of the break thresholds is the last thing pay\nmaths needs."
+    },
     {
       "version": "4.23.2",
       "date": "2026-09-03",
