@@ -71,7 +71,7 @@ V3.register('on-this-day', '📼 On This Day', {
       : '';
 
     const shiftEchoes = (d.shift_echoes || []).length ? `
-      <div class="v3-section-title">🔁 Same shift, other years</div>
+      <div class="v3-section-title">🔁 ${d.match_mode === 'weekday' ? 'Same shift, same weekday' : 'Same shift, this date'} in other years</div>
       ${d.shift_echoes.map(se => `
         <div class="card" style="margin-bottom:14px">
           <div class="card-header">

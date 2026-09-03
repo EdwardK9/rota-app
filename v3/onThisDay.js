@@ -184,18 +184,20 @@ router.get('/on-this-day', (req, res) => {
     : [];
 
   // ── Shift echoes ─────────────────────────────────────────────────────────
-  // Not "same calendar date" like the flashbacks above, but "same shift" —
-  // any past shift, on any date, in a different year, whose start and end
-  // time both land within ECHO_WINDOW_MINS of today's. Two people asked for
-  // this independently in the same breath: a way to spot "I've worked this
-  // exact slot before" even when the calendar date doesn't line up, and it
-  // doubles as a light data-quality net — a shift that's an exact-minute
-  // echo of several others but sits 15 minutes off them all is worth a look.
+  // "Did I work roughly this same shift on this same date in other years?" —
+  // so the candidates are exactly the flashback rows above (this calendar
+  // date, or the nearest same weekday, in each previous year), narrowed to
+  // the ones whose start AND end both land within ECHO_WINDOW_MINS of
+  // today's. The window is there because a slot drifts: 12:15–18:45 and
+  // 12:45–18:45 on the same date a year apart are plainly the same shift.
+  //
+  // This used to search every past shift on any date, which is why a
+  // 12:15–18:45 Thursday in September came back with the previous October,
+  // June and November — all "1 year ago", none of them this date. The date
+  // is the whole point of the page; matching on time alone threw it away.
   const shiftEchoes = todayShifts.map(shift => {
     const startMin = toMins(shift.start_time), endMin = toMins(shift.end_time);
-    const candidates = db.prepare(
-      "SELECT * FROM shifts WHERE date != ? AND substr(date,1,4) != ? ORDER BY date DESC"
-    ).all(shift.date, shift.date.slice(0, 4));
+    const candidates = matches;
 
     const echoes = candidates
       .map(c => ({
@@ -204,7 +206,9 @@ router.get('/on-this-day', (req, res) => {
         endDiff: Math.abs(toMins(c.end_time) - endMin),
       }))
       .filter(({ startDiff, endDiff }) => startDiff <= ECHO_WINDOW_MINS && endDiff <= ECHO_WINDOW_MINS)
-      .sort((a, b) => (a.startDiff + a.endDiff) - (b.startDiff + b.endDiff) || b.c.date.localeCompare(a.c.date))
+      // All on the same date now, so the useful order is most recent year
+      // first — closeness only breaks a tie within a year (a split-shift day).
+      .sort((a, b) => b.c.date.localeCompare(a.c.date) || (a.startDiff + a.endDiff) - (b.startDiff + b.endDiff))
       .map(({ c, startDiff, endDiff }) => ({
         date: c.date,
         year: parseInt(c.date.slice(0, 4), 10),
