@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-03T19:40:13.073Z",
-  "commit": "7ab6153",
+  "generated_at": "2026-09-04T08:49:22.476Z",
+  "commit": "b39cadc",
   "entries": [
+    {
+      "version": "4.25.0",
+      "date": "2026-09-03",
+      "summary": "The app starts watching itself",
+      "details": "V5.0 — usage analytics. Five new views behind one sidebar entry, in the same\nshape as the V3 set: a self-contained v5/ router mounted with one line, a\nclient registry app.js resolves rather than naming each view.\n\n  App Usage      opens, session length, time of day, streaks, trend\n  Screen Time    per-view dwell and opens, entry/exit screens, common routes\n  Check Habits   how far ahead you check the rota, measured against the rota\n  Clock Map      GPS at clock-in/out, labelled against named places\n  Data & Privacy the switches, the row counts to check them, and delete buttons\n\nLocation is off by default and the switches are enforced server-side in\nv5/ingest.js, so turning it off takes effect on the next request rather than\nthe next page load — a stale client cannot record a fix. The tracker only gates\nwhether to *ask* for GPS, to avoid an OS prompt for a feature that is off.\n\nNothing V5 owns touches an existing table. Clock-in GPS lives in v5_locations\nkeyed by date rather than as columns on clock_entries, so deleting V5's data\nnever touches a clock record. The fix is requested in parallel with the\nclock-in call so a slow or refused GPS can never delay clocking in.\n\nAlso fixes a latent layout bug this exposed: .main-content is a flex item, so\nits default min-width:auto meant a wide table dragged the whole page sideways\ninstead of scrolling inside its own .table-wrapper. min-width:0 lets the scroll\ncontainers work — Settings was overflowing at desktop widths before this too."
+    },
     {
       "version": "4.24.0",
       "date": "2026-09-03",
