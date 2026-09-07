@@ -22,6 +22,7 @@ const {
   db, DAYS, getNumSetting, localDateStr, addDays, daysBetween, dowIndex, mondayOf,
   toMins, spanMins, overlapMins, paidHours, shiftPay, round1, round2, pct, clamp,
 } = require('./helpers');
+const { contractHoursForColleagueOnDate } = require('../db');
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ function colleagueHours(row, hoursPerDay) {
  *  already behind us can't cover anything. */
 function activeColleagues(date) {
   return db.prepare(`
-    SELECT id, name, job_tier, tags, synergy_rating, contract_hours, start_date, left_date
+    SELECT id, name, job_tier, tags, synergy_rating, start_date, left_date
     FROM colleagues
     WHERE (left_date IS NULL OR left_date = '' OR left_date >= ?)
       AND (start_date IS NULL OR start_date = '' OR start_date <= ?)
@@ -202,7 +203,7 @@ router.get('/cover-finder', (req, res) => {
     const st = statOf(c.id);
     const theirDay = dayByColleague.get(c.id);
     const booked = round1(weekHours.get(c.id) || 0);
-    const contract = c.contract_hours || 0;
+    const contract = contractHoursForColleagueOnDate(c.id, shift.date) || 0;
     const headroom = contract > 0 ? round1(contract - booked) : null;
 
     let status = 'free';

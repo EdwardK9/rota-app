@@ -77,10 +77,6 @@ const ManagePeopleView = {
             <input id="mpEditBirthday" class="form-control" type="date" />
           </div>
           <div>
-            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Contract Hours / week</label>
-            <input id="mpEditContract" class="form-control" type="number" min="0" max="60" step="0.25" placeholder="e.g. 20" />
-          </div>
-          <div>
             <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Start date <span style="color:var(--text-muted);font-weight:400">(no matching before this)</span></label>
             <input id="mpEditStartDate" class="form-control" type="date" />
           </div>
@@ -89,6 +85,13 @@ const ManagePeopleView = {
             <input id="mpEditLeftDate" class="form-control" type="date" />
           </div>
         </div>
+
+        <h4 style="margin:4px 0 10px;font-size:13px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:14px">⏱️ Contract Hours</h4>
+        <p style="font-size:12px;color:var(--text-muted);margin:-4px 0 10px">
+          Changes apply <strong>from</strong> a date, so past weeks' overtime keeps being judged
+          against what their contract actually was at the time.
+        </p>
+        <div id="mpEditContractHours"></div>
 
         <h4 style="margin:4px 0 10px;font-size:13px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:14px">💷 Role &amp; Pay</h4>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
@@ -440,8 +443,8 @@ const ManagePeopleView = {
     document.getElementById('mpEditName').value      = c.name;
     document.getElementById('mpEditStartDate').value = c.start_date || '';
     document.getElementById('mpEditBirthday').value  = c.birthday || '';
-    document.getElementById('mpEditContract').value  = c.contract_hours || '';
     document.getElementById('mpEditLeftDate').value  = c.left_date || '';
+    this.loadContractHours(id);
 
     document.getElementById('mpEditPayType').value      = c.pay_type || 'hourly';
     document.getElementById('mpEditJobTier').value      = c.job_tier || 'assistant';
@@ -462,7 +465,6 @@ const ManagePeopleView = {
     const id           = document.getElementById('mpEditId').value;
     const name         = document.getElementById('mpEditName').value.trim();
     const birthday     = document.getElementById('mpEditBirthday').value || null;
-    const contract_hours = parseFloat(document.getElementById('mpEditContract').value) || 0;
     const start_date   = document.getElementById('mpEditStartDate').value || null;
     const left_date    = document.getElementById('mpEditLeftDate').value || null;
 
@@ -483,13 +485,90 @@ const ManagePeopleView = {
     if (!name) return showToast('Name cannot be empty', 'error');
     try {
       await API.updateColleague(id, {
-        name, birthday, contract_hours, start_date, left_date,
+        name, birthday, start_date, left_date,
         pay_type, hourly_rate, annual_salary, nominal_weekly_hours,
         tags, synergy_rating, notes, job_tier, pay_override,
       });
       document.getElementById('mpEditPanel').style.display = 'none';
       await this.load();
       showToast('Saved');
+    } catch (e) { showToast(e.message, 'error'); }
+  },
+
+  /** Contract hours — dated the same way Role & Pay is: changes apply FROM a
+   *  date, so bumping someone's hours today doesn't rewrite last week's
+   *  overtime figures. Saves immediately (its own button), independent of
+   *  the rest of the Edit Person form. */
+  async loadContractHours(colleagueId) {
+    const el = document.getElementById('mpEditContractHours');
+    el.innerHTML = '<p style="font-size:12px;color:var(--text-muted)">Loading…</p>';
+    try {
+      const { history, current } = await API.get(`/api/colleagues/${colleagueId}/contract-hours`);
+      this._contractHours = history;
+      this.renderContractHours(colleagueId, current);
+    } catch (e) {
+      el.innerHTML = '<p style="font-size:12px;color:var(--danger)">Could not load contract hours.</p>';
+    }
+  },
+
+  renderContractHours(colleagueId, current) {
+    const el = document.getElementById('mpEditContractHours');
+    const history = this._contractHours || [];
+    const today = new Date().toISOString().slice(0, 10);
+    el.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
+        <strong style="font-size:15px">${current}h/week</strong>
+        <span style="font-size:12px;color:var(--text-muted)">currently</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block">New hours/wk</label>
+          <input class="form-control" type="number" min="0" max="60" step="0.25"
+                 id="mpCHNewHours" style="width:100px;padding:5px 8px;font-size:13px" placeholder="e.g. 20" />
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);display:block">Effective from</label>
+          <input class="form-control" type="date" id="mpCHNewDate" value="${today}" style="padding:5px 8px;font-size:13px" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="mpCHSaveBtn">Add change</button>
+      </div>
+      ${history.length > 1 ? `
+        <details style="margin-top:4px">
+          <summary style="font-size:12px;color:var(--text-muted);cursor:pointer">${history.length} changes on file</summary>
+          <div style="margin-top:6px">
+            ${history.map(h => `
+              <div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:3px 0;color:var(--text-muted)">
+                <span style="min-width:90px">from ${h.effective_date}</span>
+                <span style="flex:1">${h.contract_hours}h/wk</span>
+                <button class="btn btn-ghost btn-sm" data-ch-del="${h.id}" style="padding:1px 6px;font-size:11px">✕</button>
+              </div>`).join('')}
+          </div>
+        </details>` : ''}
+    `;
+    document.getElementById('mpCHSaveBtn').addEventListener('click', () => this.saveContractHours(colleagueId));
+    el.querySelectorAll('[data-ch-del]').forEach(btn =>
+      btn.addEventListener('click', () => this.deleteContractHours(colleagueId, btn.dataset.chDel)));
+  },
+
+  async saveContractHours(colleagueId) {
+    const contract_hours = parseFloat(document.getElementById('mpCHNewHours').value);
+    const effective_date = document.getElementById('mpCHNewDate').value;
+    if (!(contract_hours >= 0)) return showToast('Enter the new hours/week', 'error');
+    if (!effective_date) return showToast('Pick an effective-from date', 'error');
+    try {
+      await API.post(`/api/colleagues/${colleagueId}/contract-hours`, { effective_date, contract_hours });
+      showToast('Contract hours saved');
+      await this.loadContractHours(colleagueId);
+      await this.load();
+    } catch (e) { showToast(e.message, 'error'); }
+  },
+
+  async deleteContractHours(colleagueId, historyId) {
+    if (!confirm('Remove this change? Weeks it covered will be judged against the next entry down.')) return;
+    try {
+      await API.delete(`/api/colleagues/${colleagueId}/contract-hours/${historyId}`);
+      await this.loadContractHours(colleagueId);
+      await this.load();
     } catch (e) { showToast(e.message, 'error'); }
   },
 

@@ -9,7 +9,7 @@ const http    = require('http');
 const zlib    = require('zlib');
 const { execSync, execFileSync } = require('child_process');
 const packageJson = require('./package.json');
-const { db, getPayRateForDate, calcHoursWorked, autoBreakMinutes } = require('./db');
+const { db, getPayRateForDate, calcHoursWorked, autoBreakMinutes, contractHoursForColleagueOnDate } = require('./db');
 const { leaveHoursByMonth, leaveHoursByWeek } = require('./leaveHours');
 const workingWithRouter = require('./working-with');
 const commuteRouter = require('./commute');
@@ -1515,12 +1515,10 @@ app.get('/api/reports/insights', (req, res) => {
   const weeklyHours = (() => {
     if (forColleague) {
       // Colleague: hours from start/end times (no hours_worked column on colleague_shifts)
-      const colleague = db.prepare('SELECT contract_hours, pay_type FROM colleagues WHERE id = ?').get(colleagueId);
+      const colleague = db.prepare('SELECT pay_type FROM colleagues WHERE id = ?').get(colleagueId);
       // Salaried staff (managers etc.) don't accrue overtime against a weekly hours
-      // target the way hourly staff do — a leftover contract_hours value (e.g. from
-      // before they were switched to salaried) shouldn't produce an overtime figure.
-      const contractedHours = (colleague && colleague.contract_hours && colleague.pay_type !== 'salaried')
-        ? colleague.contract_hours : null;
+      // target the way hourly staff do.
+      const salaried = colleague && colleague.pay_type === 'salaried';
 
       const rows = db.prepare(`
         SELECT date, start_time, end_time FROM colleague_shifts
@@ -1534,7 +1532,12 @@ app.get('/api/reports/insights', (req, res) => {
       const wMap = {};
       for (const s of rows) {
         const key = getMonKey(s.date);
-        if (!wMap[key]) wMap[key] = { weekStart: key, hours_worked: 0, contracted_hours: contractedHours };
+        if (!wMap[key]) {
+          // Contract hours as of THIS week, not whatever the colleague is on
+          // today — an hours change shouldn't rewrite past weeks' overtime.
+          const weekContract = !salaried ? (contractHoursForColleagueOnDate(colleagueId, key) || null) : null;
+          wMap[key] = { weekStart: key, hours_worked: 0, contracted_hours: weekContract };
+        }
         const [sh, sm] = s.start_time.split(':').map(Number);
         const [eh, em] = s.end_time.split(':').map(Number);
         let mins = (eh * 60 + em) - (sh * 60 + sm);

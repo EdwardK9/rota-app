@@ -12,7 +12,7 @@
 
 const express  = require('express');
 const multer   = require('multer');
-const { db, effectiveHourlyRate, rolePayForDate, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
+const { db, effectiveHourlyRate, rolePayForDate, contractHoursForColleagueOnDate, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
 const router   = express.Router();
 
 // multer — store upload in memory (screenshots are typically <5 MB)
@@ -180,6 +180,69 @@ router.delete('/role-pay/:id', (req, res) => {
     return res.status(400).json({ error: `${ROLE_LABELS[row.role]} needs at least one rate — edit this one instead of deleting it` });
   }
   db.prepare('DELETE FROM role_pay WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────
+// Colleague contract hours — dated the same way role pay is, so bumping
+// someone's hours for the future doesn't quietly re-price past weeks'
+// overtime/leave maths. colleagues.contract_hours is kept as a denormalized
+// "today" cache, refreshed after every write here.
+// ─────────────────────────────────────────
+
+router.get('/colleagues/:id/contract-hours', (req, res) => {
+  const colleague = db.prepare('SELECT id FROM colleagues WHERE id = ?').get(req.params.id);
+  if (!colleague) return res.status(404).json({ error: 'Not found' });
+  const history = db.prepare(
+    'SELECT * FROM colleague_contract_hours WHERE colleague_id = ? ORDER BY effective_date DESC'
+  ).all(req.params.id);
+  res.json({ history, current: contractHoursForColleagueOnDate(req.params.id, localDateStr()) });
+});
+
+function validateContractHoursEntry(body) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(body.effective_date || '')) return 'effective_date must be YYYY-MM-DD';
+  if (!(parseFloat(body.contract_hours) >= 0)) return 'contract_hours must be zero or greater';
+  return null;
+}
+
+router.post('/colleagues/:id/contract-hours', (req, res) => {
+  const colleague = db.prepare('SELECT id FROM colleagues WHERE id = ?').get(req.params.id);
+  if (!colleague) return res.status(404).json({ error: 'Not found' });
+  const err = validateContractHoursEntry(req.body);
+  if (err) return res.status(400).json({ error: err });
+  const { effective_date, contract_hours, notes } = req.body;
+  try {
+    // Re-saving the same date replaces that row rather than failing on the
+    // unique constraint — correcting a typo shouldn't need a delete first.
+    db.prepare(`
+      INSERT INTO colleague_contract_hours (colleague_id, effective_date, contract_hours, notes)
+      VALUES (?,?,?,?)
+      ON CONFLICT(colleague_id, effective_date) DO UPDATE SET
+        contract_hours = excluded.contract_hours,
+        notes = excluded.notes
+    `).run(req.params.id, effective_date, parseFloat(contract_hours), notes || null);
+
+    db.prepare('UPDATE colleagues SET contract_hours = ? WHERE id = ?')
+      .run(contractHoursForColleagueOnDate(req.params.id, localDateStr()), req.params.id);
+
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/colleagues/:id/contract-hours/:historyId', (req, res) => {
+  const row = db.prepare('SELECT * FROM colleague_contract_hours WHERE id = ? AND colleague_id = ?')
+    .get(req.params.historyId, req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  // Deleting the only entry a colleague has would silently drop them to 0
+  // contracted hours, which reads as a bug rather than as a choice.
+  const left = db.prepare('SELECT COUNT(*) AS c FROM colleague_contract_hours WHERE colleague_id = ?')
+    .get(req.params.id).c;
+  if (left <= 1) {
+    return res.status(400).json({ error: 'This person needs at least one contract-hours entry — edit this one instead of deleting it' });
+  }
+  db.prepare('DELETE FROM colleague_contract_hours WHERE id = ?').run(req.params.historyId);
+  db.prepare('UPDATE colleagues SET contract_hours = ? WHERE id = ?')
+    .run(contractHoursForColleagueOnDate(req.params.id, localDateStr()), req.params.id);
   res.json({ ok: true });
 });
 
@@ -1106,7 +1169,9 @@ router.get('/working-with/team-week', (req, res) => {
     const employedThisWeek  = startedByWeekEnd && notLeftByWeekStart;
     const hasShiftThisWeek  = colShifts.some(s => s.colleague_id === c.id);
     return employedThisWeek || hasShiftThisWeek;
-  });
+  // Contract hours as of this week (the week's end), not whatever they're on
+  // today — so browsing an earlier week shows what applied at the time.
+  }).map(c => ({ ...c, contract_hours: contractHoursForColleagueOnDate(c.id, to) }));
 
   const myName = db.prepare("SELECT value FROM settings WHERE key='employee_name'").get()?.value || 'Me';
 

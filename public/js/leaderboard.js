@@ -51,11 +51,10 @@ const LeaderboardView = {
             <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Birthday</label>
             <input id="lbEditBirthday" class="form-control" type="date" />
           </div>
-          <div>
-            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Contract Hours / week</label>
-            <input id="lbEditContract" class="form-control" type="number" min="0" max="60" step="0.25" placeholder="e.g. 20" />
-          </div>
         </div>
+        <p style="font-size:12px;color:var(--text-muted);margin:-6px 0 14px">
+          Contract hours are edited in Manage People, where changes can be dated.
+        </p>
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" id="lbEditSave">Save</button>
           <button class="btn btn-ghost" id="lbEditCancel">Cancel</button>
@@ -174,7 +173,6 @@ const LeaderboardView = {
     document.getElementById('lbEditId').value       = c.id;
     document.getElementById('lbEditName').value     = c.name;
     document.getElementById('lbEditBirthday').value = c.birthday || '';
-    document.getElementById('lbEditContract').value = c.contract_hours || '';
     document.getElementById('lbEditPanel').style.display = 'block';
     document.getElementById('lbEditPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   },
@@ -183,10 +181,9 @@ const LeaderboardView = {
     const id   = document.getElementById('lbEditId').value;
         const name = document.getElementById('lbEditName').value.trim();
     const birthday = document.getElementById('lbEditBirthday').value || null;
-    const contract_hours = parseFloat(document.getElementById('lbEditContract').value) || 0;
     if (!name) return showToast('Name cannot be empty', 'error');
     try {
-      await API.updateColleague(id, { name, birthday, contract_hours });
+      await API.updateColleague(id, { name, birthday });
       document.getElementById('lbEditPanel').style.display = 'none';
       await this.load();
       showToast('Saved');

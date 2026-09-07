@@ -14,7 +14,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 const express = require('express');
-const { db } = require('./db');
+const { db, contractHoursForColleagueOnDate } = require('./db');
 const router = express.Router();
 
 function getSetting(key, fallback) {
@@ -122,16 +122,17 @@ router.get('/fatigue-audit', (req, res) => {
 
     // ── Overtime (hourly colleagues only, target week) ──────────────────────
     let overtime = null;
-    if (c.pay_type !== 'salaried' && c.contract_hours) {
+    const weekContractHours = c.pay_type !== 'salaried' ? contractHoursForColleagueOnDate(c.id, mondayStr) : 0;
+    if (c.pay_type !== 'salaried' && weekContractHours) {
       const weekHours = allShifts
         .filter(s => s.colleague_id === c.id && s.date >= mondayStr && s.date <= sundayStr)
         .reduce((t, s) => t + shiftHours(s, hoursPerDay), 0);
       const scheduledHours = Math.round(weekHours * 100) / 100;
-      if (scheduledHours > c.contract_hours) {
+      if (scheduledHours > weekContractHours) {
         overtime = {
           scheduled_hours: scheduledHours,
-          contract_hours: c.contract_hours,
-          overage: Math.round((scheduledHours - c.contract_hours) * 100) / 100,
+          contract_hours: weekContractHours,
+          overage: Math.round((scheduledHours - weekContractHours) * 100) / 100,
         };
       }
     }
@@ -204,7 +205,7 @@ function computeFlagsForRange(fromDate, toDate) {
     flushStreak(prevDate);
 
     // Overtime — evaluated per Mon-Sun week overlapping the requested range
-    if (c.pay_type !== 'salaried' && c.contract_hours) {
+    if (c.pay_type !== 'salaried') {
       const weeks = new Set();
       for (const d of workDates) {
         const anchor = new Date(d + 'T00:00:00');
@@ -213,12 +214,14 @@ function computeFlagsForRange(fromDate, toDate) {
         weeks.add(fmt(wmon));
       }
       for (const monday of weeks) {
+        const weekContractHours = contractHoursForColleagueOnDate(c.id, monday);
+        if (!weekContractHours) continue;
         const sunday = addDays(monday, 6);
         const weekHours = allShifts
           .filter(s => s.colleague_id === c.id && s.date >= monday && s.date <= sunday)
           .reduce((t, s) => t + shiftHours(s, hoursPerDay), 0);
-        if (weekHours > c.contract_hours) {
-          const label = `Overtime (${Math.round(weekHours * 100) / 100}h/${c.contract_hours}h)`;
+        if (weekHours > weekContractHours) {
+          const label = `Overtime (${Math.round(weekHours * 100) / 100}h/${weekContractHours}h)`;
           for (const d of workDates) { if (d >= monday && d <= sunday) addFlag(d, label); }
         }
       }

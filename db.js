@@ -437,6 +437,61 @@ function rolePayForDate(role, date) {
   `).get(role, date) || null;
 }
 
+// -----------------------------------------
+// Colleague contract-hours history
+//
+// Contract hours used to be a single mutable number on the colleague, so
+// bumping someone's hours for the future silently re-priced every past
+// week's overtime/leave maths too. This dates it the same way pay already
+// is above: a change applies FROM a date, and the newest entry on or before
+// the date in question wins. colleagues.contract_hours stays as a
+// denormalized "today" cache — kept in sync whenever a history row is
+// added or removed — so anything that hasn't been switched to the dated
+// lookup still works, but it's written FROM the history now, not the other
+// way round.
+// -----------------------------------------
+db.exec(`
+  CREATE TABLE IF NOT EXISTS colleague_contract_hours (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    colleague_id INTEGER NOT NULL REFERENCES colleagues(id) ON DELETE CASCADE,
+    effective_date TEXT NOT NULL,
+    contract_hours REAL NOT NULL,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(colleague_id, effective_date)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cch_colleague ON colleague_contract_hours(colleague_id);
+`);
+
+// Seed one opening entry per colleague from whatever they're already on, so
+// switching to dated history changes nobody's numbers on day one. Only ever
+// runs while the table is empty.
+if (!db.prepare('SELECT COUNT(*) AS c FROM colleague_contract_hours').get().c) {
+  const insertHours = db.prepare(`
+    INSERT INTO colleague_contract_hours (colleague_id, effective_date, contract_hours, notes)
+    VALUES (?, ?, ?, 'Carried over from the old single contract-hours field')
+  `);
+  const seedColleagues = db.prepare('SELECT id, contract_hours, start_date FROM colleagues').all();
+  for (const c of seedColleagues) {
+    insertHours.run(c.id, c.start_date || '1970-01-01', c.contract_hours || 0);
+  }
+}
+
+/** The colleague's contract hours in force on a given date. Falls back to
+ *  the static column when no history row exists yet (e.g. a colleague
+ *  added between deploys, before the seed above has run for them). */
+function contractHoursForColleagueOnDate(colleagueId, date) {
+  const row = db.prepare(`
+    SELECT contract_hours FROM colleague_contract_hours
+    WHERE colleague_id = ? AND effective_date <= ?
+    ORDER BY effective_date DESC
+    LIMIT 1
+  `).get(colleagueId, date);
+  if (row) return row.contract_hours;
+  const c = db.prepare('SELECT contract_hours FROM colleagues WHERE id = ?').get(colleagueId);
+  return c ? (c.contract_hours || 0) : 0;
+}
+
 // Migrations -- add new shift / payslip columns (safe to re-run)
 const shiftMigrations = [
   'ALTER TABLE shifts ADD COLUMN is_bank_holiday INTEGER DEFAULT 0',
@@ -673,4 +728,5 @@ function autoBreakMinutes(startTime, endTime) {
 module.exports = {
   db, getPayRateForDate, calcHoursWorked, effectiveHourlyRate, shiftCost,
   autoBreakMinutes, rolePayForDate, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE,
+  contractHoursForColleagueOnDate,
 };
