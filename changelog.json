@@ -1,7 +1,19 @@
 {
-  "generated_at": "2026-09-04T08:49:22.476Z",
-  "commit": "b39cadc",
+  "generated_at": "2026-09-07T18:28:17.662Z",
+  "commit": "ff872bb",
   "entries": [
+    {
+      "version": "5.1.0",
+      "date": "2026-09-07",
+      "summary": "Contract hours change too, not just get set",
+      "details": "Bumping someone's hours used to overwrite a single number on the colleague,\nwhich silently re-priced every past week's overtime and cover-finder maths\nalong with the future ones. Contract hours are now dated the same way role\npay already is: Manage People logs each change with an effective-from date,\nand every read (fatigue audit, cover finder, team calendar, weekly-hours\nstats) looks up whichever entry was in force for the week in question."
+    },
+    {
+      "version": "5.0.0",
+      "date": "2026-09-04",
+      "summary": "V5 ships under its own major version",
+      "details": "The V5.0 feature set landed in 4.25.0, following the convention that a feature\nset's name and the app version are separate things (the V3.0 set shipped in\n3.4.0). Ed would rather they line up when a set is big enough to be a new\ngeneration, so the app version moves to 5.0.0 to match.\n\nVersion only — no behaviour change. package.json is the single source: the\nsidebar readout and every ?v= asset token derive from it, so this also busts\nthe asset cache for the V5 files that shipped in the previous commit."
+    },
     {
       "version": "4.25.0",
       "date": "2026-09-03",
