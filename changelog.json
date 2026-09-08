@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T23:01:17.613Z",
-  "commit": "dbb5ffe",
+  "generated_at": "2026-09-08T23:06:37.895Z",
+  "commit": "04d9d9b",
   "entries": [
+    {
+      "version": "5.6.1",
+      "date": "2026-09-09",
+      "summary": "Creating a shift without a break no longer assumes 30 minutes",
+      "details": "POST /api/shifts defaulted break_scheduled_minutes to a flat 30, so any\nshift created without an explicit break lost half an hour of paid time\nregardless of its length — a 4-hour shift entitled to no break at all came\nout as 3.50h. It now defaults to autoBreakMinutes() for those hours, the\nsame policy as everywhere else.\n\nThe browser form always sends a break, so this only ever hit API callers\nand imports, which is why it went unnoticed.\n\nFound by booting the app and creating the real 9-15 Feb week through the\nAPI: 15:00-19:00 came back as 3.5h paid instead of 4.00h. Syntax checks and\nunit tests had all passed.\n\nLockfile version field was still on 2.1.9; npm brought it in line. No\ndependency changes."
+    },
     {
       "version": "5.6.0",
       "date": "2026-09-09",
