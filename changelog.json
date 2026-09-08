@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T22:33:36.464Z",
-  "commit": "166d48e",
+  "generated_at": "2026-09-08T22:46:38.644Z",
+  "commit": "cc121c0",
   "entries": [
+    {
+      "version": "5.3.0",
+      "date": "2026-09-08",
+      "summary": "Contracted HOURS go pro-rata; 52/12 stays for pay",
+      "details": "52/12 is right for basic pay and wrong for hours, and the app used it for\nboth. Payroll annualises: Basic Salary is an identical twelfth every month\nacross all 21 payslips, whether the month is 28 days or 31. But 52/12 asks\n4.333 weeks of rota from every month, and a 28-day February contains 4.000.\nFebruary therefore read ~6.67h under contract every year however the rota\nfell, and 31-day months ~1.90h over — an artefact of the yardstick, not the\nhours worked. Feb 2026 showed 11.67h under while payroll paid 1.25h of\nadditional hours for the same month.\n\nContracted hours are now weekly x days_in_month / 7, so February asks for\n80.00h and August 88.57h. Feb 2026 goes from -11.67h to -5.00h, and the\nremainder is real: Sun 1 Feb delivered nothing, being the tail of the week\noff sick. Sep goes from -1.92h to -0.96h. The annual total is unchanged to\nwithin 3h — the hours are redistributed, not invented. Leap years fall out\nof the date maths rather than needing a case.\n\nSame fix in the streaks endpoint, where the old basis broke the\non-contract streak every February for a reason unrelated to the rota.\n\nPay is untouched: payslips.js and v3/payAudit.js still compute expected\nbasic as weekly x 52/12 x rate, which is what payroll pays and what \"Paid\nvs Est.\" needs to compare against.\n\nAlso confirmed correct while checking, so left alone: bank holidays really\nare worth 2x. Payroll pays the hours normally and adds a separate\n\"Bank Holiday Hrs (x1)\" premium line, so the app's single 2x per shift\nreaches the same total."
+    },
     {
       "version": "5.2.0",
       "date": "2026-09-08",
