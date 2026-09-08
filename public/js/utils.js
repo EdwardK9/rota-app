@@ -41,7 +41,15 @@ function fmtMonth(monthStr) {
   return `${MONTHS[m-1]} ${y}`;
 }
 
+// Money is wrapped so the Hide Money toggle can blur every amount at once with
+// one CSS rule, rather than each view having to know which of its numbers are
+// money. Use fmtCurrencyPlain where the result goes somewhere markup can't:
+// a title attribute, or anywhere the string isn't parsed as HTML.
 function fmtCurrency(val) {
+  return `<span class="money">${fmtCurrencyPlain(val)}</span>`;
+}
+
+function fmtCurrencyPlain(val) {
   if (val === null || val === undefined || isNaN(val)) return '—';
   return '£' + Number(val).toFixed(2);
 }

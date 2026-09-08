@@ -168,6 +168,14 @@ body {
 .stat-value.warning { color: var(--warning); }
 .stat-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.3; }
 
+/* Hide Money — every amount goes through fmtCurrency, which wraps it in .money,
+   so this one rule covers the whole app. Blur is in em so it scales with the
+   text: a 22px stat value and an 11px table cell both end up unreadable. */
+html[data-hide-money] .money {
+  filter: blur(0.35em);
+  user-select: none;
+}
+
 /* Contract tracking strip — week-based, sits between the month stat cards and
    the week-grouped table it totals. Deliberately not a stat-card: it answers a
    different question (weeks vs contract) to the cards above it (this month). */

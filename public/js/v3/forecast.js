@@ -125,7 +125,7 @@ V3.register('forecast', '🔮 Pay Forecast', {
           <div class="card-body">
             <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;border:1px solid var(--border);margin-bottom:16px">
               ${parts.map(x => `<div style="width:${(x.value / totalParts) * 100}%;background:${x.colour}"
-                                     title="${esc(x.label)}: ${fmtCurrency(x.value)}"></div>`).join('')}
+                                     title="${esc(x.label)}: ${fmtCurrencyPlain(x.value)}"></div>`).join('')}
             </div>
             ${parts.map(x => `
               <div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--border)">

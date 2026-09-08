@@ -21,6 +21,25 @@ const App = {
       document.querySelector('#darkModeToggle .dark-mode-icon').textContent = '☀️';
     }
 
+    // Hide Money — blurs every amount on screen until switched back off. The
+    // attribute goes on <html> so it survives any view re-render: money is
+    // formatted into a .money span by fmtCurrency, and one CSS rule blurs the
+    // lot, so nothing has to be re-drawn when this is toggled.
+    const applyHideMoney = (on) => {
+      document.documentElement.toggleAttribute('data-hide-money', on);
+      const btn = document.getElementById('hideMoneyToggle');
+      if (!btn) return;
+      btn.querySelector('.hide-money-icon').textContent = on ? '🙈' : '👁️';
+      btn.querySelector('.nav-label').textContent = on ? 'Show Money' : 'Hide Money';
+      btn.title = on ? 'Show money amounts again' : 'Blur every money amount on screen';
+    };
+    applyHideMoney(localStorage.getItem('hideMoney') === 'true');
+    document.getElementById('hideMoneyToggle')?.addEventListener('click', () => {
+      const on = !document.documentElement.hasAttribute('data-hide-money');
+      localStorage.setItem('hideMoney', on);
+      applyHideMoney(on);
+    });
+
     // Version readout — shows which deploy is actually running (non-blocking).
     // Clickable through to the changelog rather than adding it as its own
     // sidebar row — it's already always visible, so it doubles as the entry
