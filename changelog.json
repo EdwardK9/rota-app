@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T22:46:38.644Z",
-  "commit": "cc121c0",
+  "generated_at": "2026-09-08T22:54:22.261Z",
+  "commit": "84f017a",
   "entries": [
+    {
+      "version": "5.4.0",
+      "date": "2026-09-08",
+      "summary": "A shift can be marked off sick, and stops counting as worked",
+      "details": "Ed's January sick week was stored as four ordinary completed shifts, so the\napp counted 20 hours he was at home for as hours worked. There was no way\nto say \"rostered, but I wasn't there\".\n\nNew absence_type on shifts, NULL for the normal case. Marked 'sick' the\nhours still count towards the contract but no longer count as worked, which\nis exactly how payroll treats them: the basic is docked by working day\n(Jan 2026: £1,130.14 x 5/21 = £269.08) and handed straight back as company\nsick pay £239.39 plus SSP £29.69 — the same £269.08, netting to zero. You\nwere contracted and paid for the day; you simply didn't work it.\n\nThat split falls out of keeping completed at 0: scheduled_hours already\ncounts every rostered shift, hours_worked already counts completed ones,\nand break stats already ignore anything not completed — so a sick day lands\non the right side of each without special-casing the sums. What did need\nguarding is everything that would quietly tick it off again: clock-out\nauto-complete now skips absences, bulk-complete skips them, and the single\ncomplete endpoint refuses with a message rather than silently flipping it.\n\nShown as its own thing rather than as a shift still waiting to be done — a\nSICK tag and 🤒 in place of the tick, an hours-off-sick stat card, and a\nper-week total beside the leave one. The monthly API returns sick_hours and\nsick_count so the other views can use them."
+    },
     {
       "version": "5.3.0",
       "date": "2026-09-08",
