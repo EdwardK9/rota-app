@@ -1014,9 +1014,11 @@ const ShiftsView = {
             if (mDiff < 0 || (mDiff === 0 && shiftDate.getDate() < dobDate.getDate())) age--;
             isUnder18 = age < 18;
           }
+          // Must match autoBreakMinutes() in db.js, which is canonical: the
+          // 4h30 step is inclusive, the 6h and 8h steps are not.
           const T430 = 4 * 60 + 30; // 270 min
           if (isUnder18) {
-            setBreakPreset(totalMins > T430 ? '30' : '0');
+            setBreakPreset(totalMins >= T430 ? '30' : '0');
           } else if (totalMins > 8 * 60) {
             // over 8h → 45 min unpaid (use custom field)
             setBreakPreset('custom');
@@ -1024,7 +1026,7 @@ const ShiftsView = {
             resolveBreak();
           } else if (totalMins > 6 * 60) {
             setBreakPreset('30');
-          } else if (totalMins > T430) {
+          } else if (totalMins >= T430) {
             setBreakPreset('15');
           } else {
             setBreakPreset('0');

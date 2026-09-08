@@ -12,7 +12,7 @@
 
 const express  = require('express');
 const multer   = require('multer');
-const { db, effectiveHourlyRate, rolePayForDate, contractHoursForColleagueOnDate, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
+const { db, effectiveHourlyRate, rolePayForDate, contractHoursForColleagueOnDate, autoBreakMinutes, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
 const router   = express.Router();
 
 // multer — store upload in memory (screenshots are typically <5 MB)
@@ -1217,7 +1217,7 @@ router.get('/working-with/team-calendar', (req, res) => {
       const [eh,em] = s.end_time.split(':').map(Number);
       const gross = (eh*60+em) - (sh*60+sm);
       if (gross > 0) {
-        const brk = gross < 270 ? 0 : gross <= 360 ? 15 : 30;
+        const brk = autoBreakMinutes(s.start_time, s.end_time);
         weekMap[wk] += gross - brk;
       }
     }

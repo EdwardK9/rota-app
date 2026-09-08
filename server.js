@@ -3572,11 +3572,12 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     }
     if (!j.breaks?.length) {
       // No break data from Rotageek — apply the same thresholds as autoBreakMinutes:
-      // ≤4h30 → 0, over 4h30–6h → 15, over 6h–8h → 30, over 8h → 45 (strict > boundaries)
+      // Same boundaries as autoBreakMinutes() in db.js — 4h30 inclusive, 6h and
+      // 8h not. Only a fallback; the journal's own break wins where it has one.
       const totalMins = Math.round((new Date(j.end) - new Date(j.start)) / 60000);
-      if (totalMins > 480)      breakMins = 45;
-      else if (totalMins > 360) breakMins = 30;
-      else if (totalMins > 270) breakMins = 15;
+      if (totalMins > 480)       breakMins = 45;
+      else if (totalMins > 360)  breakMins = 30;
+      else if (totalMins >= 270) breakMins = 15;
     }
 
     if (!rgByDate[date]) rgByDate[date] = [];

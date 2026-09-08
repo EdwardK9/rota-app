@@ -161,10 +161,12 @@ function shiftsSource(colleagueId) {
                 - (CAST(substr(cs.start_time,1,2) AS INTEGER) * 60 + CAST(substr(cs.start_time,4,2) AS INTEGER))
                 + 1440) % 1440)`;
 
-  // Mirrors autoBreakMinutes() in db.js: >8h → 45, >6h → 30, >4h30 → 15, else 0.
+  // Mirrors autoBreakMinutes() in db.js: >8h → 45, >6h → 30, >=4h30 → 15, else
+  // 0. The 4h30 step is inclusive and the others are not — see db.js for why.
+  // Has to be SQL, so it cannot call it.
   const BREAK = `(CASE WHEN ${DUR} > 480 THEN 45
                        WHEN ${DUR} > 360 THEN 30
-                       WHEN ${DUR} > 270 THEN 15
+                       WHEN ${DUR} >= 270 THEN 15
                        ELSE 0 END)`;
 
   // Their own figures only when flagged as an exception; otherwise the role's

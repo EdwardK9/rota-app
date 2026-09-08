@@ -23,6 +23,7 @@ const {
   db, localDateStr, addDays, daysBetween, mondayOf,
   toMins, spanMins, overlapMins, paidHours, rateForDate, round1, round2,
 } = require('./helpers');
+const { autoBreakMinutes } = require('../db');
 const { bankHolidayDates } = require('./bankHolidays');
 
 const router = express.Router();
@@ -41,11 +42,10 @@ const CLOCK_TOLERANCE_MINS = 60;
  *  explain a discrepancy, never to change a break. If the policy there changes,
  *  change it here; the numbers are also written down in the README. */
 function policyBreakMinutes(start, end) {
-  const mins = spanMins(start, end);
-  if (mins > 8 * 60) return 45;
-  if (mins > 6 * 60) return 30;
-  if (mins > 4 * 60 + 30) return 15;
-  return 0;
+  // Was a hand-copied duplicate and drifted: it kept strict > boundaries after
+  // db.js moved to inclusive ones, so every 4h30 shift looked like a
+  // discrepancy that wasn't. Call the real thing instead.
+  return autoBreakMinutes(start, end);
 }
 
 /** One finding. `items` carry enough to identify the row in the UI. */

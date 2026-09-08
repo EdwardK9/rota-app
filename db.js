@@ -731,10 +731,20 @@ function autoBreakMinutes(startTime, endTime) {
   const [eh, em] = endTime.split(':').map(Number);
   let mins = (eh * 60 + em) - (sh * 60 + sm);
   if (mins < 0) mins += 24 * 60;
+  // The 4h30 step is inclusive and the 6h step is not, which looks like a typo
+  // and isn't — it is what Rotageek's own journal does, and it matches how the
+  // two rules are worded. The lower one is the company's ("4.5 hours or more"):
+  // 16 Feb, 14 Aug and 16 Sep 2026 are all exactly 4h30 and all carry "15m
+  // unpaid", where this used to return 0 and count each of them 0.25h long. The
+  // upper one is the Working Time Regulations entitlement, which is for working
+  // *more than* 6 hours: 19 Aug 2026 is exactly 6h00 and carries 15m, not 30m,
+  // while 6h15 carries 30m. Don't "tidy" these into matching each other.
+  //
+  // 8h is assumed to follow 6h's wording; no shift in the data lands on it.
   const T430 = 4 * 60 + 30;
-  if (mins > 8 * 60) return 45;
-  if (mins > 6 * 60) return 30;
-  if (mins > T430)   return 15;
+  if (mins > 8 * 60)  return 45;
+  if (mins > 6 * 60)  return 30;
+  if (mins >= T430)   return 15;
   return 0;
 }
 
