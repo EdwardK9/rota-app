@@ -872,18 +872,27 @@ app.get('/api/reports/monthly', (req, res) => {
     }
     return rate || null;
   }
-  // Contracted hours for a month. Payroll works in 52/12ths of the weekly
-  // contract — basic pay is weekly x 52/12 x rate, confirmed against 22 real
-  // payslips — so this has to match or the hours screens judge you against a
-  // target payroll never used. The old workingDaysInMonth/5 form counted Mon-Fri
-  // only, which on a rota that is 38% weekends swung the target between 80h and
-  // 92h for an unchanging contract and overstated the year by ~4h.
+  // Contracted HOURS for a month, pro-rata to the days the month actually has.
+  //
+  // Not 52/12ths. That is right for basic PAY — payroll annualises, so the same
+  // twelfth is paid whatever the month's length, confirmed across 21 payslips
+  // where Basic Salary is identical month after month — but it is the wrong
+  // denominator for hours. 52/12 asks for 4.333 weeks from every month, and a
+  // 28-day February only physically contains 4.000. February therefore read
+  // ~6.67h under contract every single year no matter how the rota fell, and
+  // 31-day months read ~1.90h over, entirely as an artefact of the yardstick.
+  //
+  // Feb 2026 is the worked example: the app said 11.67h under, while payroll
+  // paid 1.25h of additional hours for the same month — under and over at once.
+  // 20h/week x 28/7 = 80.00h is what February can hold, and against that the
+  // remaining gap is real and traceable to the rota rather than the calendar.
   function getContractedForMonth(monthStr) {
     const rate = getRateForMonth(monthStr);
     if (!rate) return 0;
-    return Math.round(rate.contracted_hours_per_week * (52 / 12) * 100) / 100;
+    const [y, m] = monthStr.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    return Math.round(rate.contracted_hours_per_week * (daysInMonth / 7) * 100) / 100;
   }
-
   // Leave hours per month, spread across the working days each entry actually
   // covers. Grouping by the entry's start month (which this used to do) put a
   // holiday running 30 Mar → 11 Apr entirely in March, leaving April looking
@@ -973,10 +982,16 @@ app.get('/api/streaks', (req, res) => {
     FROM shifts GROUP BY month ORDER BY month ASC
   `).all();
   const allPayRates = db.prepare('SELECT * FROM pay_rates ORDER BY effective_date ASC').all();
+  // Pro-rata to the month's own length, matching the monthly report. On 52/12
+  // a 28-day February could not reach its target however the rota fell, so it
+  // broke this streak every year for a reason that had nothing to do with the
+  // hours actually worked.
   const getContractedForMonth = (monthStr) => {
     let rate = null;
     for (const r of allPayRates) { if (r.effective_date <= monthStr + '-01') rate = r; }
-    return rate ? Math.round(rate.contracted_hours_per_week * (52 / 12) * 100) / 100 : 0;
+    if (!rate) return 0;
+    const [y, m] = monthStr.split('-').map(Number);
+    return Math.round(rate.contracted_hours_per_week * (new Date(y, m, 0).getDate() / 7) * 100) / 100;
   };
   const currentMonth = localDateStr().slice(0, 7);
   const completedMonths = monthRows.filter(m => m.month < currentMonth && getContractedForMonth(m.month) > 0);

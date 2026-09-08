@@ -565,6 +565,12 @@ const PayslipsView = {
             booked leave each month — useful for telling whether a low "Paid vs Est." month above was really
             just fewer hours on the rota, rather than a payroll mistake. Leave counts towards the contract:
             you were paid for those hours and weren't expected on the rota, so a holiday isn't a shortfall.
+            <br><br>
+            Contracted hours here are pro-rata to each month's own length (weekly contract &times; days &divide; 7),
+            <em>not</em> a flat 52&frasl;12. Basic pay is a flat twelfth — the same amount lands whether the month
+            is 28 days or 31 — but a 28-day February only holds 4.00 weeks of rota against 52&frasl;12's 4.333, so
+            judging hours that way made every February read about 6.67h short however the rota fell. Your payslip
+            is still checked against 52&frasl;12 in "Paid vs Est." above, which is the number payroll actually uses.
           </p>
           <div class="table-wrapper">
             <table>
