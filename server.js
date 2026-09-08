@@ -336,7 +336,6 @@ app.get('/api/shifts/:id', (req, res) => {
 app.post('/api/shifts', (req, res) => {
   const {
     date, start_time, end_time,
-    break_scheduled_minutes = 30,
     break_taken = 'full',
     break_taken_minutes,
     distance_miles,
@@ -349,6 +348,15 @@ app.post('/api/shifts', (req, res) => {
   if (!date || !start_time || !end_time) {
     return res.status(400).json({ error: 'date, start_time, end_time required' });
   }
+
+  // No break given? Use the policy for these hours, not a flat 30 minutes. The
+  // old default took half an hour off a 4-hour shift that is entitled to none,
+  // which quietly cost 0.5h of paid time on anything created without an
+  // explicit break — the browser form always sends one, so only API callers and
+  // imports were affected, and silently.
+  const break_scheduled_minutes = req.body.break_scheduled_minutes != null
+    ? req.body.break_scheduled_minutes
+    : autoBreakMinutes(start_time, end_time);
 
   const rateRecord = getPayRateForDate(date);
   const hourly_rate = rateRecord ? rateRecord.hourly_rate : null;
