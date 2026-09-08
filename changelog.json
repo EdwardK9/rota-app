@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T20:07:52.473Z",
-  "commit": "6fb27e5",
+  "generated_at": "2026-09-08T20:12:48.798Z",
+  "commit": "c631fe4",
   "entries": [
+    {
+      "version": "5.1.8",
+      "date": "2026-09-08",
+      "summary": "Hide Money toggle, for looking at the rota in public",
+      "details": "A sidebar switch by the version readout that blurs every money amount on\nscreen and stays that way until switched back — the rota is often open\nwhere someone else can see it, and shifts and hours are not the private\npart of it.\n\nfmtCurrency now wraps its output in a .money span, so one CSS rule covers\nall 251 call sites and nothing has to know which of its numbers are\nmoney. The blur is set in em rather than px so it scales with the text:\na 22px stat value and an 11px table cell both end up equally unreadable\nrather than one of them staying legible.\n\nThe state lives in an attribute on <html> plus localStorage, so it\nsurvives view re-renders and reloads without any view having to\nparticipate, and toggling it redraws nothing.\n\nfmtCurrencyPlain is the unwrapped version, for the one place the result\ngoes somewhere markup can't — a title attribute on the forecast bar.\nAudited the rest first: no money reaches a canvas, an SVG text node,\ntextContent, a toast or an export, so those cannot show the markup."
+    },
     {
       "version": "5.1.7",
       "date": "2026-09-08",
