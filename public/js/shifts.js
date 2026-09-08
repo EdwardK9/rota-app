@@ -827,6 +827,17 @@ const ShiftsView = {
         </div>
         <!-- hidden field always holds the resolved value for calcPreview -->
         <input type="hidden" id="sfBreakSched" value="${breakMins}" />
+        <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-weight:400;cursor:pointer">
+          <input type="checkbox" id="sfBreakLocked" ${s.break_locked ? 'checked' : ''} style="margin-top:2px" />
+          <span>
+            Keep this break exactly as set
+            <span style="display:block;font-size:11px;color:var(--text-muted);line-height:1.4">
+              Stops Recalculate All, the break audit and the Rotageek sync putting it back to the
+              standard break for these hours. Tick it when the break was genuinely changed — a
+              manager dropping it so you finish earlier.
+            </span>
+          </span>
+        </label>
       </div>
       <div class="form-group">
         <label>Notes</label>
@@ -1068,9 +1079,10 @@ const ShiftsView = {
     const distance_miles  = isNaN(distMilesRaw) ? 3.6 : distMilesRaw;
     const notes           = document.getElementById('sfNotes')?.value?.trim() || null;
     const is_bank_holiday = document.getElementById('sfBankHol')?.checked ? 1 : 0;
+    const break_locked    = document.getElementById('sfBreakLocked')?.checked ? 1 : 0;
 
     const body = { date, start_time, end_time, break_scheduled_minutes, break_taken,
-                   distance_miles, notes, is_bank_holiday };
+                   distance_miles, notes, is_bank_holiday, break_locked };
     if (break_taken_minutes !== undefined) body.break_taken_minutes = break_taken_minutes;
 
     try {

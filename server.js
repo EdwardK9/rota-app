@@ -242,10 +242,13 @@ app.patch('/api/shifts/bulk-mileage', (req, res) => {
 // hours_worked-vs-hours_paid gap used elsewhere for that entitlement.
 // (registered BEFORE /api/shifts/:id below, otherwise Express matches :id="break-audit" first and 404s)
 app.get('/api/shifts/break-audit', (req, res) => {
+  // break_locked shifts are excluded outright: their break was set by hand and
+  // differing from policy is the point, so listing them as discrepancies would
+  // only invite correcting the very thing that was deliberate.
   const shifts = db.prepare(
     `SELECT id, date, start_time, end_time, break_scheduled_minutes, break_taken, break_taken_minutes, hours_worked, hours_paid
      FROM shifts
-     WHERE completed = 1
+     WHERE completed = 1 AND COALESCE(break_locked, 0) = 0
      ORDER BY date DESC`
   ).all();
 
@@ -292,6 +295,7 @@ app.post('/api/shifts/break-audit/apply', (req, res) => {
     for (const id of ids) {
       const s = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
       if (!s || !s.completed) continue;
+      if (s.break_locked) continue;   // set by hand — never correct it to policy
       const expected = autoBreakMinutes(s.start_time, s.end_time);
       const hp = calcHoursWorked(s.start_time, s.end_time, expected);
       const rateRecord = getPayRateForDate(s.date);
@@ -334,7 +338,8 @@ app.post('/api/shifts', (req, res) => {
     break_taken_minutes,
     distance_miles,
     notes,
-    is_bank_holiday = 0
+    is_bank_holiday = 0,
+    break_locked = 0
   } = req.body;
 
   if (!date || !start_time || !end_time) {
@@ -357,10 +362,10 @@ app.post('/api/shifts', (req, res) => {
 
   const result = db.prepare(`
     INSERT INTO shifts (date, start_time, end_time, break_scheduled_minutes, break_taken, break_taken_minutes,
-      distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes, is_bank_holiday)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes, is_bank_holiday, break_locked)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(date, start_time, end_time, break_scheduled_minutes, break_taken, actualBreak,
-     dist, hourly_rate, hours_worked, hours_paid, calculated_pay, notes || null, isBH);
+     dist, hourly_rate, hours_worked, hours_paid, calculated_pay, notes || null, isBH, break_locked ? 1 : 0);
 
   const created = db.prepare('SELECT * FROM shifts WHERE id = ?').get(result.lastInsertRowid);
   logAudit({ shift_id: created.id, action: 'created', new_values: created, source: 'manual' });
@@ -383,10 +388,12 @@ app.put('/api/shifts/:id', (req, res) => {
     distance_miles = existing.distance_miles,
     notes = existing.notes,
     completed = existing.completed,
-    is_bank_holiday = existing.is_bank_holiday
+    is_bank_holiday = existing.is_bank_holiday,
+    break_locked = existing.break_locked
   } = req.body;
 
   const isBH = is_bank_holiday ? 1 : 0;
+  const breakLocked = break_locked ? 1 : 0;
   const rateRecord = getPayRateForDate(date);
   const hourly_rate = rateRecord ? rateRecord.hourly_rate : existing.hourly_rate;
   const actualBreak = resolveBreakMinutes(break_taken, break_scheduled_minutes, break_taken_minutes !== undefined ? break_taken_minutes : existing.break_taken_minutes);
@@ -398,10 +405,10 @@ app.put('/api/shifts/:id', (req, res) => {
   db.prepare(`
     UPDATE shifts SET date=?, start_time=?, end_time=?, break_scheduled_minutes=?, break_taken=?,
       break_taken_minutes=?, distance_miles=?, hourly_rate=?, hours_worked=?, hours_paid=?, calculated_pay=?,
-      notes=?, completed=?, is_bank_holiday=?, updated_at=datetime('now')
+      notes=?, completed=?, is_bank_holiday=?, break_locked=?, updated_at=datetime('now')
     WHERE id=?
   `).run(date, start_time, end_time, break_scheduled_minutes, break_taken, actualBreak,
-     distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes, completed, isBH, req.params.id);
+     distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes, completed, isBH, breakLocked, req.params.id);
 
   const updated = db.prepare('SELECT * FROM shifts WHERE id = ?').get(req.params.id);
 
@@ -3243,6 +3250,7 @@ app.post('/api/rotageek/apply-diffs', (req, res) => {
         if (!sh) { skipped++; continue; }
 
         if (d.type === 'break') {
+          if (sh.break_locked) { skipped++; continue; }   // set by hand — leave it
           const brk = d.new_break;
           const rate = getPayRateForDate(sh.date);
           const hourly = sh.hourly_rate != null ? sh.hourly_rate : (rate ? rate.hourly_rate : null);
@@ -3570,7 +3578,9 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
           // Times match — check whether the break length differs from Rotageek
           const existing = dbShifts.find(d => dbKey(d) === rgKey(rg));
           if (existing) consumedDbIds.add(existing.id);
-          if (existing && existing.break_scheduled_minutes !== rg.breakMins) {
+          if (existing && existing.break_locked) {
+            skipped++;   // break set by hand; the journal doesn't get to overrule it
+          } else if (existing && existing.break_scheduled_minutes !== rg.breakMins) {
             // Record the difference for the report (covers completed shifts too)
             diffs.push({ id: existing.id, date, type: 'break', start: rg.start_time, end: rg.end_time,
               old_break: existing.break_scheduled_minutes, new_break: rg.breakMins,

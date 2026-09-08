@@ -498,6 +498,11 @@ const shiftMigrations = [
   'ALTER TABLE shifts ADD COLUMN hours_paid REAL',
   // Google Calendar sync: remembers the event id created for this shift
   'ALTER TABLE shifts ADD COLUMN google_event_id TEXT',
+  // Break set by hand and not to be second-guessed. The policy thresholds in
+  // autoBreakMinutes are the usual case, not the only one — a manager can drop
+  // the break so you go home earlier — and anything that "corrects" a break back
+  // to policy silently changes that shift's paid hours and the week's total.
+  'ALTER TABLE shifts ADD COLUMN break_locked INTEGER DEFAULT 0',
 ];
 shiftMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* already exists */ }
