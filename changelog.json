@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T22:59:12.133Z",
-  "commit": "df91f19",
+  "generated_at": "2026-09-08T23:01:17.613Z",
+  "commit": "dbb5ffe",
   "entries": [
+    {
+      "version": "5.6.0",
+      "date": "2026-09-09",
+      "summary": "Data Doctor flags weeks that came out under contract",
+      "details": "Every wrong number chased this week showed up first as a week under the\nweekly contract, and nothing in the app said so — it had to be spotted by\nreading Rotageek's totals against the app's by eye.\n\nEd is rostered at or above contract essentially always, and payroll only\ndocks for sickness, which it pays straight back. That makes a completed\nweek landing short a reliable sign the data is wrong rather than the week:\na shift that never imported, or a break deducted that was never taken. The\n9-15 Feb week read 19.50h for exactly that reason.\n\nLeave and sickness both count towards the contract, so neither makes a week\nshort. Leave counts by its real hours rather than by day — a 'day_off'\ncarries none, and treating it as a full day would have hidden a genuine\nshortfall. Weeks still in progress are skipped.\n\nAlso fixed a duplicate here: the Data Doctor had its own hand-copied break\npolicy, which kept the old strict-> boundary and would now report every\n4h30 shift as a discrepancy that isn't. It calls autoBreakMinutes.\n\nTwo test files under test/, both run by npm test."
+    },
     {
       "version": "5.5.0",
       "date": "2026-09-08",
