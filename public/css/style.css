@@ -168,6 +168,34 @@ body {
 .stat-value.warning { color: var(--warning); }
 .stat-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.3; }
 
+/* Contract tracking strip — week-based, sits between the month stat cards and
+   the week-grouped table it totals. Deliberately not a stat-card: it answers a
+   different question (weeks vs contract) to the cards above it (this month). */
+.contract-strip {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+.contract-strip-row {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px;
+  font-size: 13px; color: var(--text);
+}
+.contract-strip-title {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-muted);
+}
+.contract-strip-span { font-size: 12px; color: var(--text-muted); }
+.contract-strip-sum  { margin-left: auto; }
+.contract-strip-note {
+  font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.4;
+}
+@media (max-width: 640px) {
+  .contract-strip-sum { margin-left: 0; flex-basis: 100%; }
+}
+
 /* ─────────────────────────────────────────
    Toolbar (filters + actions row)
    ───────────────────────────────────────── */

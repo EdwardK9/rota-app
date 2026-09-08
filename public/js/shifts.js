@@ -30,6 +30,8 @@ const ShiftsView = {
 
       <div class="stats-grid" id="shiftStats"></div>
 
+      <div id="shiftContractStrip"></div>
+
       <div id="bulkBar" class="bulk-bar hidden">
         <span id="bulkCount">0 selected</span>
         <button class="btn btn-success btn-sm" id="bulkCompleteBtn">✓ Complete</button>
@@ -231,21 +233,57 @@ const ShiftsView = {
     }
   },
 
-  // Calculate contracted hours for a given YYYY-MM month using stored pay rates
-  contractedHoursForMonth(month) {
+  // The weekly contract in force for a given week — a week is contracted as a
+  // whole week, whichever months its days land in.
+  contractedHoursForWeek(weekStart) {
     if (!this.payRates.length) return null;
-    // Find applicable rate (latest rate with effective_date <= last day of month)
-    const lastDay = `${month}-31`; // safe upper bound
     const rate = [...this.payRates]
-      .filter(r => r.effective_date <= lastDay)
+      .filter(r => r.effective_date <= weekStart)
       .sort((a, b) => b.effective_date.localeCompare(a.effective_date))[0];
-    if (!rate) return null;
+    return rate?.contracted_hours_per_week || null;
+  },
 
-    // 52/12ths of the weekly contract — the same basis payroll uses for basic
-    // pay, and the same as the server's getContractedForMonth. Counting Mon–Fri
-    // days instead swung this between 80h and 92h for an unchanging 20h
-    // contract, on a rota where 38% of shifts fall at a weekend.
-    return Math.round(rate.contracted_hours_per_week * (52 / 12) * 100) / 100;
+  weekStartOf(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    const dow = d.getDay();                      // 0=Sun
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+    return `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+  },
+
+  // Mon-start weeks covering everything currently loaded, each with its own
+  // contract and totals. Single source for the contract strip and the table's
+  // week headers — they showed different figures for the same week before, and
+  // the top-of-page summary could not be reconciled against the rows below it.
+  weekSummaries() {
+    const order = [];
+    const map = new Map();
+    for (const s of this.shifts) {
+      const wk = this.weekStartOf(s.date);
+      if (!map.has(wk)) { map.set(wk, []); order.push(wk); }
+      map.get(wk).push(s);
+    }
+    // hours_paid always has the full scheduled break deducted (breaks are never
+    // paid), so it is the contract-facing figure — not hours_worked, which keeps
+    // the time back when a break is worked through.
+    const paidOf = s => s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0);
+    return order.map(wk => {
+      const all   = map.get(wk);
+      const real  = all.filter(s => !s._isLeave);
+      const leave = all.filter(s => s._isLeave).reduce((n, s) => n + (s._leaveHours || 0), 0);
+      const scheduled = real.reduce((n, s) => n + paidOf(s), 0) + leave;
+      const contracted = this.contractedHoursForWeek(wk);
+      return {
+        weekStart: wk,
+        shifts: all,
+        real,
+        leaveHours: leave,
+        worked: real.filter(s => s.completed).reduce((n, s) => n + paidOf(s), 0),
+        scheduled,
+        contracted,
+        overUnder: contracted !== null ? scheduled - contracted : null
+      };
+    });
   },
 
   renderStats() {
@@ -288,21 +326,7 @@ const ShiftsView = {
       ? `${Math.floor(m / 60)}h ${m % 60 > 0 ? (m % 60) + 'm' : ''}`.trim()
       : `${m}m`;
 
-    // Contracted vs worked hours
-    const contracted = this.contractedHoursForMonth(this.currentMonth);
-    const overUnder  = contracted !== null ? monthHours - contracted : null;
-    const overUnderHtml = overUnder !== null
-      ? `<div class="stat-card">
-          <div class="stat-label">Contracted</div>
-          <div class="stat-value" style="color:var(--text-muted)">${fmtHours(contracted)}</div>
-          <div class="stat-hint">Weekly contract &times; 52&frasl;12, this month's rate</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Over/Under</div>
-          <div class="stat-value ${overUnder > 0 ? 'success' : overUnder < 0 ? 'danger' : ''}">${overUnder >= 0 ? '+' : '&minus;'}${fmtHours(Math.abs(overUnder))}</div>
-          <div class="stat-hint">${overUnder < 0 ? 'Under' : 'Over'} contract &mdash; Hours (Month) minus Contracted</div>
-        </div>`
-      : '';
+    this.renderContractStrip();
 
     document.getElementById('shiftStats').innerHTML = `
       <div class="stat-card">
@@ -325,7 +349,6 @@ const ShiftsView = {
         <div class="stat-value" style="color:var(--text-muted)">${fmtHours(workedHours)}</div>
         <div class="stat-hint">Paid hours, completed shifts only</div>
       </div>
-      ${overUnderHtml}
       <div class="stat-card">
         <div class="stat-label">Est. Pay (Month)</div>
         <div class="stat-value">${fmtCurrency(monthPay)}</div>
@@ -370,6 +393,54 @@ const ShiftsView = {
     `;
   },
 
+  // Contract tracking, on the weeks shown in the table below rather than on the
+  // calendar month. The contract is weekly, and a month boundary falls mid-week:
+  // September 2026 ended on a Wednesday with 20 of that week's 23 hours landing
+  // in October, so the month read 1.92h under while all five weeks were on or
+  // over contract. Both figures were right and reconciling them by hand was
+  // guesswork. The month-vs-payroll comparison lives in Payslips → Hours vs
+  // Contract, which is where a payslip is there to check it against.
+  renderContractStrip() {
+    const el = document.getElementById('shiftContractStrip');
+    if (!el) return;
+
+    const weeks = this.weekSummaries().filter(w => w.contracted !== null && w.real.length);
+    if (!weeks.length) { el.innerHTML = ''; return; }
+
+    const scheduled  = weeks.reduce((n, w) => n + w.scheduled, 0);
+    const contracted = weeks.reduce((n, w) => n + w.contracted, 0);
+    const diff       = scheduled - contracted;
+    const onContract = Math.abs(diff) < 0.005;
+
+    const fmtShort = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const lastEnd = new Date(weeks[weeks.length - 1].weekStart + 'T00:00:00');
+    lastEnd.setDate(lastEnd.getDate() + 6);
+    const span = `${fmtShort(weeks[0].weekStart)} – ${fmtShort(`${lastEnd.getFullYear()}-${String(lastEnd.getMonth()+1).padStart(2,'0')}-${String(lastEnd.getDate()).padStart(2,'0')}`)}`;
+
+    const colour = onContract ? 'var(--text-muted)' : diff > 0 ? 'var(--success)' : 'var(--danger)';
+    const verdict = onContract
+      ? 'on contract'
+      : `${fmtHours(Math.abs(diff))} ${diff > 0 ? 'over' : 'under'}`;
+
+    el.innerHTML = `
+      <div class="contract-strip">
+        <div class="contract-strip-row">
+          <span class="contract-strip-title">Contract</span>
+          <span class="contract-strip-span">${weeks.length} week${weeks.length === 1 ? '' : 's'} below · ${span}</span>
+          <span class="contract-strip-sum">
+            <strong>${fmtHours(scheduled)}</strong> scheduled
+            vs <strong>${fmtHours(contracted)}</strong> contracted
+            <strong style="color:${colour}">${onContract ? 'on contract' : `${diff > 0 ? '+' : '&minus;'}${fmtHours(Math.abs(diff))}`}</strong>
+          </span>
+        </div>
+        <div class="contract-strip-note">
+          Whole Mon–Sun weeks, not split at a month boundary — so this adds up to the week rows below, and
+          <strong>${verdict}</strong> is across those weeks, not across ${fmtMonth(this.currentMonth)}.
+          For the month-vs-payslip figure, see <strong>Payslips → Hours vs Contract</strong>.
+        </div>
+      </div>`;
+  },
+
   renderTable() {
     const tbody = document.getElementById('shiftsTbody');
     if (!this.shifts.length) {
@@ -384,34 +455,8 @@ const ShiftsView = {
       return;
     }
 
-    // ── Group shifts by week (Monday start) ───────────────────────────────────
-    const getWeekStart = (dateStr) => {
-      const d = new Date(dateStr + 'T00:00:00');
-      const dow = d.getDay(); // 0=Sun
-      const diff = dow === 0 ? -6 : 1 - dow;
-      const mon = new Date(d);
-      mon.setDate(d.getDate() + diff);
-      return `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
-    };
-
-    const weekGroups = [];
-    const weekMap = new Map();
-    for (const s of this.shifts) {
-      const wk = getWeekStart(s.date);
-      if (!weekMap.has(wk)) { weekMap.set(wk, []); weekGroups.push(wk); }
-      weekMap.get(wk).push(s);
-    }
-
-    // ── Contracted hours for a specific week (count Mon–Fri in the month) ─────
-    const getContractedForWeek = (weekStart) => {
-      if (!this.payRates.length) return null;
-      const rate = [...this.payRates]
-        .filter(r => r.effective_date <= weekStart)
-        .sort((a, b) => b.effective_date.localeCompare(a.effective_date))[0];
-      if (!rate?.contracted_hours_per_week) return null;
-      // Count all 5 Mon–Fri days in the week regardless of month boundary
-      return rate.contracted_hours_per_week;
-    };
+    // Same week totals the contract strip above is built from — see weekSummaries()
+    const weeks = this.weekSummaries();
 
     // ── Render helper for a single shift row ──────────────────────────────────
     const shiftRow = (s) => {
@@ -487,40 +532,26 @@ const ShiftsView = {
     let html = '';
     const fmtShort = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
-    for (const wk of weekGroups) {
-      const weekShifts  = weekMap.get(wk);
+    for (const w of weeks) {
+      const wk = w.weekStart;
+      const weekShifts  = w.shifts;
       const sunDate     = new Date(wk + 'T00:00:00');
       sunDate.setDate(sunDate.getDate() + 6);
       const sunStr = `${sunDate.getFullYear()}-${String(sunDate.getMonth()+1).padStart(2,'0')}-${String(sunDate.getDate()).padStart(2,'0')}`;
       const wkLabel     = `${fmtShort(wk)} – ${fmtShort(sunStr)}`;
 
-      const realWeekShifts = weekShifts.filter(s => !s._isLeave);
-      const leaveWeekShifts = weekShifts.filter(s => s._isLeave);
-      const weekLeaveHours = leaveWeekShifts.reduce((sum, s) => sum + (s._leaveHours || 0), 0);
-      const weekWorked  = realWeekShifts.filter(s => s.completed).reduce((sum, s) => sum + (s.hours_paid != null ? s.hours_paid : s.hours_worked || 0), 0);
-      // Total scheduled paid hours for the whole week (deduct scheduled break) + leave hours
-      const weekScheduled = realWeekShifts.reduce((sum, s) => {
-        const [sh2, sm2] = s.start_time.split(':').map(Number);
-        const [eh2, em2] = s.end_time.split(':').map(Number);
-        let mins = (eh2 * 60 + em2) - (sh2 * 60 + sm2);
-        if (mins < 0) mins += 1440;
-        const paid = Math.max(0, mins - (s.break_scheduled_minutes || 0));
-        return sum + paid / 60;
-      }, 0) + weekLeaveHours;
-      const contracted  = getContractedForWeek(wk);
-      const hasCompleted = realWeekShifts.some(s => s.completed);
-      const hasUpcoming  = realWeekShifts.some(s => !s.completed);
+      const weekLeaveHours = w.leaveHours;
+      const weekWorked     = w.worked;
+      const weekScheduled  = w.scheduled;
+      const contracted     = w.contracted;
+      const overUnder      = w.overUnder;
+      const hasCompleted   = w.real.some(s => s.completed);
 
-      // Over/under based on contracted vs total scheduled (not just worked)
-      const overUnder   = contracted !== null ? weekScheduled - contracted : null;
       const overUnderHtml = overUnder !== null
         ? ` <span style="font-weight:700;color:${overUnder >= 0 ? 'var(--success)' : 'var(--danger)'};">${overUnder >= 0 ? '+' : '-'}${fmtHours(Math.abs(overUnder))}</span>`
         : '';
-      // A week is a week: the boundary ones are counted whole against a whole
-      // week's contract, so these don't add up to the month's figure above —
-      // five weekly contracts is 100h where the month's is 52/12 x 20 = 86.67h.
       const contractedHtml = contracted !== null
-        ? `<span style="color:var(--text-muted);margin-left:4px" title="This week's own Mon–Sun contract. Weeks aren't split at a month boundary, so these won't add up to the month's Over/Under above.">contracted ${fmtHours(contracted)}${overUnderHtml}</span>`
+        ? `<span style="color:var(--text-muted);margin-left:4px" title="This week's own Mon–Sun contract. These weeks are what the Contract summary above totals.">contracted ${fmtHours(contracted)}${overUnderHtml}</span>`
         : '';
 
       const leaveHtml = weekLeaveHours > 0
