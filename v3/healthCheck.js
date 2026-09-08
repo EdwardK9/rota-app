@@ -21,7 +21,7 @@
 const express = require('express');
 const {
   db, localDateStr, addDays, daysBetween, mondayOf,
-  toMins, spanMins, overlapMins, paidHours, rateForDate, round1, round2,
+  toMins, spanMins, overlapMins, paidHours, rateForDate, contractHoursForDate, round1, round2,
 } = require('./helpers');
 const { autoBreakMinutes } = require('../db');
 const { bankHolidayDates } = require('./bankHolidays');
@@ -157,8 +157,19 @@ router.get('/health-check', async (req, res) => {
 
   /* ── Shifts against leave ──────────────────────────────────────────────── */
   const leaveDates = new Map();
+  // Hours per day too, spread across every day the entry covers — the same rule
+  // as leaveHours.js. Needed by the under-contract check below, where counting a
+  // zero-hour 'day_off' as if it were a full day would hide a real shortfall.
+  const leaveHoursByDay = new Map();
   for (const l of leave) {
-    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) leaveDates.set(d, l.leave_type);
+    let days = 0;
+    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) days++;
+    const total = l.hours_taken != null ? l.hours_taken : 0;
+    const perDay = days > 0 ? total / days : 0;
+    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) {
+      leaveDates.set(d, l.leave_type);
+      leaveHoursByDay.set(d, (leaveHoursByDay.get(d) || 0) + perDay);
+    }
   }
   const onLeave = shifts.filter(s => leaveDates.has(s.date))
     .map(s => ({ ...label(s), leave_type: leaveDates.get(s.date) }));
@@ -195,6 +206,49 @@ router.get('/health-check', async (req, res) => {
     'Weeks with no shifts and no leave',
     'Nothing rostered and nothing booked off — between two weeks that do have shifts. Occasionally that\'s a genuine unpaid week, but far more often it\'s a week that never imported, which quietly drags down every average and streak in the app.',
     gaps, 'Re-import that week, or add a leave entry if you really were off.'));
+
+  /* ── Weeks that came out under the weekly contract ─────────────────────── */
+  // Ed is rostered at or above his contract essentially always, and payroll
+  // never docks for a short week — only for sickness, which it then pays back.
+  // So a completed week that lands under contract is a reliable sign the data
+  // is wrong, not that he under-worked: a shift that never imported, or a break
+  // deducted that wasn't taken. This is the check that would have caught the
+  // 4h30 break bug and the phantom break on 14 Feb without anyone eyeballing
+  // Rotageek. Leave and sickness both count towards the contract, so a week
+  // covered by either is not short.
+  const shortWeeks = [];
+  {
+    const byWeek = new Map();
+    for (const s of shifts) {
+      const wk = mondayOf(s.date);
+      const e = byWeek.get(wk) || { hours: 0, sick: 0, ids: [] };
+      e.hours += paidHours(s);
+      if (s.absence_type === 'sick') e.sick += paidHours(s);
+      e.ids.push(s.id);
+      byWeek.set(wk, e);
+    }
+    const thisWeek = mondayOf(today);
+    for (const [wk, e] of [...byWeek].sort((a, b) => a[0].localeCompare(b[0]))) {
+      if (wk >= thisWeek) continue;                       // still in progress
+      const contract = contractHoursForDate(wk);
+      if (!contract) continue;
+      // Leave booked in this week also counts towards the contract, by its real
+      // hours — a 'day_off' carries none and so must not paper over a shortfall.
+      let leaveH = 0;
+      for (let k = 0; k < 7; k++) leaveH += leaveHoursByDay.get(addDays(wk, k)) || 0;
+      const covered = e.hours + leaveH;
+      const short = round2(contract - covered);
+      if (short > 0.01) {
+        shortWeeks.push({ week_start: wk, week_end: addDays(wk, 6),
+                          contracted: contract, covered: round2(covered),
+                          short, sick_hours: round2(e.sick), shifts: e.ids.length });
+      }
+    }
+  }
+  if (shortWeeks.length) findings.push(finding('week_under_contract', 'warning',
+    'Weeks that came out under the weekly contract',
+    'You are rostered at or above contract essentially always, and payroll only ever docks for sickness — which it pays straight back. So a past week landing under contract usually means the data is wrong rather than the week was: a shift that never imported, or a break taken off that was never actually taken. Worth checking each against Rotageek.',
+    shortWeeks, 'Compare the week against Rotageek (Import → Compare). If a break is the culprit, fix it and tick "Keep this break exactly as set".'));
 
   /* ── Months with shifts but no payslip ─────────────────────────────────── */
   const paidMonths = new Set(payslips.map(p => p.month));
