@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T19:48:18.989Z",
-  "commit": "0b54695",
+  "generated_at": "2026-09-08T19:57:46.621Z",
+  "commit": "2ec5a2f",
   "entries": [
+    {
+      "version": "5.1.6",
+      "date": "2026-09-08",
+      "summary": "An under-contract month was missing its minus sign",
+      "details": "The Shifts tab's Over/Under card prefixed '+' when positive and an empty\nstring when negative, so 84.75h against an 86.67h contract rendered as\n\"1.92h\" — identical to being 1.92h over, with only the red colour to\ntell them apart, while the two cards beside it plainly showed Hours\nbelow Contracted. Now signed, and the hint says \"Under contract\" or\n\"Over contract\" in words. The Reports tab has always rendered this\ncorrectly; this brings the Shifts tab in line.\n\nDistance's hint said \"Completed shifts only\" and the card doesn't —\nit sums every shift in the month, done or not. Hint corrected to match.\n\nAlso tooltipped the per-week contracted figure. Weekly over/unders don't\nsum to the monthly one and are not supposed to: a week straddling a\nmonth boundary is counted whole against a whole week's contract, so\nSeptember's five week-rows carry 100h of contract where the month\nitself is 52/12 x 20 = 86.67h."
+    },
     {
       "version": "5.1.5",
       "date": "2026-09-08",
