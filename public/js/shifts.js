@@ -299,8 +299,8 @@ const ShiftsView = {
         </div>
         <div class="stat-card">
           <div class="stat-label">Over/Under</div>
-          <div class="stat-value ${overUnder > 0 ? 'success' : overUnder < 0 ? 'danger' : ''}">${overUnder >= 0 ? '+' : ''}${fmtHours(Math.abs(overUnder))}</div>
-          <div class="stat-hint">Hours (Month) minus Contracted</div>
+          <div class="stat-value ${overUnder > 0 ? 'success' : overUnder < 0 ? 'danger' : ''}">${overUnder >= 0 ? '+' : '&minus;'}${fmtHours(Math.abs(overUnder))}</div>
+          <div class="stat-hint">${overUnder < 0 ? 'Under' : 'Over'} contract &mdash; Hours (Month) minus Contracted</div>
         </div>`
       : '';
 
@@ -339,7 +339,7 @@ const ShiftsView = {
       <div class="stat-card">
         <div class="stat-label">Distance</div>
         <div class="stat-value">${fmtMiles(totalDist)}</div>
-        <div class="stat-hint">Completed shifts only</div>
+        <div class="stat-hint">Every shift this month (done or not)</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Breaks (count)</div>
@@ -516,8 +516,11 @@ const ShiftsView = {
       const overUnderHtml = overUnder !== null
         ? ` <span style="font-weight:700;color:${overUnder >= 0 ? 'var(--success)' : 'var(--danger)'};">${overUnder >= 0 ? '+' : '-'}${fmtHours(Math.abs(overUnder))}</span>`
         : '';
+      // A week is a week: the boundary ones are counted whole against a whole
+      // week's contract, so these don't add up to the month's figure above —
+      // five weekly contracts is 100h where the month's is 52/12 x 20 = 86.67h.
       const contractedHtml = contracted !== null
-        ? `<span style="color:var(--text-muted);margin-left:4px">contracted ${fmtHours(contracted)}${overUnderHtml}</span>`
+        ? `<span style="color:var(--text-muted);margin-left:4px" title="This week's own Mon–Sun contract. Weeks aren't split at a month boundary, so these won't add up to the month's Over/Under above.">contracted ${fmtHours(contracted)}${overUnderHtml}</span>`
         : '';
 
       const leaveHtml = weekLeaveHours > 0
