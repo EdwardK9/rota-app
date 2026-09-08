@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-07T18:28:17.662Z",
-  "commit": "ff872bb",
+  "generated_at": "2026-09-08T19:48:18.989Z",
+  "commit": "0b54695",
   "entries": [
+    {
+      "version": "5.1.5",
+      "date": "2026-09-08",
+      "summary": "Shifts tab hours were leaking across the month boundary",
+      "details": "Hours (Month) and Over/Under on the Shifts tab summed shifts spilling\ninto the adjacent month too. this.shifts intentionally carries a day or\ntwo from August/October so a week straddling the 1st can render as one\nrow in the table, but renderStats() never filtered that back out before\ntotalling — so the month's stats counted more days than the calendar\nmonth actually has, against a Contracted figure that's strictly this\nmonth's. Also switched to hours_paid (was hours_worked, which\noverstates by ~1 break's worth whenever a break was worked through\ninstead of taken) and added leave into the month total, matching how\nthe Monthly Reports tab already computes both.\n\nAdded a one-line hint under every stat card explaining what it adds up\n(e.g. \"Hours (Month)\" now says what's included) since the mismatch\nbetween this tab's numbers and the weekly rows underneath it was hard\nto reason about without knowing the scope of each figure."
+    },
     {
       "version": "5.1.0",
       "date": "2026-09-07",
