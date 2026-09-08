@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T22:54:22.261Z",
-  "commit": "84f017a",
+  "generated_at": "2026-09-08T22:59:12.133Z",
+  "commit": "df91f19",
   "entries": [
+    {
+      "version": "5.5.0",
+      "date": "2026-09-08",
+      "summary": "Break policy was wrong at 4h30, in six different places",
+      "details": "A shift of exactly 4h30 carries 15 minutes of unpaid break in Rotageek's\njournal. autoBreakMinutes used a strict >, returned 0, and so counted every\nsuch shift 0.25h longer than it was. Three are visible in the data alone —\n16 Feb, 14 Aug and 16 Sep 2026 — which is why the week of 16 Feb read\n21.25h against Rotageek's own total of 21 hrs.\n\nThe boundaries are deliberately not consistent with each other. 4h30 is\ninclusive, matching the company's \"4.5 hours or more\"; 6h is exclusive,\nmatching the Working Time Regulations entitlement for working *more than*\nsix hours. 19 Aug 2026 is exactly 6h00 and carries 15m, not 30m, while\n6h15 carries 30m. Making them agree looks like a tidy-up and silently\nchanges pay, so there is now a test that fails if anyone does.\n\nThe policy was written out six times — db.js, the client break preview, the\nRotageek fallback, the Data Doctor, a SQL CASE in v3/helpers, and\nworking-with.js — and had already drifted into two different rules:\nworking-with.js was inclusive at 4h30 (right, by accident) but had no 45m\ntier at all. They now all defer to db.js, or carry a comment saying why\nthey cannot.\n\ntest/break-policy.test.js checks all six-way agreement against 29 real\nshifts with Rotageek's own break figures. `npm test` runs it. It caught my\nfirst attempt at this fix, which made 6h inclusive too and broke 19 Aug.\n\nExisting rows are untouched: this changes what the app computes for new and\nre-checked shifts, not what is already stored. The break audit will now\nlist affected past shifts as discrepancies so they can be reviewed rather\nthan silently rewritten — and a break someone deliberately set can be\npinned with the v5.2.0 lock so the audit leaves it alone."
+    },
     {
       "version": "5.4.0",
       "date": "2026-09-08",
