@@ -171,6 +171,9 @@ app.patch('/api/shifts/bulk-complete', (req, res) => {
     for (const id of ids) {
       const existing = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
       if (!existing) continue;
+      // A day off sick can't be "completed" — it wasn't worked. Marking it done
+      // would move its hours into worked totals and its breaks into break stats.
+      if (existing.absence_type && completed) continue;
 
       // Use override break info if provided, otherwise keep what the shift already has
       const usedBreakTaken   = break_taken !== undefined ? break_taken : existing.break_taken;
@@ -339,7 +342,8 @@ app.post('/api/shifts', (req, res) => {
     distance_miles,
     notes,
     is_bank_holiday = 0,
-    break_locked = 0
+    break_locked = 0,
+    absence_type = null
   } = req.body;
 
   if (!date || !start_time || !end_time) {
@@ -362,10 +366,12 @@ app.post('/api/shifts', (req, res) => {
 
   const result = db.prepare(`
     INSERT INTO shifts (date, start_time, end_time, break_scheduled_minutes, break_taken, break_taken_minutes,
-      distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes, is_bank_holiday, break_locked)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes, is_bank_holiday, break_locked,
+      absence_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(date, start_time, end_time, break_scheduled_minutes, break_taken, actualBreak,
-     dist, hourly_rate, hours_worked, hours_paid, calculated_pay, notes || null, isBH, break_locked ? 1 : 0);
+     dist, hourly_rate, hours_worked, hours_paid, calculated_pay, notes || null, isBH, break_locked ? 1 : 0,
+     absence_type || null);
 
   const created = db.prepare('SELECT * FROM shifts WHERE id = ?').get(result.lastInsertRowid);
   logAudit({ shift_id: created.id, action: 'created', new_values: created, source: 'manual' });
@@ -389,7 +395,8 @@ app.put('/api/shifts/:id', (req, res) => {
     notes = existing.notes,
     completed = existing.completed,
     is_bank_holiday = existing.is_bank_holiday,
-    break_locked = existing.break_locked
+    break_locked = existing.break_locked,
+    absence_type = existing.absence_type
   } = req.body;
 
   const isBH = is_bank_holiday ? 1 : 0;
@@ -405,10 +412,11 @@ app.put('/api/shifts/:id', (req, res) => {
   db.prepare(`
     UPDATE shifts SET date=?, start_time=?, end_time=?, break_scheduled_minutes=?, break_taken=?,
       break_taken_minutes=?, distance_miles=?, hourly_rate=?, hours_worked=?, hours_paid=?, calculated_pay=?,
-      notes=?, completed=?, is_bank_holiday=?, break_locked=?, updated_at=datetime('now')
+      notes=?, completed=?, is_bank_holiday=?, break_locked=?, absence_type=?, updated_at=datetime('now')
     WHERE id=?
   `).run(date, start_time, end_time, break_scheduled_minutes, break_taken, actualBreak,
-     distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes, completed, isBH, breakLocked, req.params.id);
+     distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, notes,
+     absence_type ? 0 : completed, isBH, breakLocked, absence_type || null, req.params.id);
 
   const updated = db.prepare('SELECT * FROM shifts WHERE id = ?').get(req.params.id);
 
@@ -436,6 +444,9 @@ app.patch('/api/shifts/:id/complete', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   const { completed, break_taken, break_taken_minutes } = req.body;
+  if (existing.absence_type && completed) {
+    return res.status(400).json({ error: 'This shift is marked as an absence and was not worked. Clear the absence first if it was actually worked.' });
+  }
 
   const bt = break_taken !== undefined ? break_taken : existing.break_taken;
   const actualBreak = resolveBreakMinutes(bt, existing.break_scheduled_minutes,
@@ -837,7 +848,12 @@ app.get('/api/reports/monthly', (req, res) => {
       -- not, so hours_worked (which keeps the time back when a break is worked
       -- through) overstates what counts towards pay and contract by ~23h.
       SUM(CASE WHEN completed=1 THEN hours_paid ELSE 0 END) as hours_worked,
+      -- Rostered hours, whether worked, still to come, or missed through
+      -- sickness. This is the contract-facing figure: a sick day was still a
+      -- day you were contracted and paid for.
       SUM(hours_paid) as scheduled_hours,
+      SUM(CASE WHEN absence_type = 'sick' THEN hours_paid ELSE 0 END) as sick_hours,
+      SUM(CASE WHEN absence_type = 'sick' THEN 1 ELSE 0 END) as sick_count,
       SUM(CASE WHEN completed=1 THEN calculated_pay ELSE 0 END) as calculated_pay,
       SUM(calculated_pay) as scheduled_pay,
       SUM(CASE WHEN completed=1 THEN distance_miles ELSE 0 END) as distance_miles,
@@ -911,6 +927,8 @@ app.get('/api/reports/monthly', (req, res) => {
       completed_count: s.completed_count,
       hours_worked: s.hours_worked || 0,
       scheduled_hours: s.scheduled_hours || 0,
+      sick_hours: s.sick_hours || 0,
+      sick_count: s.sick_count || 0,
       calculated_pay: s.calculated_pay || 0,
       scheduled_pay: s.scheduled_pay || 0,
       leave_hours: leaveHours,
@@ -933,7 +951,8 @@ app.get('/api/reports/monthly', (req, res) => {
       const leaveHours = leaveMap[p.month] || 0;
       const leavePay = rate ? Math.round(leaveHours * rate.hourly_rate * 100) / 100 : 0;
       merged.push({ month: p.month, shift_count: 0, completed_count: 0,
-        hours_worked: 0, calculated_pay: 0, scheduled_pay: 0, scheduled_hours: 0, leave_hours: leaveHours, leave_pay: leavePay,
+        hours_worked: 0, calculated_pay: 0, scheduled_pay: 0, scheduled_hours: 0, sick_hours: 0, sick_count: 0,
+        leave_hours: leaveHours, leave_pay: leavePay,
         distance_miles: 0, contracted_hours: getContractedForMonth(p.month), payslip: p });
     }
   });
@@ -4448,7 +4467,8 @@ function _autoCompleteShiftForClockOut(date, clockOutTime) {
   // and picking it would mean the afternoon shift you just clocked out of stays
   // open — the exact thing this is here to prevent.
   const dayShifts = db.prepare(
-    'SELECT * FROM shifts WHERE date = ? AND (completed IS NULL OR completed = 0) ORDER BY start_time ASC'
+    `SELECT * FROM shifts WHERE date = ? AND (completed IS NULL OR completed = 0)
+       AND absence_type IS NULL ORDER BY start_time ASC`
   ).all(date);
   if (!dayShifts.length) return null;
 

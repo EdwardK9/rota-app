@@ -176,6 +176,16 @@ html[data-hide-money] .money {
   user-select: none;
 }
 
+/* Off sick — rostered and paid, but not worked. Marked distinctly so it reads
+   as settled rather than as a shift still waiting to be ticked off. */
+.sick-row { background: rgba(255, 193, 7, 0.06); }
+.sick-badge { font-size: 16px; line-height: 1; cursor: default; }
+.sick-tag {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 1px 5px; border-radius: 3px; vertical-align: middle;
+  background: var(--warning); color: #1a1a1a;
+}
+
 /* Contract tracking strip — week-based, sits between the month stat cards and
    the week-grouped table it totals. Deliberately not a stat-card: it answers a
    different question (weeks vs contract) to the cards above it (this month). */

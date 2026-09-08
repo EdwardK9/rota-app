@@ -279,6 +279,7 @@ const ShiftsView = {
         real,
         leaveHours: leave,
         worked: real.filter(s => s.completed).reduce((n, s) => n + paidOf(s), 0),
+        sick: real.filter(s => s.absence_type === 'sick').reduce((n, s) => n + paidOf(s), 0),
         scheduled,
         contracted,
         overUnder: contracted !== null ? scheduled - contracted : null
@@ -303,6 +304,10 @@ const ShiftsView = {
     const totalDist  = realShifts.reduce((sum, s) => sum + (s.distance_miles || 0), 0);
     const workedHours = completed.reduce((sum, s) => sum + (s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0)), 0);
     const workedPay   = completed.reduce((sum, s) => sum + (s.calculated_pay || 0), 0);
+    // Rostered, paid, counts towards contract — but not worked, so it stays out
+    // of "Worked So Far" (an absence is never completed) and gets its own card.
+    const sickShifts = realShifts.filter(s => s.absence_type === 'sick');
+    const sickHours  = sickShifts.reduce((sum, s) => sum + (s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0)), 0);
 
     // Break stats — across all shifts (scheduled); taken from completed shifts only
     const shiftsWithBreak     = realShifts.filter(s => (s.break_scheduled_minutes || 0) > 0);
@@ -349,6 +354,12 @@ const ShiftsView = {
         <div class="stat-value" style="color:var(--text-muted)">${fmtHours(workedHours)}</div>
         <div class="stat-hint">Paid hours, completed shifts only</div>
       </div>
+      ${sickHours > 0 ? `
+      <div class="stat-card">
+        <div class="stat-label">Off Sick</div>
+        <div class="stat-value warning">${fmtHours(sickHours)}</div>
+        <div class="stat-hint">${sickShifts.length} shift${sickShifts.length === 1 ? '' : 's'} — counts towards contract, not towards hours worked</div>
+      </div>` : ''}
       <div class="stat-card">
         <div class="stat-label">Est. Pay (Month)</div>
         <div class="stat-value">${fmtCurrency(monthPay)}</div>
@@ -476,18 +487,22 @@ const ShiftsView = {
       const payCell = isBankHol
         ? `<span class="bh-pay" title="Bank Holiday 2× rate">${fmtCurrency(s.calculated_pay)} <span class="bh-badge" style="font-size:10px;vertical-align:middle;">2×</span></span>`
         : fmtCurrency(s.calculated_pay);
+      // An absence isn't "not done yet" — it's settled, just not worked. Own
+      // marker so it can't be mistaken for a shift still waiting to be ticked.
+      const isSick = s.absence_type === 'sick';
+      const statusCell = isSick
+        ? `<span class="sick-badge" title="Off sick — counts towards contract, not towards hours worked">🤒</span>`
+        : `<button class="complete-btn ${s.completed ? 'done' : ''}" title="${s.completed ? 'Mark incomplete' : 'Mark complete'}" data-id="${s.id}">
+             ${s.completed ? '✓' : ''}
+           </button>`;
       return `
-        <tr class="${s.completed ? 'completed-row' : ''}${isBankHol ? ' bh-row' : ''}" data-id="${s.id}">
+        <tr class="${s.completed ? 'completed-row' : ''}${isBankHol ? ' bh-row' : ''}${isSick ? ' sick-row' : ''}" data-id="${s.id}">
           <td style="width:36px">
             <input type="checkbox" class="shift-row-cb shift-cb-large" data-id="${s.id}" />
           </td>
+          <td>${statusCell}</td>
           <td>
-            <button class="complete-btn ${s.completed ? 'done' : ''}" title="${s.completed ? 'Mark incomplete' : 'Mark complete'}" data-id="${s.id}">
-              ${s.completed ? '✓' : ''}
-            </button>
-          </td>
-          <td>
-            <div class="shift-date">${fmtDate(s.date)}${isBankHol ? ' <span class="bh-badge" title="Bank Holiday">BH</span>' : ''}</div>
+            <div class="shift-date">${fmtDate(s.date)}${isBankHol ? ' <span class="bh-badge" title="Bank Holiday">BH</span>' : ''}${isSick ? ' <span class="sick-tag">SICK</span>' : ''}</div>
             <div class="shift-day">${fmtDayShort(s.date)}</div>
           </td>
           <td class="shift-time">${s.start_time}</td>
@@ -557,6 +572,9 @@ const ShiftsView = {
       const leaveHtml = weekLeaveHours > 0
         ? ` · <span style="color:var(--success)">🏖️ ${fmtHours(weekLeaveHours)} leave</span>`
         : '';
+      const sickHtml = w.sick > 0
+        ? ` · <span style="color:var(--warning)" title="Rostered but not worked — still counts towards contract">🤒 ${fmtHours(w.sick)} sick</span>`
+        : '';
       html += `<tr class="week-group-row" style="background:var(--bg)">
         <td colspan="11" style="padding:5px 14px;border-top:2px solid var(--border);border-bottom:1px solid var(--border);">
           <span style="font-weight:600;color:var(--text-muted);font-size:12px">Week&nbsp;${wkLabel}</span>
@@ -564,6 +582,7 @@ const ShiftsView = {
             ${hasCompleted ? `<strong>${fmtHours(weekWorked)}</strong> worked · ` : ''}
             <strong style="color:var(--primary)">${fmtHours(weekScheduled)}</strong> scheduled
             ${leaveHtml}
+            ${sickHtml}
             ${contractedHtml}
           </span>
         </td>
@@ -840,6 +859,18 @@ const ShiftsView = {
         </label>
       </div>
       <div class="form-group">
+        <label>Not worked</label>
+        <select id="sfAbsence">
+          <option value=""     ${!s.absence_type              ? 'selected' : ''}>Worked as normal</option>
+          <option value="sick" ${s.absence_type === 'sick'    ? 'selected' : ''}>Off sick</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.4">
+          A sick day still counts towards your contract — payroll docks the basic and hands it back
+          as company sick pay, so you're paid either way — but it doesn't count as hours worked.
+          Marking one clears its completed tick, since it wasn't worked.
+        </div>
+      </div>
+      <div class="form-group">
         <label>Notes</label>
         <textarea id="sfNotes" rows="2">${esc(s.notes || '')}</textarea>
       </div>
@@ -1080,9 +1111,10 @@ const ShiftsView = {
     const notes           = document.getElementById('sfNotes')?.value?.trim() || null;
     const is_bank_holiday = document.getElementById('sfBankHol')?.checked ? 1 : 0;
     const break_locked    = document.getElementById('sfBreakLocked')?.checked ? 1 : 0;
+    const absence_type    = document.getElementById('sfAbsence')?.value || null;
 
     const body = { date, start_time, end_time, break_scheduled_minutes, break_taken,
-                   distance_miles, notes, is_bank_holiday, break_locked };
+                   distance_miles, notes, is_bank_holiday, break_locked, absence_type };
     if (break_taken_minutes !== undefined) body.break_taken_minutes = break_taken_minutes;
 
     try {

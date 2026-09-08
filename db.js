@@ -503,6 +503,14 @@ const shiftMigrations = [
   // the break so you go home earlier — and anything that "corrects" a break back
   // to policy silently changes that shift's paid hours and the week's total.
   'ALTER TABLE shifts ADD COLUMN break_locked INTEGER DEFAULT 0',
+  // Rostered but not worked, and why. NULL is the normal case. 'sick' is a day
+  // you were contracted for and paid for — payroll docks the basic by working
+  // day and hands it straight back as company sick pay plus SSP, netting to
+  // zero — so the hours still count towards the contract, but they are not
+  // hours worked and must not be counted as such. Stored on the shift rather
+  // than as a leave entry because that is how it comes in: a real rostered
+  // shift that then didn't happen.
+  'ALTER TABLE shifts ADD COLUMN absence_type TEXT',
 ];
 shiftMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* already exists */ }
