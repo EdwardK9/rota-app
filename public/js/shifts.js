@@ -249,13 +249,21 @@ const ShiftsView = {
   },
 
   renderStats() {
-    const realShifts = this.shifts.filter(s => !s._isLeave);
+    // this.shifts also carries a few days spilling into the adjacent month, kept
+    // only so a week straddling the 1st can render as one row in the table below.
+    // Stats must stay to the calendar month or they silently over/under-count
+    // against a Contracted figure that's strictly this month.
+    const inMonth = s => s.date.startsWith(this.currentMonth);
+    const realShifts = this.shifts.filter(s => !s._isLeave && inMonth(s));
+    const leaveHours = this.shifts.filter(s => s._isLeave && inMonth(s)).reduce((sum, s) => sum + (s._leaveHours || 0), 0);
     const completed = realShifts.filter(s => s.completed);
     // Month totals include ALL shifts (worked + not yet worked); "so far" = completed only
-    const monthHours = realShifts.reduce((sum, s) => sum + (s.hours_worked || 0), 0);
+    // hours_paid (falls back to hours_worked) — same basis as the Monthly Reports tab —
+    // plus leave, which counts towards the contract.
+    const monthHours = realShifts.reduce((sum, s) => sum + (s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0)), 0) + leaveHours;
     const monthPay   = realShifts.reduce((sum, s) => sum + (s.calculated_pay || 0), 0);
     const totalDist  = realShifts.reduce((sum, s) => sum + (s.distance_miles || 0), 0);
-    const workedHours = completed.reduce((sum, s) => sum + (s.hours_worked || 0), 0);
+    const workedHours = completed.reduce((sum, s) => sum + (s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0)), 0);
     const workedPay   = completed.reduce((sum, s) => sum + (s.calculated_pay || 0), 0);
 
     // Break stats — across all shifts (scheduled); taken from completed shifts only
@@ -287,10 +295,12 @@ const ShiftsView = {
       ? `<div class="stat-card">
           <div class="stat-label">Contracted</div>
           <div class="stat-value" style="color:var(--text-muted)">${fmtHours(contracted)}</div>
+          <div class="stat-hint">Weekly contract &times; 52&frasl;12, this month's rate</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Over/Under</div>
           <div class="stat-value ${overUnder > 0 ? 'success' : overUnder < 0 ? 'danger' : ''}">${overUnder >= 0 ? '+' : ''}${fmtHours(Math.abs(overUnder))}</div>
+          <div class="stat-hint">Hours (Month) minus Contracted</div>
         </div>`
       : '';
 
@@ -298,52 +308,64 @@ const ShiftsView = {
       <div class="stat-card">
         <div class="stat-label">Total Shifts</div>
         <div class="stat-value">${realShifts.length}</div>
+        <div class="stat-hint">All shifts dated this month</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Completed</div>
         <div class="stat-value success">${completed.length}</div>
+        <div class="stat-hint">Of the above, marked done</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Hours (Month)</div>
         <div class="stat-value">${fmtHours(monthHours)}</div>
+        <div class="stat-hint">Paid hours for every shift this month (done or not) + leave</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Worked So Far</div>
         <div class="stat-value" style="color:var(--text-muted)">${fmtHours(workedHours)}</div>
+        <div class="stat-hint">Paid hours, completed shifts only</div>
       </div>
       ${overUnderHtml}
       <div class="stat-card">
         <div class="stat-label">Est. Pay (Month)</div>
         <div class="stat-value">${fmtCurrency(monthPay)}</div>
+        <div class="stat-hint">Every shift this month (done or not)</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Pay So Far</div>
         <div class="stat-value" style="color:var(--text-muted)">${fmtCurrency(workedPay)}</div>
+        <div class="stat-hint">Completed shifts only</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Distance</div>
         <div class="stat-value">${fmtMiles(totalDist)}</div>
+        <div class="stat-hint">Completed shifts only</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Breaks (count)</div>
         <div class="stat-value">${shiftsWithBreak.length}</div>
+        <div class="stat-hint">Shifts this month with a scheduled break</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Break Scheduled</div>
         <div class="stat-value">${fmtMins(totalBreakSched)}</div>
+        <div class="stat-hint">Total scheduled, every shift this month</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Break Taken</div>
         <div class="stat-value warning">${fmtMins(totalBreakTaken)}</div>
+        <div class="stat-hint">Completed shifts only</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Break Unused</div>
         <div class="stat-value ${totalBreakUnused > 0 ? 'success' : ''}">${fmtMins(totalBreakUnused)}</div>
+        <div class="stat-hint">Scheduled minus taken, completed shifts</div>
       </div>
       ${breakUnusedPay > 0 ? `
       <div class="stat-card">
         <div class="stat-label">Unused Break Pay</div>
         <div class="stat-value success">${fmtCurrency(breakUnusedPay)}</div>
+        <div class="stat-hint">Unused break time &times; each shift's hourly rate</div>
       </div>` : ''}
     `;
   },
