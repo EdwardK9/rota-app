@@ -467,7 +467,14 @@ app.delete('/api/shifts/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// Recalculate break_scheduled_minutes, hours_worked, hours_paid, calculated_pay for all shifts
+// Re-derive hours_worked, hours_paid and calculated_pay for all shifts from what
+// is already stored. It does NOT rewrite break_scheduled_minutes: a break that
+// differs from the policy thresholds is usually deliberate — a manager dropping
+// the break so you can go home earlier — and rewriting it here silently added
+// the time back, took the shift's paid hours down with it, and left no audit row
+// to explain why a past week had changed. Bringing breaks in line with policy is
+// what /api/shifts/break-audit is for: it reports the discrepancies first and
+// only touches the ones actually chosen.
 app.post('/api/shifts/recalculate', async (req, res) => {
   try {
     const shifts = db.prepare('SELECT * FROM shifts').all();
@@ -479,7 +486,7 @@ app.post('/api/shifts/recalculate', async (req, res) => {
     let bankHolidaysFixed = 0;
     const doUpdate = db.transaction(() => {
       for (const s of shifts) {
-        const break_scheduled = autoBreakMinutes(s.start_time, s.end_time);
+        const break_scheduled = s.break_scheduled_minutes ?? autoBreakMinutes(s.start_time, s.end_time);
         const actualBreak    = s.completed
           ? resolveBreakMinutes(s.break_taken, break_scheduled, s.break_taken_minutes)
           : break_scheduled;
