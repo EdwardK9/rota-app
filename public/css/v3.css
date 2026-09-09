@@ -178,6 +178,11 @@
 }
 .v3-bingo-cell.winning .text { color: var(--primary-text); }
 .v3-bingo-cell.free { background: rgba(59,130,246,0.12); border-color: var(--info); }
+/* Squares that need pay/clock/leave data this app doesn't track for
+   colleagues — shown, not hidden, so it's visible that they genuinely can't
+   tick rather than looking like an unlucky week. */
+.v3-bingo-cell.v3-bingo-blind { opacity: 0.4; }
+.v3-bingo-cell.v3-bingo-blind .text { text-decoration: line-through; text-decoration-color: var(--text-muted); }
 
 /* ── Countdown Board ────────────────────────────────────────────────────── */
 .v3-countdown {

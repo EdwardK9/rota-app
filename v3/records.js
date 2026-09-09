@@ -15,12 +15,101 @@
 
 const express = require('express');
 const {
-  DAYS, MONTHS, paidHours, shiftPay, toMins, fromMins, spanMins, round1, round2,
+  db, DAYS, MONTHS, paidHours, shiftPay, toMins, fromMins, spanMins, round1, round2,
 } = require('./helpers');
 const { careerStats } = require('./stats');
 const { bankHolidayDates } = require('./bankHolidays');
 
 const router = express.Router();
+
+/** The colleague-viewable subset of records, built straight from
+ *  colleague_shifts rather than careerStats(). Colleagues carry no clock,
+ *  pay, break or payslip data in this app at all — so most record groups
+ *  (Clock in & out, most of Weeks/months & streaks, payslip/pay records)
+ *  have nothing real to show and are simply not computed here, rather than
+ *  faked or silently reusing your own numbers under their name. What's left
+ *  is exactly what a rostered-shift history can honestly say: shift shape,
+ *  and which days/times show up most.
+ *
+ *  Returns records/lifetime in the same shape as the router below so the
+ *  client doesn't need to know which path it went through. */
+function colleagueRecords(colleagueId) {
+  const colleague = db.prepare('SELECT * FROM colleagues WHERE id = ?').get(colleagueId);
+  if (!colleague) return null;
+
+  const rows = db.prepare(`
+    SELECT * FROM colleague_shifts
+    WHERE colleague_id = ? AND shift_type = 'shift' AND (store IS NULL OR store = '')
+    ORDER BY date ASC
+  `).all(colleagueId);
+
+  const records = [];
+  const rec = (icon, title, value, sub, date, matches = [], group = 'shifts') => {
+    const headline = matches.length > 1 ? matches[0].date : (date || null);
+    records.push({
+      icon, title, value, sub: sub || null, date: headline, group,
+      matches: matches.slice(0, 100).map(m => ({
+        date: m.date, detail: m.detail, day: DAYS[new Date(m.date + 'T12:00:00').getDay()].slice(0, 3),
+      })),
+      count: matches.length,
+    });
+  };
+
+  if (rows.length) {
+    const span = s => spanMins(s.start_time, s.end_time) / 60;
+    const tied = (score, best) => {
+      const key = n => Math.round(n * 100);
+      return rows.filter(s => key(score(s)) === key(best)).sort((a, b) => b.date.localeCompare(a.date))
+        .map(s => ({ date: s.date, detail: shiftLabel(s) }));
+    };
+
+    const longest = rows.reduce((a, b) => (span(b) > span(a) ? b : a));
+    rec('🥵', 'Longest shift', `${round1(span(longest))}h`, shiftLabel(longest), longest.date, tied(span, span(longest)));
+
+    const shortest = rows.reduce((a, b) => (span(b) < span(a) ? b : a));
+    rec('🐁', 'Shortest shift', `${round1(span(shortest))}h`, shiftLabel(shortest), shortest.date, tied(span, span(shortest)));
+
+    const earliest = rows.reduce((a, b) => (toMins(b.start_time) < toMins(a.start_time) ? b : a));
+    rec('🌅', 'Earliest start', earliest.start_time, shiftLabel(earliest), earliest.date,
+      tied(s => toMins(s.start_time), toMins(earliest.start_time)));
+
+    const finishOf = s => toMins(s.start_time) + spanMins(s.start_time, s.end_time);
+    const latest = rows.reduce((a, b) => (finishOf(b) > finishOf(a) ? b : a));
+    rec('🌙', 'Latest finish', fromMins(finishOf(latest)), shiftLabel(latest), latest.date,
+      tied(finishOf, finishOf(latest)));
+
+    const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+    for (const s of rows) dowCounts[new Date(s.date + 'T12:00:00').getDay()] += 1;
+    const dowRanked = dowCounts.map((count, i) => ({ day: DAYS[i], count })).filter(d => d.count > 0)
+      .sort((a, b) => b.count - a.count);
+    if (dowRanked.length) {
+      rec('⭐', 'Most-worked day', dowRanked[0].day, `${dowRanked[0].count} shifts`, null, [], 'people');
+      if (dowRanked.length > 1) {
+        const last = dowRanked[dowRanked.length - 1];
+        rec('🕊️', 'Least-worked day', last.day, `${last.count} shift${last.count === 1 ? '' : 's'}`, null, [], 'people');
+      }
+    }
+
+    const startTally = {};
+    for (const s of rows) startTally[s.start_time] = (startTally[s.start_time] || 0) + 1;
+    const topStart = Object.entries(startTally).sort((a, b) => b[1] - a[1])[0];
+    if (topStart) rec('🔂', 'Signature start time', topStart[0], `Used on ${topStart[1]} shifts`, null, [], 'people');
+
+    rec('🌱', 'First recorded shift', rows[0].date, shiftLabel(rows[0]), rows[0].date, [], 'people');
+  }
+
+  return {
+    records,
+    groups: [
+      { key: 'shifts', label: '🥇 Shift records' },
+      { key: 'people', label: '👥 Days & times' },
+    ],
+    lifetime: null,   // no pay/clock/payslip data to total for a colleague — the client hides that block
+    person: String(colleagueId),
+    person_name: colleague.name,
+    limited: true,   // tells the client this is the reduced, colleague-only set
+  };
+}
 
 const shiftLabel = s => (s ? `${s.start_time}–${s.end_time}` : null);
 const hhmm = mins => `${Math.floor(mins / 60)}h ${String(Math.round(mins % 60)).padStart(2, '0')}m`;
@@ -34,6 +123,13 @@ function tiedWith(items, score, best) {
 }
 
 router.get('/records', async (req, res) => {
+  const person = req.query.person && req.query.person !== 'me' ? String(req.query.person) : 'me';
+  if (person !== 'me') {
+    const data = colleagueRecords(person);
+    if (!data) return res.status(404).json({ error: 'Colleague not found' });
+    return res.json(data);
+  }
+
   const bhDates = await bankHolidayDates();
   const s = careerStats({ bankHolidayDates: bhDates });
   const shifts = s.shifts;
@@ -192,6 +288,9 @@ router.get('/records', async (req, res) => {
       { key: 'spans',  label: '📆 Weeks, months & streaks' },
       { key: 'people', label: '👥 People & firsts' },
     ],
+    person: 'me',
+    person_name: 'You',
+    limited: false,
     lifetime: {
       shifts: s.totalShifts,
       hours: s.totalHours,

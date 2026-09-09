@@ -25,7 +25,7 @@ const V3 = {
     features:     ()          => API.get('/api/v3/features'),
     moneyClock:   ()          => API.get('/api/v3/money-clock'),
     trophies:     ()          => API.get('/api/v3/trophies'),
-    records:      ()          => API.get('/api/v3/records'),
+    records:      (person)    => API.get('/api/v3/records' + (person && person !== 'me' ? '?person=' + encodeURIComponent(person) : '')),
     forecast:     (taxYear, basis) => API.get('/api/v3/forecast?' + new URLSearchParams({
                                        ...(taxYear ? { tax_year: taxYear } : {}),
                                        ...(basis ? { basis } : {}),
@@ -42,7 +42,9 @@ const V3 = {
                                      ...(match ? { match } : {}),
                                    })),
     breakDebt:    (year)      => API.get('/api/v3/break-debt?year=' + encodeURIComponent(year || 'all')),
-    bingo:        (week)      => API.get('/api/v3/bingo' + (week ? '?week=' + week : '')),
+    bingo:        (week, person) => API.get('/api/v3/bingo?' + new URLSearchParams({
+                                     ...(week ? { week } : {}), ...(person && person !== 'me' ? { person } : {}),
+                                   })),
     bingoAllTime: ()          => API.get('/api/v3/bingo/all-time'),
     countdowns:   ()          => API.get('/api/v3/countdowns'),
     briefing:     (date)      => API.get('/api/v3/briefing' + (date ? '?date=' + date : '')),

@@ -32,23 +32,23 @@ const SQUARES = [
   { code: 'four_days',   icon: '4️⃣', text: 'Worked 4 days or more',      test: f => f.daysWorked >= 4 },
   { code: 'five_days',   icon: '5️⃣', text: 'Worked 5 days or more',      test: f => f.daysWorked >= 5 },
   { code: 'three_row',   icon: '🔁', text: '3 days in a row',            test: f => f.longestRun >= 3 },
-  { code: 'over_contract',icon: '📈',text: 'Beat your contracted hours', test: f => f.contracted > 0 && f.hours > f.contracted },
-  { code: 'ton_up',      icon: '💯', text: 'Earned £100 in a single shift', test: f => f.bestShiftPay >= 100 },
-  { code: 'no_breaks',    icon: '🐫', text: 'Skipped every break this week', test: f => f.completed > 0 && f.skippedBreaks === f.completed },
-  { code: 'skipped',     icon: '🚫', text: 'Skipped a break',            test: f => f.skippedBreaks > 0 },
+  { code: 'over_contract',icon: '📈',text: 'Beat your contracted hours', test: f => f.contracted > 0 && f.hours > f.contracted, colleagueBlind: true },
+  { code: 'ton_up',      icon: '💯', text: 'Earned £100 in a single shift', test: f => f.bestShiftPay >= 100, colleagueBlind: true },
+  { code: 'no_breaks',    icon: '🐫', text: 'Skipped every break this week', test: f => f.completed > 0 && f.skippedBreaks === f.completed, colleagueBlind: true },
+  { code: 'skipped',     icon: '🚫', text: 'Skipped a break',            test: f => f.skippedBreaks > 0, colleagueBlind: true },
   { code: 'busy_crew',   icon: '👥', text: 'Worked with 5+ colleagues',  test: f => f.distinctCrew >= 5 },
   { code: 'pair_shift',  icon: '🤝', text: 'A shift with just one other colleague', test: f => f.pairShift },
-  { code: 'punctual',    icon: '⏰', text: 'Clocked in early every day', test: f => f.clockIns > 0 && f.lateClockIns === 0 },
-  { code: 'bank_hol',    icon: '🎆', text: 'Worked a bank holiday',      test: f => f.bankHoliday },
-  { code: 'no_drive',    icon: '🚲', text: "Didn't drive to work at least once", test: f => f.noMilesShift },
+  { code: 'punctual',    icon: '⏰', text: 'Clocked in early every day', test: f => f.clockIns > 0 && f.lateClockIns === 0, colleagueBlind: true },
+  { code: 'bank_hol',    icon: '🎆', text: 'Worked a bank holiday',      test: f => f.bankHoliday, colleagueBlind: true },
+  { code: 'no_drive',    icon: '🚲', text: "Didn't drive to work at least once", test: f => f.noMilesShift, colleagueBlind: true },
   { code: 'monday_blues',icon: '😑', text: 'Started the week on a Monday', test: f => f.dows.includes(1) },
   { code: 'midweek_off', icon: '🛌', text: 'Had a midweek day off',      test: f => f.midweekOff },
   { code: 'double_digit',icon: '🔟', text: '10+ hours in two days',      test: f => f.bestTwoDay >= 10 },
-  { code: 'note_left',   icon: '📝', text: 'Left a note on a day',       test: f => f.notes > 0 },
-  { code: 'leave_day',   icon: '🏖️', text: 'Took leave this week',       test: f => f.leaveDays > 0 },
+  { code: 'note_left',   icon: '📝', text: 'Left a note on a day',       test: f => f.notes > 0, colleagueBlind: true },
+  { code: 'leave_day',   icon: '🏖️', text: 'Took leave this week',       test: f => f.leaveDays > 0, colleagueBlind: true },
   { code: 'no_weekend',  icon: '🎉', text: 'Whole weekend off',          test: f => !f.dows.includes(0) && !f.dows.includes(6) },
   { code: 'early_finish',icon: '🏃', text: 'Finished before 3pm once',   test: f => f.earliestFinish != null && f.earliestFinish <= 15 * 60 },
-  { code: 'big_week',    icon: '💰', text: 'Earned £200 across the week',test: f => f.pay >= 200 },
+  { code: 'big_week',    icon: '💰', text: 'Earned £200 across the week',test: f => f.pay >= 200, colleagueBlind: true },
 ];
 
 /** Deterministic 32-bit hash of a string — seeds the per-week shuffle. */
@@ -79,19 +79,39 @@ function seededShuffle(items, seed) {
   return out;
 }
 
-/** Everything the square predicates need, computed once for the week. */
-function weekFacts(monday) {
+/** Everything the square predicates need, computed once for the week.
+ *
+ *  `colleagueId` switches the shift source to that colleague's rostered
+ *  colleague_shifts instead of your own `shifts`. colleague_shifts carries
+ *  only date/start/end — no break, pay, distance, bank-holiday flag, contract
+ *  or clock-in — so every fact this app has no way to know about a colleague
+ *  (contracted, bestShiftPay, completed/skippedBreaks, clockIns/lateClockIns,
+ *  bankHoliday, notes, leaveDays, noMilesShift) is left at its "never true"
+ *  default rather than guessed. That's not an oversight: it's what makes the
+ *  pay/clock/contract squares below (over_contract, ton_up, no_breaks,
+ *  skipped, punctual, bank_hol, no_drive, note_left, leave_day, big_week)
+ *  correctly never tick for a colleague instead of ticking on fabricated
+ *  data — the other ~18 squares, built purely from shift shape, still work. */
+function weekFacts(monday, colleagueId) {
   const sunday = addDays(monday, 6);
-  const shifts = db.prepare(
-    'SELECT * FROM shifts WHERE date >= ? AND date <= ? ORDER BY date ASC, start_time ASC'
-  ).all(monday, sunday);
+  const shifts = colleagueId
+    ? db.prepare(`
+        SELECT date, start_time, end_time FROM colleague_shifts
+        WHERE colleague_id = ? AND date >= ? AND date <= ?
+          AND shift_type = 'shift' AND (store IS NULL OR store = '')
+        ORDER BY date ASC, start_time ASC
+      `).all(colleagueId, monday, sunday)
+    : db.prepare(
+        'SELECT * FROM shifts WHERE date >= ? AND date <= ? ORDER BY date ASC, start_time ASC'
+      ).all(monday, sunday);
+  const hoursOf = colleagueId ? (s => spanMins(s.start_time, s.end_time) / 60) : paidHours;
 
   const dates = [...new Set(shifts.map(s => s.date))].sort();
   const dows = [...new Set(shifts.map(s => parseDate(s.date).getDay()))];
 
   const starts   = shifts.map(s => toMins(s.start_time));
   const finishes = shifts.map(s => toMins(s.start_time) + spanMins(s.start_time, s.end_time));
-  const lengths  = shifts.map(s => paidHours(s));
+  const lengths  = shifts.map(hoursOf);
 
   // Longest consecutive run inside the week
   let longestRun = 0, run = 0, prev = null;
@@ -110,10 +130,18 @@ function weekFacts(monday) {
     if (aEnd >= 19 * 60 && toMins(b.start_time) <= 8 * 60) clopening = true;
   }
 
-  // Crew overlap
+  // Crew overlap — everyone else on shift at the same time: other colleagues
+  // (all of them when this is your own week; everyone but themselves when
+  // profiling a colleague), plus you, when profiling a colleague, since
+  // you're part of their shop floor too.
   const colShifts = db.prepare(
     "SELECT * FROM colleague_shifts WHERE date >= ? AND date <= ? AND shift_type = 'shift' AND (store IS NULL OR store = '')"
-  ).all(monday, sunday);
+  ).all(monday, sunday).filter(cs => !colleagueId || String(cs.colleague_id) !== String(colleagueId));
+  const myShifts = colleagueId
+    ? db.prepare('SELECT * FROM shifts WHERE date >= ? AND date <= ?').all(monday, sunday) : [];
+  const myByDate = {};
+  for (const s of myShifts) (myByDate[s.date] ||= []).push(s);
+
   const crew = new Set();
   let pairShift = false;
   for (const s of shifts) {
@@ -122,17 +150,40 @@ function weekFacts(monday) {
       if (cs.date !== s.date) continue;
       if (overlapMins(s.start_time, s.end_time, cs.start_time, cs.end_time) > 0) { crew.add(cs.colleague_id); count++; }
     }
+    for (const mine of myByDate[s.date] || []) {
+      if (overlapMins(s.start_time, s.end_time, mine.start_time, mine.end_time) > 0) { crew.add('me'); count++; }
+    }
     // The minimum staffing is two people, so "nobody else on" never happens —
     // just one other colleague is as quiet as a shift gets.
     if (count === 1) pairShift = true;
   }
 
-  // A shift with no commute miles logged — walked, cycled, got a lift, whatever
-  // it was, the odometer stayed at home.
-  const noMilesShift = shifts.some(s => !s.distance_miles);
+  // Midweek (Mon–Fri) day with no shift
+  let midweekOff = false;
+  for (let i = 0; i < 5; i++) if (!dates.includes(addDays(monday, i))) midweekOff = true;
 
-  // Clock-ins
-  const clocks = db.prepare(
+  // Best rolling two-day hours total
+  let bestTwoDay = 0;
+  for (let i = 0; i < 6; i++) {
+    const d1 = addDays(monday, i), d2 = addDays(monday, i + 1);
+    const total = shifts.filter(s => s.date === d1 || s.date === d2).reduce((t, s) => t + hoursOf(s), 0);
+    bestTwoDay = Math.max(bestTwoDay, total);
+  }
+
+  // Everything below needs data colleague_shifts simply doesn't carry — see
+  // the doc comment above. Left at defaults that make every predicate that
+  // needs them evaluate to false rather than fabricate an answer.
+  const notes = colleagueId ? 0 : db.prepare(
+    'SELECT COUNT(*) AS c FROM calendar_notes WHERE date >= ? AND date <= ?'
+  ).get(monday, sunday).c;
+
+  const leaveDays = colleagueId ? 0 : db.prepare(
+    'SELECT COUNT(*) AS c FROM leave_entries WHERE start_date <= ? AND end_date >= ?'
+  ).get(sunday, monday).c;
+
+  const completed = colleagueId ? [] : shifts.filter(s => s.completed);
+
+  const clocks = colleagueId ? [] : db.prepare(
     'SELECT * FROM clock_entries WHERE date >= ? AND date <= ? AND clocked_in IS NOT NULL'
   ).all(monday, sunday);
   let lateClockIns = 0;
@@ -141,50 +192,29 @@ function weekFacts(monday) {
     if (s && toMins(c.clocked_in) > toMins(s.start_time) + 5) lateClockIns++;
   }
 
-  // Best rolling two-day hours total
-  let bestTwoDay = 0;
-  for (let i = 0; i < 6; i++) {
-    const d1 = addDays(monday, i), d2 = addDays(monday, i + 1);
-    const total = shifts.filter(s => s.date === d1 || s.date === d2).reduce((t, s) => t + paidHours(s), 0);
-    bestTwoDay = Math.max(bestTwoDay, total);
-  }
-
-  // Midweek (Mon–Fri) day with no shift
-  let midweekOff = false;
-  for (let i = 0; i < 5; i++) if (!dates.includes(addDays(monday, i))) midweekOff = true;
-
-  const notes = db.prepare(
-    'SELECT COUNT(*) AS c FROM calendar_notes WHERE date >= ? AND date <= ?'
-  ).get(monday, sunday).c;
-
-  const leaveDays = db.prepare(
-    'SELECT COUNT(*) AS c FROM leave_entries WHERE start_date <= ? AND end_date >= ?'
-  ).get(sunday, monday).c;
-
-  const completed = shifts.filter(s => s.completed);
-
   return {
     monday, sunday, shifts,
     daysWorked: dates.length,
     dows,
-    hours: round1(shifts.reduce((t, s) => t + paidHours(s), 0)),
-    pay: round2(shifts.reduce((t, s) => t + (shiftPay(s) || 0), 0)),
-    miles: round1(shifts.reduce((t, s) => t + (s.distance_miles || 0) * 2, 0)),
-    contracted: contractHoursForDate(monday) || 0,
+    hours: round1(shifts.reduce((t, s) => t + hoursOf(s), 0)),
+    pay: colleagueId ? 0 : round2(shifts.reduce((t, s) => t + (shiftPay(s) || 0), 0)),
+    miles: colleagueId ? 0 : round1(shifts.reduce((t, s) => t + (s.distance_miles || 0) * 2, 0)),
+    contracted: colleagueId ? 0 : (contractHoursForDate(monday) || 0),
     earliestStart: starts.length ? Math.min(...starts) : null,
     latestFinish: finishes.length ? Math.max(...finishes) : null,
     earliestFinish: finishes.length ? Math.min(...finishes) : null,
     longestShift: lengths.length ? Math.max(...lengths) : 0,
     shortestShift: lengths.length ? Math.min(...lengths) : null,
-    bestShiftPay: shifts.length ? Math.max(...shifts.map(s => shiftPay(s) || 0)) : 0,
+    bestShiftPay: colleagueId ? 0 : (shifts.length ? Math.max(...shifts.map(s => shiftPay(s) || 0)) : 0),
     bestTwoDay: round1(bestTwoDay),
-    longestRun, clopening, midweekOff, pairShift, noMilesShift,
+    longestRun, clopening, midweekOff, pairShift,
+    noMilesShift: colleagueId ? false : shifts.some(s => !s.distance_miles),
     distinctCrew: crew.size,
     completed: completed.length,
     skippedBreaks: completed.filter(s => s.break_taken === 'none' || s.break_taken === 'partial').length,
     clockIns: clocks.length,
     lateClockIns,
-    bankHoliday: shifts.some(s => s.is_bank_holiday),
+    bankHoliday: colleagueId ? false : shifts.some(s => s.is_bank_holiday),
     notes,
     leaveDays,
   };
@@ -203,7 +233,14 @@ function winningLines() {
 router.get('/bingo', (req, res) => {
   const week = /^\d{4}-\d{2}-\d{2}$/.test(req.query.week || '') ? req.query.week : localDateStr();
   const monday = mondayOf(week);
-  const facts = weekFacts(monday);
+  const person = req.query.person && req.query.person !== 'me' ? String(req.query.person) : 'me';
+  let personName = null;
+  if (person !== 'me') {
+    const colleague = db.prepare('SELECT name FROM colleagues WHERE id = ?').get(person);
+    if (!colleague) return res.status(404).json({ error: 'Colleague not found' });
+    personName = colleague.name;
+  }
+  const facts = weekFacts(monday, person !== 'me' ? person : null);
 
   // 24 dealt squares plus a free centre — the classic layout.
   const dealt = seededShuffle(SQUARES, hashSeed(monday)).slice(0, 24);
@@ -216,7 +253,7 @@ router.get('/bingo', (req, res) => {
     const sq = dealt[i < 12 ? i : i - 1];
     let ticked = false;
     try { ticked = !!sq.test(facts); } catch (_) { ticked = false; }
-    cells.push({ code: sq.code, icon: sq.icon, text: sq.text, ticked, free: false });
+    cells.push({ code: sq.code, icon: sq.icon, text: sq.text, ticked, free: false, colleague_blind: !!sq.colleagueBlind });
   }
 
   const lines = winningLines();
@@ -228,6 +265,11 @@ router.get('/bingo', (req, res) => {
 
   res.json({
     week: { monday, sunday: facts.sunday },
+    person, person_name: personName,
+    // Told to the client rather than inferred, so it can grey out (not hide —
+    // a colleague's card genuinely can't win those squares, which is itself
+    // worth seeing) the squares this person's data can never tick.
+    limited: person !== 'me',
     cells,
     lines_complete: completedLines.length,
     full_house: tickedCount === 25,

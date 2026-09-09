@@ -6,9 +6,16 @@
 V3.register('bingo', '🎲 Rota Bingo', {
   week: null,   // null = current week
   board: 'week', // 'week' | 'all-time'
+  person: 'me',
+  people: null,
 
   async init() {
     document.getElementById('view-bingo').innerHTML = V3.loading('Dealing the card…');
+    try {
+      this.people = (await V3.api.dnaPeople()).people;
+    } catch (_) {
+      this.people = [{ id: 'me', name: 'You' }];
+    }
     await this.load();
   },
 
@@ -17,11 +24,23 @@ V3.register('bingo', '🎲 Rota Bingo', {
       if (this.board === 'all-time') {
         this.renderAllTime(await V3.api.bingoAllTime());
       } else {
-        this.render(await V3.api.bingo(this.week));
+        this.render(await V3.api.bingo(this.week, this.person));
       }
     } catch (e) {
       document.getElementById('view-bingo').innerHTML = V3.error(e);
     }
+  },
+
+  _personPicker() {
+    return `<div class="month-nav">
+      <label style="margin-bottom:0;margin-right:4px;font-weight:500">Employee:</label>
+      <select id="bgPerson" style="width:auto">
+        ${(this.people || []).map(p => `
+          <option value="${esc(p.id)}" ${p.id === this.person ? 'selected' : ''}>
+            ${esc(p.name)}${p.left ? ' (left)' : ''}
+          </option>`).join('')}
+      </select>
+    </div>`;
   },
 
   showAllTime() {
@@ -99,31 +118,39 @@ V3.register('bingo', '🎲 Rota Bingo', {
 
     el.innerHTML = `
       ${V3.backButton()}
-      <div class="toolbar">
+      <div class="toolbar" style="flex-wrap:wrap;row-gap:8px">
         <div class="month-nav">
           <button class="btn btn-ghost btn-sm" id="bgPrev">‹ Week</button>
           <input type="date" id="bgWeek" value="${d.week.monday}" style="width:auto" />
           <button class="btn btn-ghost btn-sm" id="bgNext">Week ›</button>
           <button class="btn btn-ghost btn-sm" id="bgThis">This week</button>
         </div>
+        ${this._personPicker()}
         <button class="btn btn-ghost btn-sm" id="bgAllTime">🏆 Overall board</button>
       </div>
+
+      ${d.limited ? `
+        <div class="v3-note" style="margin-bottom:16px">
+          ℹ️ ${esc(d.person_name)} only has rostered shift times tracked here — the greyed-out squares
+          need breaks, clock-ins, pay or leave data this app doesn't have for colleagues, so they can
+          never tick on their card.
+        </div>` : ''}
 
       <div class="v3-hero" style="background:${banner.grad}">
         <div class="v3-hero-label">${banner.label}</div>
         <div class="v3-hero-value">${d.ticked} / ${d.total}</div>
         <div class="v3-hero-sub">
           ${esc(banner.text)}<br>
-          Week of ${fmtDate(d.week.monday)} — ${s.days_worked} days worked, ${s.hours}h,
-          ${fmtCurrency(s.pay)}${s.contracted ? ` against a ${s.contracted}h contract` : ''}.
+          Week of ${fmtDate(d.week.monday)} — ${s.days_worked} days worked, ${s.hours}h${d.limited ? '' : `,
+          ${fmtCurrency(s.pay)}${s.contracted ? ` against a ${s.contracted}h contract` : ''}`}.
         </div>
         <div class="v3-hero-bar"><span style="width:${(d.ticked / d.total) * 100}%"></span></div>
       </div>
 
       <div class="v3-bingo">
         ${d.cells.map(c => `
-          <div class="v3-bingo-cell${c.ticked ? ' ticked' : ''}${c.winning ? ' winning' : ''}${c.free ? ' free' : ''}"
-               title="${esc(c.text)}${c.ticked ? ' ✓' : ''}">
+          <div class="v3-bingo-cell${c.ticked ? ' ticked' : ''}${c.winning ? ' winning' : ''}${c.free ? ' free' : ''}${c.colleague_blind ? ' v3-bingo-blind' : ''}"
+               title="${esc(c.text)}${c.ticked ? ' ✓' : ''}${c.colleague_blind ? ' — not tracked for colleagues' : ''}">
             <div class="icon">${c.icon}</div>
             <div class="text">${esc(c.text)}</div>
           </div>`).join('')}
@@ -132,7 +159,7 @@ V3.register('bingo', '🎲 Rota Bingo', {
       <div class="v3-note">
         The card is dealt from the week's own date, so it's the same 24 squares every time you
         look at that week — no re-rolling until you get an easy one. Squares tick automatically
-        from your shifts, breaks, clock-ins, colleagues and leave.
+        from ${d.limited ? "this person's rostered shifts" : 'your shifts, breaks, clock-ins, colleagues and leave'}.
       </div>
     `;
 
@@ -142,6 +169,7 @@ V3.register('bingo', '🎲 Rota Bingo', {
     document.getElementById('bgNext').addEventListener('click', () => go(this._shift(d.week.monday, 7)));
     document.getElementById('bgThis').addEventListener('click', () => { this.week = null; this.load(); });
     document.getElementById('bgAllTime').addEventListener('click', () => this.showAllTime());
+    document.getElementById('bgPerson').addEventListener('change', e => { this.person = e.target.value; this.load(); });
   },
 
   _shift(dateStr, days) {

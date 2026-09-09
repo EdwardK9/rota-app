@@ -7,24 +7,57 @@
 V3.register('records', '📖 Record Book', {
   data: null,
   open: {},   // record title -> expanded?
+  person: 'me',
+  people: null,
 
   async init() {
     document.getElementById('view-records').innerHTML = V3.loading('Leafing through the record book…');
     try {
-      this.data = await V3.api.records();
+      this.people = (await V3.api.dnaPeople()).people;
+    } catch (_) {
+      this.people = [{ id: 'me', name: 'You' }];
+    }
+    await this.load();
+  },
+
+  async load() {
+    try {
+      this.data = await V3.api.records(this.person);
       this.render();
     } catch (e) {
       document.getElementById('view-records').innerHTML = V3.error(e);
     }
   },
 
+  _toolbar() {
+    return `<div class="toolbar">
+      <div class="month-nav">
+        <label style="margin-bottom:0;margin-right:4px;font-weight:500">Employee:</label>
+        <select id="recPerson" style="width:auto">
+          ${(this.people || []).map(p => `
+            <option value="${esc(p.id)}" ${p.id === this.person ? 'selected' : ''}>
+              ${esc(p.name)}${p.left ? ' (left)' : ''}
+            </option>`).join('')}
+        </select>
+      </div>
+    </div>`;
+  },
+
+  _wireToolbar() {
+    const p = document.getElementById('recPerson');
+    if (p) p.addEventListener('change', e => { this.person = e.target.value; this.load(); });
+  },
+
   render() {
     const d = this.data;
     const el = document.getElementById('view-records');
+    const picker = this._toolbar();
 
     if (!d.records.length) {
-      el.innerHTML = V3.empty('📖', 'No records yet',
-        'Log a few shifts and your personal bests will start showing up here.');
+      el.innerHTML = V3.backButton() + picker + V3.empty('📖', 'No records yet',
+        d.person === 'me' ? 'Log a few shifts and your personal bests will start showing up here.'
+                           : `No shifts logged for ${esc(d.person_name)} yet.`);
+      this._wireToolbar();
       return;
     }
 
@@ -32,6 +65,14 @@ V3.register('records', '📖 Record Book', {
 
     el.innerHTML = `
       ${V3.backButton()}
+      ${picker}
+
+      ${d.limited ? `
+        <div class="v3-note" style="margin-bottom:16px">
+          ℹ️ ${esc(d.person_name)} only has rostered shift times tracked here — no clock-ins, pay or
+          payslip data — so this is the shift-shape records only, not the full career totals your
+          own page shows.
+        </div>` : `
       <div class="v3-hero" style="background:linear-gradient(135deg,#8B5CF6,#4C1D95)">
         <div class="v3-hero-label">CAREER TOTALS</div>
         <div class="v3-hero-value">${l.hours}h</div>
@@ -48,7 +89,7 @@ V3.register('records', '📖 Record Book', {
         ${V3.tile('Miles driven', l.miles + ' mi', `${l.marathons} marathons`)}
         ${V3.tile('Bank holidays', l.bank_holidays, 'Worked')}
         ${V3.tile('Colleagues',  l.colleagues, 'Shared a shift with')}
-      </div>
+      </div>`}
 
       ${d.groups.map(g => {
         const rows = d.records.filter(r => r.group === g.key);
@@ -63,9 +104,11 @@ V3.register('records', '📖 Record Book', {
       }).join('')}
 
       <div class="v3-note">
-        Records cover every shift logged up to today, whether or not you ticked it complete.
-        A <strong>×N</strong> badge means N shifts share that record — tap the row to see them all.
-        Clock records come from your actual clock-ins, so they can differ from the rota.
+        ${d.limited
+          ? 'Records cover every rostered shift on record. A <strong>×N</strong> badge means N shifts share that record — tap the row to see them all.'
+          : `Records cover every shift logged up to today, whether or not you ticked it complete.
+             A <strong>×N</strong> badge means N shifts share that record — tap the row to see them all.
+             Clock records come from your actual clock-ins, so they can differ from the rota.`}
       </div>
     `;
 
@@ -79,6 +122,7 @@ V3.register('records', '📖 Record Book', {
         if (chev) chev.textContent = this.open[key] ? '▾' : '▸';
       });
     });
+    this._wireToolbar();
   },
 
   row(r) {
