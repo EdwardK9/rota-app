@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-09T10:59:21.071Z",
-  "commit": "cda6651",
+  "generated_at": "2026-09-09T11:09:19.826Z",
+  "commit": "14bcf4e",
   "entries": [
+    {
+      "version": "5.6.6",
+      "date": "2026-09-09",
+      "summary": "Employee selection on Record Book and Rota Bingo",
+      "details": "- Record Book and Rota Bingo now have an Employee picker like Insights/Shift\n  DNA/Head to Head, showing a reduced but genuinely real view for a colleague.\n- Audited the other pages on the original shortlist (Trophies, Balance, Year\n  in Numbers, Crystal Ball, Did You Know) and left them alone — explained why\n  below.\n\nDetails:\n\ncolleague_shifts only ever stores date/start/end — no break, pay, distance,\nbank-holiday flag, contract or clock-in — so a colleague view can only ever\nbe as honest as that. Record Book now computes a colleague's shift-shape\nrecords (longest/shortest shift, earliest start, latest finish, most/least\nworked day, signature start time) straight from colleague_shifts rather than\nreusing careerStats(), and simply omits the groups that need data colleagues\ndon't have (Clock in & out, pay/payslip records) instead of faking them.\nBingo works the same way at square level: every square whose test needs\npay/clock/contract/leave data (over_contract, ton_up, no_breaks, skipped,\npunctual, bank_hol, no_drive, note_left, leave_day, big_week — 10 of 27) is\nflagged colleague_blind and shown struck through and dimmed rather than\nhidden, so it's visible that a colleague's card genuinely can't win those\nsquares rather than looking like an unlucky week. The other ~18 squares,\nbuilt purely from shift shape, tick normally.\n\nTrophies, Balance, Year in Numbers and Crystal Ball were left out after\nchecking their actual data dependencies (not just their names): Trophies'\npersisted unlock tiers (v3_trophy_unlocks) have no colleague_id and most\nfamilies need pay; Balance needs contractHoursForDate, which colleagues\ndon't have configured at all; Year in Numbers is built from payslips; Crystal\nBall's projection and its own accuracy grading are woven through pay and\ncontract hours throughout, not a separable schedule-only core. Did You Know\nis AI-generated commentary about your own relationship to your data (e.g.\n\"you've shared exactly one shift with 3 colleagues\") rather than a page\nthat means anything re-pointed at someone else. Building a colleague view\nfor any of these would mean a mostly-empty page or numbers borrowed from\nyour own account under someone else's name — worse than not having it."
+    },
     {
       "version": "5.6.5",
       "date": "2026-09-09",
