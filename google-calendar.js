@@ -317,7 +317,14 @@ async function syncAll(opts) {
     : db.prepare('SELECT * FROM shifts ORDER BY date ASC').all();
   let synced = 0, failed = 0;
   for (const shift of rows) {
-    try { await upsertShift(shift, { logUpdates: false }); synced++; }
+    try {
+      // Re-read the row instead of trusting the snapshot taken above: this loop is
+      // paced (150ms/shift) and can run for a while, so a shift edited mid-loop would
+      // otherwise be upserted with stale times and/or a stale (missing) google_event_id,
+      // creating a second orphaned event instead of updating the real one.
+      const fresh = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift.id);
+      if (fresh) { await upsertShift(fresh, { logUpdates: false }); synced++; }
+    }
     catch (e) { failed++; console.error('[gcal] syncAll item failed:', e.message); logSync('error', { shift_id: shift.id, date: shift.date, status: 'error', detail: 'sync: ' + e.message }); }
     await sleep(PACE_MS);
   }
@@ -362,7 +369,11 @@ async function reconcile(opts) {
 
   let synced = 0, failed = 0;
   for (const shift of rows) {
-    try { await upsertShift(shift, { logUpdates: false }); synced++; }
+    try {
+      // See syncAll: re-read the row so a mid-loop edit doesn't get upserted from a stale snapshot.
+      const fresh = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift.id);
+      if (fresh) { await upsertShift(fresh, { logUpdates: false }); synced++; }
+    }
     catch (e) { failed++; logSync('error', { shift_id: shift.id, date: shift.date, status: 'error', detail: 'reconcile sync: ' + e.message }); }
     await sleep(PACE_MS);
   }
