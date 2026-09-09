@@ -126,10 +126,10 @@ function isDeliveryDay(dateStr) {
   return days.split(',').map(d => d.trim()).includes(dow);
 }
 
-// Delivery lands before the store opens, so the weather that matters for it is
-// the early morning — not whenever the shift happens to start. Unloading a cage
-// in the rain at 06:00 is the thing worth knowing about the night before.
-const DELIVERY_HOUR = 6;
+// Delivery lands in the evening, so the weather that matters for it is the
+// early evening — not whenever the shift happens to start. Unloading a cage
+// in the rain at 18:00 is the thing worth knowing about the night before.
+const DELIVERY_HOUR = 18;
 
 router.get('/commute/weather', async (req, res) => {
   const { date, start, end } = req.query;
@@ -174,8 +174,8 @@ router.get('/commute/weather', async (req, res) => {
     };
 
     // On a delivery day, add the weather at the store for the delivery slot
-    // itself — the shift might not start until 09:00, but the cages are being
-    // unloaded outside at 06:00 either way.
+    // itself — the shift might have finished by then, but the cages are being
+    // unloaded outside at 18:00 either way.
     let delivery = null;
     if (isDeliveryDay(date)) {
       const delivTime = new Date(`${date}T00:00:00`);
