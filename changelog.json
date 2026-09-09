@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-09T10:17:45.678Z",
-  "commit": "084419e",
+  "generated_at": "2026-09-09T10:59:21.071Z",
+  "commit": "cda6651",
   "entries": [
+    {
+      "version": "5.6.5",
+      "date": "2026-09-09",
+      "summary": "Real map on Clock Map, a plain-English What's New, and a duplicated weekday fixed",
+      "details": "- Clock Map now shows a real interactive map (OpenStreetMap tiles via\n  Leaflet), not just the abstract distance scatter — reconsidered the earlier\n  decision not to embed one, since the app already sends every fix to Google\n  Maps and already lazy-loads SheetJS from a CDN, so \"no third-party JS\"\n  wasn't actually a constraint this page was holding to.\n- What's New has a Basic/Descriptive toggle (top right) — Basic shows just\n  plain bullet points, Descriptive keeps the full technical write-up.\n- Fixed a table showing the weekday twice (e.g. \"Tue Tue 17:05\") on Check\n  Habits and Clock Map.\n\nDetails:\n\nThe map is lazy-loaded (loadLeafletLib in utils.js, same pattern as the\nexisting xlsx loader for Import) so nothing but this one page pays for it.\nIt sits alongside the existing scatter rather than replacing it — the map\ngives street context, the scatter gives an exact metre reading that doesn't\ndepend on eyeballing a zoom level.\n\nWhat's New: past entries were written as dense technical prose (aimed at\nunderstanding a bug, not skimming a changelog), so Basic mode has nothing to\nshow beyond the one-line summary for anything before this release — that's\nexpected, not a bug. Going forward, commit messages will lead with short\n\"- \" bullets for Basic mode, followed by the fuller explanation for\nDescriptive, which is what generate-changelog.js's existing \"- \" convention\nalready half-supported.\n\nThe duplicated weekday: `dow` (a weekday name, already supplied by the\nserver) was being paired with `fmtDayShort(date)`, a client helper that\nindependently computes the exact same weekday name from the date — so two\ntables read \"Tue Tue 09/09\" instead of \"Tue 9 Sep\". Added fmtDayMonth() (day\n+ short month, no weekday) for pairing next to an already-known weekday, and\nswitched both affected tables plus the new map's popups to use it."
+    },
     {
       "version": "5.6.3",
       "date": "2026-09-09",
