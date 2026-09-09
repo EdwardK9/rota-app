@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-09T20:44:18.372Z",
-  "commit": "414ef69",
+  "generated_at": "2026-09-09T20:58:24.948Z",
+  "commit": "c8ba54e",
   "entries": [
+    {
+      "version": "5.7.2",
+      "date": "2026-09-09",
+      "summary": "Each delivery day gets its own time",
+      "details": "- Delivery days are now set with a time each, rather than one time shared by\n  every day in a schedule — Wednesday can land at 06:00 and Friday at 18:00.\n- Insights, the dashboard weather and the Shift Briefing all use that day's\n  own time.\n- Fixed a weekday dropped from the current schedule still counting as a\n  delivery day in Insights forever.\n\nDetails:\n\nv5.7.0 gave a schedule one delivery time, which was only ever right if every\ndelivery day landed at the same hour. They don't.\n\ndelivery_schedules gains a day_times column holding {\"3\":\"06:00\",\"5\":\"18:00\"}.\ndelivery_time stays as the row's fallback for any day day_times doesn't mention\nand for rows written before it existed, so nothing needed backfilling twice and\nan old row still reads correctly. The Settings modal now lists the seven\nweekdays down the page, each with its own time box that greys out when the day\nisn't ticked, and the schedule list reads \"Wed 06:00 · Fri 18:00\" rather than a\nday list and a single time.\n\nThe Insights CASE now emits one branch per (period, weekday) pair rather than\none per period, since the window differs per day. Splitting it that way exposed\na bug that was there before per-day times and would have got worse with them:\neach branch only had a lower bound (date >= effective_from), so a weekday\ndropped from the current schedule kept being matched by the older branch, whose\ncondition stays true for every later date. If Thursday stopped being a delivery\nday in September, every Thursday after that still counted. Each period is now\nbounded above by the next one's effective_from, so a period only ever matches\ndates it was actually in force for.\n\ntimeForDay() is the one place that resolves day_times -> delivery_time ->\ndefault, and the weather overlay, the briefing and the Insights query all go\nthrough it. parseDayTimes() drops a bad day index or unreadable time rather than\nthrowing: one unreadable entry shouldn't take out the other days, and the\nfallback is always a sensible answer."
+    },
     {
       "version": "5.7.1",
       "date": "2026-09-09",
