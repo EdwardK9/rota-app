@@ -89,7 +89,19 @@ router.get('/habits', (req, res) => {
   const checksByDate = {};
   for (const c of checks) (checksByDate[c.local_date] ||= []).push(c);
 
-  const windowShifts = shifts.filter(s => s.date >= since && s.date <= today);
+  // The actual start of the analysis window. For a normal days=N request this
+  // is just `since`. For days=all, `since` is the sentinel '0000-01-01' so the
+  // *checks* query above returns every check ever recorded — but using that
+  // same sentinel to bound the shifts considered for coverage would count
+  // every shift back to whenever shifts were first logged, including years
+  // that predate this tracking feature existing at all. Nobody could have
+  // "checked" a shift before there was anything to check with, so those years
+  // would count as a wall of false "walked in blind" shifts and swamp the
+  // real figure. Bound to the first check ever recorded instead — the
+  // earliest point a check could plausibly have happened.
+  const spanStart = days === 'all' ? (checks.length ? checks[0].local_date : today) : since;
+
+  const windowShifts = shifts.filter(s => s.date >= spanStart && s.date <= today);
   let checkedDayBefore = 0, checkedMorningOf = 0, checkedAfter = 0, unchecked = 0;
   const runUpCounts = [];
   const perShift = [];
@@ -110,6 +122,10 @@ router.get('/habits', (req, res) => {
     if (before) checkedDayBefore++;
     if (morning.length) checkedMorningOf++;
     if (after.length) checkedAfter++;
+    // "Unchecked"/"walked in blind" means no *advance* warning — before/morning/
+    // run-up all look backward from the shift, so a check that only happened
+    // after the shift had already started still counts as blind. `after` is
+    // intentionally not part of this condition.
     if (!before && !morning.length && !runUp) unchecked++;
 
     perShift.push({
@@ -141,7 +157,6 @@ router.get('/habits', (req, res) => {
 
   /* ── Days off ───────────────────────────────────────────────────────── */
   const windowDates = [];
-  const spanStart = days === 'all' ? (checks.length ? checks[0].local_date : today) : since;
   for (let d = spanStart; d <= today; d = addDays(d, 1)) windowDates.push(d);
 
   const workDates = new Set(windowShifts.map(s => s.date));
