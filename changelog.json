@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-09T20:24:56.130Z",
-  "commit": "cdba39d",
+  "generated_at": "2026-09-09T20:44:18.372Z",
+  "commit": "414ef69",
   "entries": [
+    {
+      "version": "5.7.1",
+      "date": "2026-09-09",
+      "summary": "Shift Briefing says when the delivery lands, not just that there is one",
+      "details": "- The Shift Briefing's delivery flag now shows the time delivery lands.\n- It also says whether you're still on when it does, or whether it lands before\n  you start / after you finish.\n\nDetails:\n\nNow that delivery schedules carry a target time (v5.7.0), the briefing card was\nthe last place still reducing it to a yes/no \"Delivery day\" badge — which on an\nevening delivery tells you least on exactly the shifts where it matters most.\n\nThe badge now reads \"Delivery 18:00 — you're on\" when your shift covers the\ndelivery, using the same target ± 1 hour window Insights counts by, so the two\npages can't disagree about whether a shift was a delivery shift. When it doesn't\ncover it, the badge drops to informational and says which side you miss it on\n(\"Delivery day — 18:00, after you finish\") rather than warning you about a\ndelivery you'll never see.\n\n/api/v3/briefing gains a `delivery` object (is_delivery_day, time, on_shift).\nThe flat `delivery_day` boolean stays in the response for anything still reading\nit, and the client falls back to it when the new object is absent."
+    },
     {
       "version": "5.7.0",
       "date": "2026-09-09",
