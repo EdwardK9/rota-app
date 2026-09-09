@@ -16,18 +16,22 @@ const {
   toMins, spanMins, overlapMins, paidHours, shiftPay, contractHoursForDate, round1, round2,
 } = require('./helpers');
 const { bankHolidayDates } = require('./bankHolidays');
+const { deliveryWindow, DEFAULT_DELIVERY_TIME } = require('../delivery');
 const { costSettings, costPerMileFor } = require('./commuteCost');
 
 const router = express.Router();
 
-/** Which weekdays deliveries land on, from the delivery_schedules history. */
-function deliveryDaysFor(dateStr) {
+/** Which weekdays deliveries land on, and at what time, from the schedule history. */
+function deliverySchedFor(dateStr) {
   const row = db.prepare(
-    'SELECT days FROM delivery_schedules WHERE effective_from <= ? ORDER BY effective_from DESC LIMIT 1'
+    'SELECT days, delivery_time FROM delivery_schedules WHERE effective_from <= ? ORDER BY effective_from DESC LIMIT 1'
   ).get(dateStr);
-  if (!row || !row.days) return [];
-  // Stored as a comma-separated list of day names or indices, depending on age
-  return String(row.days).split(',').map(d => d.trim()).filter(Boolean);
+  if (!row || !row.days) return { days: [], time: DEFAULT_DELIVERY_TIME };
+  return {
+    // Stored as a comma-separated list of day names or indices, depending on age
+    days: String(row.days).split(',').map(d => d.trim()).filter(Boolean),
+    time: row.delivery_time || DEFAULT_DELIVERY_TIME,
+  };
 }
 
 router.get('/briefing', async (req, res) => {
@@ -105,10 +109,16 @@ router.get('/briefing', async (req, res) => {
     .all(weekStart, addDays(weekStart, 6));
   const weekHours = round1(weekShifts.reduce((t, s) => t + paidHours(s), 0));
 
-  const deliveryDays = deliveryDaysFor(shift.date);
+  const delivSched = deliverySchedFor(shift.date);
   const dayName = DAYS[dow];
-  const isDeliveryDay = deliveryDays.some(d =>
+  const isDeliveryDay = delivSched.days.some(d =>
     d.toLowerCase().startsWith(dayName.slice(0, 3).toLowerCase()) || d === String(dow));
+  // Whether you're actually on the floor for it, on the same ± 1 hour window
+  // Insights counts by — a delivery day you finish before is worth knowing about
+  // differently from one you're unloading.
+  const delivWindow = deliveryWindow(delivSched.time);
+  const onForDelivery = isDeliveryDay
+    && shift.start_time <= delivWindow.to && shift.end_time >= delivWindow.from;
 
   const isBH = !!shift.is_bank_holiday || bhDates.has(shift.date);
   const miles = (shift.distance_miles || 0) * 2;
@@ -148,6 +158,12 @@ router.get('/briefing', async (req, res) => {
       alone: crew.length === 0,
     },
     turnaround,
+    delivery: {
+      is_delivery_day: isDeliveryDay,
+      time: isDeliveryDay ? delivSched.time : null,
+      on_shift: onForDelivery,
+    },
+    // Kept for older clients that read the flat flag
     delivery_day: isDeliveryDay,
     commute: { miles: round1(miles), fuel_cost: fuelCost },
     week: {
