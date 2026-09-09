@@ -7,3 +7,5 @@ data/
 Thumbs.db
 *.log
 .env
+
+.claude/

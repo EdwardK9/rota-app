@@ -6,6 +6,23 @@
    simple scatter relative to the store, which answers the only question this
    data is really for — "was I at work when I clocked in, and if not, how far
    away?" — and every point links out to Google Maps for the real thing.
+
+   Evaluated turning this into a real interactive (Leaflet/OSM-tile) map and
+   decided against it:
+     • A tile map needs a live network request per tile to a third-party tile
+       server on every load — for a page whose entire subject is precise GPS
+       coordinates of where someone clocks in (often home), that leaks the
+       viewing pattern of sensitive location data to that third party. The
+       current scatter is fully self-contained; nothing about a clock-in ever
+       leaves this server.
+     • It would be the app's first external JS dependency, breaking a
+       deliberate zero-dependency rule that otherwise holds everywhere else.
+     • The scatter already answers the one question this feature exists for
+       (how far from the store, in which direction) without needing street
+       names or terrain — a real map would look nicer but wouldn't tell you
+       anything the rings and axes don't already.
+   The "Map ↗" link on every point already covers the case where the real
+   street context is actually wanted, by handing off to Google Maps.
    ───────────────────────────────────────────────────────────────────────── */
 
 V5.register('v5-locations', '📍 Clock Map', {
@@ -171,9 +188,13 @@ V5.register('v5-locations', '📍 Clock Map', {
     return { clock_in: '🕐 Clock in', clock_out: '🕔 Clock out', app_open: '📱 App open', manual: '📍 Manual' }[kind] || kind;
   },
 
-  /** A scatter of every fix relative to the store, with the axes in metres.
-   *  Deliberately not a map — it needs no tiles, no key and no network, and it
-   *  shows the one thing that matters: the cluster at work, and the outliers. */
+  /** A scatter of every GPS fix relative to the store, with the axes in metres.
+   *  Deliberately not a tile map — it needs no tiles, no key and no network, and
+   *  it shows the one thing that matters: the cluster at work, and the outliers.
+   *  (Renamed the section from "Fixes relative to the store" — "fix" is GPS
+   *  jargon for a single location reading, but read cold it sounds like a list
+   *  of bug fixes. See the module comment for why this stays a plain scatter
+   *  rather than becoming a real tile map.) */
   _plot(d) {
     if (!d.work_configured || !d.points.length) return '';
     const work = d.work;
@@ -194,11 +215,11 @@ V5.register('v5-locations', '📍 Clock Map', {
     const colour = { clock_in: '#10B981', clock_out: '#6366F1', app_open: '#F59E0B', manual: '#94A3B8' };
 
     return `
-      <div class="v3-section-title">🗺️ Fixes relative to the store</div>
+      <div class="v3-section-title">🗺️ Distance from the store</div>
       <div class="card"><div class="card-body">
         <div class="v5-plot-wrap">
           <svg viewBox="0 0 ${size} ${size}" class="v5-plot" role="img"
-               aria-label="Scatter of recorded positions relative to the store">
+               aria-label="Scatter of recorded clock-in/out positions, plotted by distance and direction from the store">
             <circle cx="${half}" cy="${half}" r="${(250 / extent) * half}" class="v5-plot-ring" />
             <circle cx="${half}" cy="${half}" r="${(1000 / extent) * half}" class="v5-plot-ring" />
             <line x1="${half}" y1="0" x2="${half}" y2="${size}" class="v5-plot-axis" />

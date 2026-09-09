@@ -2344,6 +2344,7 @@ app.post('/api/import/ics-shifts', (req, res) => {
   // forced 30 minutes onto short shifts that are entitled to none.
   const bkOverride = breakMinutes === '' || breakMinutes == null ? null : parseInt(breakMinutes, 10);
 
+  const gcalUpsertIds = [];
   const doImport = db.transaction(() => {
     for (const ev of events) {
       try {
@@ -2378,10 +2379,14 @@ app.post('/api/import/ics-shifts', (req, res) => {
         const hours_paid     = calcHoursWorked(start_time, end_time, evBreak);
         const calculated_pay = hourly_rate ? Math.round(hours_paid * hourly_rate * 100) / 100 : null;
 
-        insertShift.run(
+        const r = insertShift.run(
           date, start_time, end_time, evBreak, 'full', evBreak,
           defaultDist, hourly_rate, hours_worked, hours_paid, calculated_pay, 0, summary
         );
+        if (r.changes > 0) {
+          const ns = db.prepare('SELECT id FROM shifts WHERE rowid = ?').get(r.lastInsertRowid);
+          if (ns?.id) gcalUpsertIds.push(ns.id);
+        }
         imported++;
       } catch (e) {
         errors.push(`Event "${ev.SUMMARY || '?'}": ${e.message}`);
@@ -2391,6 +2396,11 @@ app.post('/api/import/ics-shifts', (req, res) => {
   });
 
   doImport();
+  // Mirror newly imported shifts to Google Calendar (fire-and-forget, after commit)
+  for (const id of gcalUpsertIds) {
+    const row = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
+    if (row) gcal.safeUpsert(row);
+  }
   res.json({ imported, leaveImported, skipped, errors });
 });
 
@@ -2445,6 +2455,7 @@ app.post('/api/import/shifts', (req, res) => {
     db.prepare("SELECT value FROM settings WHERE key='default_distance_miles'").get()?.value || 3.6
   );
 
+  const gcalUpsertIds = [];
   const doImport = db.transaction(() => {
     rows.forEach((row, idx) => {
       try {
@@ -2485,8 +2496,12 @@ app.post('/api/import/shifts', (req, res) => {
         const completed = row[mapping.completed] ? (row[mapping.completed].toLowerCase() === 'true' || row[mapping.completed] === '1' ? 1 : 0) : 0;
         const notes = row[mapping.notes] || null;
 
-        insertShift.run(date, start_time, end_time, breakMins, 'full', actualBreak,
+        const r = insertShift.run(date, start_time, end_time, breakMins, 'full', actualBreak,
           distance_miles, hourly_rate, hours_worked, hours_paid, calculated_pay, completed, notes);
+        if (r.changes > 0) {
+          const ns = db.prepare('SELECT id FROM shifts WHERE rowid = ?').get(r.lastInsertRowid);
+          if (ns?.id) gcalUpsertIds.push(ns.id);
+        }
         imported++;
       } catch (e) {
         errors.push(`Row ${idx + 2}: ${e.message}`);
@@ -2496,6 +2511,11 @@ app.post('/api/import/shifts', (req, res) => {
   });
 
   doImport();
+  // Mirror newly imported shifts to Google Calendar (fire-and-forget, after commit)
+  for (const id of gcalUpsertIds) {
+    const row = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
+    if (row) gcal.safeUpsert(row);
+  }
   res.json({ imported, skipped, errors });
 });
 
@@ -3188,6 +3208,7 @@ app.post('/api/rotageek/import-schedule', (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
   `);
 
+  const gcalUpsertIds = [];
   const doImport = db.transaction(() => {
     for (const s of rgShifts) {
       try {
@@ -3201,8 +3222,12 @@ app.post('/api/rotageek/import-schedule', (req, res) => {
         const hours_worked = calcHoursWorked(start_time, end_time, breakMins);
         const hours_paid   = calcHoursWorked(start_time, end_time, breakMins);
         const calculated_pay = hourly_rate ? Math.round(hours_paid * hourly_rate * 100) / 100 : null;
-        insertShift.run(date, start_time, end_time, breakMins, 'full', breakMins,
+        const r = insertShift.run(date, start_time, end_time, breakMins, 'full', breakMins,
           defaultDist, hourly_rate, hours_worked, hours_paid, calculated_pay, 0, s.notes || null);
+        if (r.changes > 0) {
+          const ns = db.prepare('SELECT id FROM shifts WHERE rowid = ?').get(r.lastInsertRowid);
+          if (ns?.id) gcalUpsertIds.push(ns.id);
+        }
         imported++;
       } catch(e) {
         errors.push(e.message);
@@ -3211,6 +3236,11 @@ app.post('/api/rotageek/import-schedule', (req, res) => {
     }
   });
   doImport();
+  // Mirror newly imported shifts to Google Calendar (fire-and-forget, after commit)
+  for (const id of gcalUpsertIds) {
+    const row = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
+    if (row) gcal.safeUpsert(row);
+  }
   res.json({ imported, skipped, errors });
 });
 

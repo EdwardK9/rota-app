@@ -165,7 +165,7 @@ const DashboardView = {
           ${predictedGross != null ? `
             <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px">
               <span style="color:var(--text-muted)">Predicted gross</span>
-              <span style="font-weight:600">£${predictedGross.toFixed(2)}</span>
+              <span style="font-weight:600" class="money">£${predictedGross.toFixed(2)}</span>
             </div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:4px">From logged shifts so far — not a guarantee</div>
           ` : ''}
@@ -190,7 +190,7 @@ const DashboardView = {
 
     const monthName = new Date(todayStr + 'T12:00:00').toLocaleDateString('en-GB', { month: 'long' });
     const fmtH = h => (Math.round(h * 10) / 10) + 'h';
-    const fmtP = p => '£' + p.toFixed(2);
+    const fmtP = p => `<span class="money">£${p.toFixed(2)}</span>`;
 
     const row = (label, value) => `
       <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px">
@@ -776,7 +776,7 @@ const DashboardView = {
   },
 
   _payCounterText(p) {
-    const amt = `£${p.pay.toFixed(2)}`;
+    const amt = `<span class="money">£${p.pay.toFixed(2)}</span>`;
     if (p.onBreak) return `☕ ${amt} <span class="dash-pay-note">earned so far · paused for unpaid break</span>`;
     if (p.complete) return `💷 ${amt} <span class="dash-pay-note">full shift pay reached</span>`;
     return `💷 ${amt} <span class="dash-pay-note">earned so far</span>`;
