@@ -127,7 +127,7 @@ V5.register('v5-habits', '🔁 Check Habits', {
           <thead><tr><th>Shift</th><th>Time</th><th>Night before</th><th>Morning of</th><th>Lead</th><th>Run-up</th><th>Clocked in</th></tr></thead>
           <tbody>${d.recent_shifts.map(s => `
             <tr>
-              <td>${esc(s.dow)} ${esc(fmtDayShort(s.date))}</td>
+              <td>${esc(s.dow)} ${esc(fmtDayMonth(s.date))}</td>
               <td>${esc(s.start_time)}–${esc(s.end_time)}</td>
               <td>${s.checked_day_before ? '<span class="v5-good">✓</span>' : '<span class="v3-muted">—</span>'}</td>
               <td>${s.checked_morning_of ? `<span class="v5-good">✓ ${esc(s.first_morning_check)}</span>` : '<span class="v3-muted">—</span>'}</td>

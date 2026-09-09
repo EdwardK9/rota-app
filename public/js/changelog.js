@@ -7,6 +7,7 @@
 const ChangelogView = {
   entries: [],
   expanded: null,   // version currently showing full details, or null
+  mode: 'basic',     // 'basic' (plain bullets only) or 'descriptive' (full commit body)
 
   async init() {
     document.getElementById('view-changelog').innerHTML =
@@ -16,6 +17,7 @@ const ChangelogView = {
       this.entries = d.entries || [];
       this.currentVersion = d.currentVersion;
       this.expanded = this.entries[0]?.version || null;
+      try { this.mode = localStorage.getItem('changelogMode') === 'descriptive' ? 'descriptive' : 'basic'; } catch (_) {}
       this.render();
     } catch (e) {
       document.getElementById('view-changelog').innerHTML =
@@ -23,22 +25,34 @@ const ChangelogView = {
     }
   },
 
-  // Commit bodies are plain text with "- " bullet lines — turn those into a
-  // real list, and leave anything else as plain paragraphs.
-  _formatDetails(details) {
-    if (!details) return '';
+  // Commit bodies are free text; a "- " prefixed line is a deliberate
+  // user-facing bullet, anything else is the deeper technical explanation
+  // underneath it. Split them apart so Basic mode can show only the bullets
+  // (plain, skimmable) while Descriptive keeps the full reasoning for anyone
+  // who wants the whole story.
+  _split(details) {
+    if (!details) return { bullets: [], prose: [] };
     const lines = details.split('\n').map(l => l.trim()).filter(Boolean);
-    const html = [];
-    let listBuf = [];
-    const flush = () => {
-      if (listBuf.length) html.push(`<ul style="margin:6px 0 10px 18px;padding:0">${listBuf.join('')}</ul>`);
-      listBuf = [];
-    };
+    const bullets = [], prose = [];
     for (const line of lines) {
-      if (line.startsWith('- ')) listBuf.push(`<li style="margin-bottom:4px">${esc(line.slice(2))}</li>`);
-      else { flush(); html.push(`<p style="margin:0 0 8px">${esc(line)}</p>`); }
+      if (line.startsWith('- ')) bullets.push(line.slice(2));
+      else prose.push(line);
     }
-    flush();
+    return { bullets, prose };
+  },
+
+  _formatBasic(details) {
+    const { bullets } = this._split(details);
+    if (!bullets.length) return '';
+    return `<ul style="margin:6px 0 0 18px;padding:0">${bullets.map(b => `<li style="margin-bottom:4px">${esc(b)}</li>`).join('')}</ul>`;
+  },
+
+  _formatDescriptive(details) {
+    if (!details) return '';
+    const { bullets, prose } = this._split(details);
+    const html = [];
+    if (bullets.length) html.push(`<ul style="margin:6px 0 10px 18px;padding:0">${bullets.map(b => `<li style="margin-bottom:4px">${esc(b)}</li>`).join('')}</ul>`);
+    for (const line of prose) html.push(`<p style="margin:0 0 8px">${esc(line)}</p>`);
     return html.join('');
   },
 
@@ -54,6 +68,11 @@ const ChangelogView = {
 
     el.innerHTML = `
       <div class="v3-hero" style="background:linear-gradient(135deg,#334155,#0F172A)">
+        <button id="clModeToggle" class="btn btn-ghost btn-sm"
+          style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.25)"
+          title="Switch between a plain bullet summary and the full technical explanation">
+          ${this.mode === 'basic' ? '📝 Descriptive' : '• Basic'}
+        </button>
         <div class="v3-hero-label">WHAT'S NEW</div>
         <div class="v3-hero-value">v${esc(this.currentVersion || this.entries[0].version)}</div>
         <div class="v3-hero-sub">${this.entries.length} update${this.entries.length === 1 ? '' : 's'} on record, newest first.</div>
@@ -61,13 +80,22 @@ const ChangelogView = {
 
       <div id="clList"></div>
     `;
+    const hero = el.querySelector('.v3-hero');
+    if (hero) hero.style.position = 'relative';
+    document.getElementById('clModeToggle').addEventListener('click', () => {
+      this.mode = this.mode === 'basic' ? 'descriptive' : 'basic';
+      try { localStorage.setItem('changelogMode', this.mode); } catch (_) {}
+      this.render();
+    });
     this._renderList();
   },
 
   _renderList() {
     const list = document.getElementById('clList');
+    const descriptive = this.mode === 'descriptive';
     list.innerHTML = this.entries.map(e => {
       const open = this.expanded === e.version;
+      const body = descriptive ? this._formatDescriptive(e.details) : this._formatBasic(e.details);
       return `
         <div class="card" style="margin-bottom:12px">
           <button class="cl-entry-head" data-v="${esc(e.version)}"
@@ -82,9 +110,9 @@ const ChangelogView = {
               <span style="transform:rotate(${open ? '90deg' : '0deg'});transition:transform 0.15s;font-size:12px">▸</span>
             </span>
           </button>
-          ${open && e.details ? `
+          ${open && body ? `
             <div style="padding:0 18px 16px;font-size:13px;color:var(--text-muted);line-height:1.5">
-              ${this._formatDetails(e.details)}
+              ${body}
             </div>` : ''}
         </div>`;
     }).join('');

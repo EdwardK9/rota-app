@@ -1,28 +1,19 @@
 /* ─── 📍 Clock Map (V5.0) ──────────────────────────────────────────────────
    Where you were when you clocked in and out.
 
-   There is no map library here on purpose: the app ships no third-party JS and
-   an embedded tile map would be the first. Instead the fixes are plotted on a
-   simple scatter relative to the store, which answers the only question this
-   data is really for — "was I at work when I clocked in, and if not, how far
-   away?" — and every point links out to Google Maps for the real thing.
+   A real Leaflet/OpenStreetMap tile map, lazy-loaded (see loadLeafletLib in
+   utils.js) so it costs nothing on any page that isn't this one. Sat alongside
+   the plain-metres scatter below it rather than replacing it — the map gives
+   street context, the scatter gives an exact "how far and which direction"
+   reading that doesn't depend on eyeballing a zoom level. Every point still
+   links out to Google Maps too, for anyone who wants street view or directions.
 
-   Evaluated turning this into a real interactive (Leaflet/OSM-tile) map and
-   decided against it:
-     • A tile map needs a live network request per tile to a third-party tile
-       server on every load — for a page whose entire subject is precise GPS
-       coordinates of where someone clocks in (often home), that leaks the
-       viewing pattern of sensitive location data to that third party. The
-       current scatter is fully self-contained; nothing about a clock-in ever
-       leaves this server.
-     • It would be the app's first external JS dependency, breaking a
-       deliberate zero-dependency rule that otherwise holds everywhere else.
-     • The scatter already answers the one question this feature exists for
-       (how far from the store, in which direction) without needing street
-       names or terrain — a real map would look nicer but wouldn't tell you
-       anything the rings and axes don't already.
-   The "Map ↗" link on every point already covers the case where the real
-   street context is actually wanted, by handing off to Google Maps.
+   Earlier reasoning against embedding a map (dropped after reconsidering with
+   the app's actual precedent): this page already sends every fix to Google
+   Maps via the "Map ↗" link, and SheetJS is already lazy-loaded the same way
+   for Import — so "no third-party JS" wasn't a real constraint this page was
+   actually holding to, and OSM's tile requests are no more revealing than the
+   Google Maps link already is.
    ───────────────────────────────────────────────────────────────────────── */
 
 V5.register('v5-locations', '📍 Clock Map', {
@@ -38,6 +29,10 @@ V5.register('v5-locations', '📍 Clock Map', {
     } catch (e) {
       el.innerHTML = V5.error(e);
     }
+  },
+
+  destroy() {
+    if (this._map) { this._map.remove(); this._map = null; }
   },
 
   render() {
@@ -112,6 +107,13 @@ V5.register('v5-locations', '📍 Clock Map', {
         ${V5.tile('Accuracy', t.median_accuracy_m != null ? `±${t.median_accuracy_m}<span class="v5-of"> m</span>` : '—', 'median fix accuracy')}
       </div>
 
+      ${d.work_configured ? `
+        <div class="v3-section-title">🗺️ Map</div>
+        <div class="card"><div class="card-body">
+          <div id="v5LeafletMap" class="v5-leaflet-map"></div>
+          <p class="v3-note">The pin is the store. Tap a point for what it was and when.</p>
+        </div></div>` : ''}
+
       ${this._plot(d)}
 
       <div class="v3-section-title">🏷️ Where you clock from</div>
@@ -128,7 +130,7 @@ V5.register('v5-locations', '📍 Clock Map', {
             <thead><tr><th>Date</th><th>Time</th><th>What</th><th>Distance</th><th>Place</th><th></th></tr></thead>
             <tbody>${d.away_points.map(p => `
               <tr>
-                <td>${esc(p.dow)} ${esc(fmtDayShort(p.date))}</td>
+                <td>${esc(p.dow)} ${esc(fmtDayMonth(p.date))}</td>
                 <td>${esc(p.time)}</td>
                 <td>${esc(this._kindLabel(p.kind))}</td>
                 <td class="v5-bad">${esc(V5.metres(p.distance_from_work_m))}</td>
@@ -169,7 +171,7 @@ V5.register('v5-locations', '📍 Clock Map', {
           <thead><tr><th>Date</th><th>Time</th><th>What</th><th>Place</th><th>From work</th><th>Accuracy</th><th></th></tr></thead>
           <tbody>${d.points.map(p => `
             <tr>
-              <td>${esc(p.dow)} ${esc(fmtDayShort(p.date))}</td>
+              <td>${esc(p.dow)} ${esc(fmtDayMonth(p.date))}</td>
               <td>${esc(p.time)}</td>
               <td>${esc(this._kindLabel(p.kind))}</td>
               <td>${p.place ? `${p.place_icon} ${esc(p.place)}` : '<span class="v3-muted">—</span>'}</td>
@@ -182,10 +184,59 @@ V5.register('v5-locations', '📍 Clock Map', {
     `;
 
     this._wire();
+    if (d.work_configured) this._initMap(d);
   },
 
   _kindLabel(kind) {
     return { clock_in: '🕐 Clock in', clock_out: '🕔 Clock out', app_open: '📱 App open', manual: '📍 Manual' }[kind] || kind;
+  },
+
+  /** Builds the real Leaflet map into #v5LeafletMap. Loaded on demand — see
+   *  loadLeafletLib in utils.js — so this is the only view that pays for it. */
+  async _initMap(d) {
+    const el = document.getElementById('v5LeafletMap');
+    if (!el) return;   // navigated away before the library finished loading
+    try {
+      await loadLeafletLib();
+    } catch (e) {
+      el.innerHTML = `<p class="v3-error" style="padding:12px">Couldn't load the map: ${esc(e.message)}</p>`;
+      return;
+    }
+    if (!document.getElementById('v5LeafletMap')) return;   // still gone by the time L is ready
+
+    if (this._map) { this._map.remove(); this._map = null; }
+
+    const colour = { clock_in: '#10B981', clock_out: '#6366F1', app_open: '#F59E0B', manual: '#94A3B8' };
+    const work = d.work;
+    const map = L.map(el, { scrollWheelZoom: false }).setView([work.lat, work.lon], 15);
+    this._map = map;
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    L.marker([work.lat, work.lon], {
+      title: 'The store',
+    }).addTo(map).bindPopup('🏪 The store');
+
+    for (const p of d.places) {
+      L.circle([p.lat, p.lon], { radius: p.radius_m, color: '#94A3B8', weight: 1, fillOpacity: 0.05 }).addTo(map);
+    }
+
+    const bounds = [[work.lat, work.lon]];
+    for (const p of d.points) {
+      if (p.lat == null || p.lon == null) continue;
+      bounds.push([p.lat, p.lon]);
+      L.circleMarker([p.lat, p.lon], {
+        radius: 6, color: colour[p.kind] || '#94A3B8', fillColor: colour[p.kind] || '#94A3B8', fillOpacity: 0.75, weight: 1,
+      }).addTo(map).bindPopup(
+        `${esc(this._kindLabel(p.kind))}<br>${esc(p.dow)} ${esc(fmtDayMonth(p.date))} ${esc(p.time)}` +
+        `<br>${esc(V5.metres(p.distance_from_work_m))} from the store` +
+        `<br><a href="${esc(p.maps_url)}" target="_blank" rel="noopener">Open in Google Maps ↗</a>`
+      );
+    }
+    if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
   },
 
   /** A scatter of every GPS fix relative to the store, with the axes in metres.

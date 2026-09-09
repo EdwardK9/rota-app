@@ -18,6 +18,27 @@ function loadXlsxLib() {
   return _xlsxLoadPromise;
 }
 
+// Lazy-load Leaflet (map tiles + markers) the same way — only the Clock Map
+// view needs it, so it stays out of every other page's load.
+let _leafletLoadPromise = null;
+function loadLeafletLib() {
+  if (typeof L !== 'undefined') return Promise.resolve();
+  if (_leafletLoadPromise) return _leafletLoadPromise;
+  _leafletLoadPromise = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+    document.head.appendChild(css);
+
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    s.onload = () => resolve();
+    s.onerror = () => { _leafletLoadPromise = null; reject(new Error('Failed to load the map library')); };
+    document.head.appendChild(s);
+  });
+  return _leafletLoadPromise;
+}
+
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
@@ -33,6 +54,16 @@ function fmtDayShort(dateStr) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-').map(Number);
   return DAYS[new Date(y, m - 1, d).getDay()].slice(0, 3);
+}
+
+// "9 Sep" — day + short month, no weekday. For pairing next to a weekday that's
+// already shown separately (e.g. a `dow` field from the server) — fmtDayShort
+// duplicates that weekday rather than adding the calendar date, which is what
+// callers actually wanted.
+function fmtDayMonth(dateStr) {
+  if (!dateStr) return '';
+  const [, m, d] = dateStr.split('-').map(Number);
+  return `${d} ${MONTHS_SHORT[m - 1]}`;
 }
 
 function fmtMonth(monthStr) {
