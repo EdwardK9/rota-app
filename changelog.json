@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-08T23:06:37.895Z",
-  "commit": "04d9d9b",
+  "generated_at": "2026-09-09T10:03:49.955Z",
+  "commit": "84ac0c0",
   "entries": [
+    {
+      "version": "5.6.2",
+      "date": "2026-09-09",
+      "summary": "Calendar sync gaps, Hide Money blur gaps, and V5 Check Habits false-nonsensical numbers",
+      "details": "Batch of bug fixes from an autonomous review pass, all patch-level (no new\nfeature surface):\n\n- Google Calendar: bulk shift imports (Rotageek raw import, ICS, CSV) never\n  pushed to Google Calendar, and syncAll/reconcile could create stale\n  duplicate events by upserting from a snapshot that went stale mid-loop.\n- Hide Money: three raw £ strings on the Dashboard (Next Payday, Month\n  Summary, live pay counter) bypassed the money-blur wrapper entirely, and\n  Payslips leaked \"...</span>\" as visible text next to the leave badge because\n  fmtCurrency's HTML was placed inside a title=\"\" attribute.\n- V5 Check Habits: the \"all time\" view compared checks against every shift\n  ever logged, including years before the V5 tracking feature existed to\n  record a check — producing a false ~100% \"walked in blind\" figure. Bounded\n  the coverage window to when tracking actually started.\n- V5 Clock Map: renamed the confusingly-named \"Fixes relative to the store\"\n  section to \"Distance from the store\", and documented why it stays a plain\n  scatter rather than becoming a tile map (would leak clock-in GPS coordinates\n  to a third-party tile server on every load, and be the app's first external\n  JS dependency, for no real gain over what the scatter already shows).\n- Standardized employee-selector labelling (\"Employee:\") across Insights and\n  Shift DNA.\n\nFull reasoning and verification detail is in the individual commits on the\nauto-fixes-2026-09-09 branch this squashes."
+    },
     {
       "version": "5.6.1",
       "date": "2026-09-09",
