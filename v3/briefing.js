@@ -16,7 +16,7 @@ const {
   toMins, spanMins, overlapMins, paidHours, shiftPay, contractHoursForDate, round1, round2,
 } = require('./helpers');
 const { bankHolidayDates } = require('./bankHolidays');
-const { deliveryWindow, DEFAULT_DELIVERY_TIME } = require('../delivery');
+const { deliveryWindow, timeForDay } = require('../delivery');
 const { costSettings, costPerMileFor } = require('./commuteCost');
 
 const router = express.Router();
@@ -24,13 +24,13 @@ const router = express.Router();
 /** Which weekdays deliveries land on, and at what time, from the schedule history. */
 function deliverySchedFor(dateStr) {
   const row = db.prepare(
-    'SELECT days, delivery_time FROM delivery_schedules WHERE effective_from <= ? ORDER BY effective_from DESC LIMIT 1'
+    'SELECT days, delivery_time, day_times FROM delivery_schedules WHERE effective_from <= ? ORDER BY effective_from DESC LIMIT 1'
   ).get(dateStr);
-  if (!row || !row.days) return { days: [], time: DEFAULT_DELIVERY_TIME };
+  if (!row || !row.days) return { days: [], row: null };
   return {
     // Stored as a comma-separated list of day names or indices, depending on age
     days: String(row.days).split(',').map(d => d.trim()).filter(Boolean),
-    time: row.delivery_time || DEFAULT_DELIVERY_TIME,
+    row,
   };
 }
 
@@ -116,7 +116,8 @@ router.get('/briefing', async (req, res) => {
   // Whether you're actually on the floor for it, on the same ± 1 hour window
   // Insights counts by — a delivery day you finish before is worth knowing about
   // differently from one you're unloading.
-  const delivWindow = deliveryWindow(delivSched.time);
+  const deliveryTime = isDeliveryDay ? timeForDay(delivSched.row, dow) : null;
+  const delivWindow = deliveryWindow(deliveryTime);
   const onForDelivery = isDeliveryDay
     && shift.start_time <= delivWindow.to && shift.end_time >= delivWindow.from;
 
@@ -160,7 +161,7 @@ router.get('/briefing', async (req, res) => {
     turnaround,
     delivery: {
       is_delivery_day: isDeliveryDay,
-      time: isDeliveryDay ? delivSched.time : null,
+      time: deliveryTime,
       on_shift: onForDelivery,
     },
     // Kept for older clients that read the flat flag

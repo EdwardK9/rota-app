@@ -1652,17 +1652,24 @@ const SettingsView = {
     const sorted = [...list].sort((a,b) => b.effective_from.localeCompare(a.effective_from));
     el.innerHTML = `
       <table class="data-table" style="width:100%">
-        <thead><tr><th>From</th><th>Days</th><th>Time</th><th></th></tr></thead>
+        <thead><tr><th>From</th><th>Days &amp; times</th><th></th></tr></thead>
         <tbody>
           ${sorted.map(s => {
-            const dayLabels = s.days.split(',').map(d => DOW_NAMES[+d.trim()] || d).join(', ');
-            const time = s.delivery_time || DEFAULT_DELIVERY_TIME;
+            const fallback = s.delivery_time || DEFAULT_DELIVERY_TIME;
+            const dayTimes = SettingsView._parseDayTimes(s.day_times);
+            const dayLabels = s.days.split(',').map(d => {
+              const key = d.trim();
+              return `${DOW_NAMES[+key] || key} ${dayTimes[key] || fallback}`;
+            }).join(' · ');
+            const payload = encodeURIComponent(JSON.stringify({
+              id: s.id, effective_from: s.effective_from, days: s.days,
+              delivery_time: fallback, day_times: dayTimes,
+            }));
             return `<tr>
               <td>${s.effective_from}</td>
               <td>${dayLabels}</td>
-              <td>${time}</td>
               <td style="text-align:right">
-                <button class="btn btn-ghost btn-sm" onclick="SettingsView.editDelivSchedule(${s.id}, '${s.effective_from}', '${s.days}', '${time}')">Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="SettingsView.editDelivSchedule('${payload}')">Edit</button>
                 <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="SettingsView.deleteDelivSchedule(${s.id})">Delete</button>
               </td>
             </tr>`;
@@ -1672,9 +1679,26 @@ const SettingsView = {
     `;
   },
 
-  _delivScheduleModal(id, effective_from, days, delivery_time) {
+  /** Tolerant read of the day_times column — a bad value just means "no overrides". */
+  _parseDayTimes(raw) {
+    if (!raw) return {};
+    let obj = raw;
+    if (typeof raw === 'string') {
+      try { obj = JSON.parse(raw); } catch (_) { return {}; }
+    }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+    const out = {};
+    for (const [d, t] of Object.entries(obj)) {
+      if (/^[0-6]$/.test(String(d)) && /^\d{1,2}:\d{2}$/.test(String(t))) out[String(d)] = String(t);
+    }
+    return out;
+  },
+
+  _delivScheduleModal(id, effective_from, days, delivery_time, dayTimes) {
     const DOW_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const daySet = new Set((days || '').split(',').map(d => d.trim()));
+    const times = dayTimes || {};
+    const fallback = delivery_time || DEFAULT_DELIVERY_TIME;
     const existing = document.getElementById('delivSchedModal');
     if (existing) existing.remove();
     const modal = document.createElement('div');
@@ -1701,32 +1725,33 @@ const SettingsView = {
                    background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box" />
         </div>
 
-        <div style="margin-bottom:14px">
-          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:5px">
-            Delivery time
-          </label>
-          <input type="time" id="dsTime" value="${delivery_time || DEFAULT_DELIVERY_TIME}"
-            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
-                   background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box" />
-          <div style="font-size:11px;color:var(--text-muted);margin-top:5px">
-            Shifts covering this time (± 1 hour) count as delivery shifts in Insights.
-          </div>
-        </div>
-
         <div style="margin-bottom:20px">
           <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">
-            Delivery days
+            Delivery days &amp; times
           </label>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
-            ${DOW_NAMES.map((name, i) => `
-              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;
-                            font-size:13px;color:var(--text);padding:4px 2px">
-                <input type="checkbox" class="dsDow" value="${i}"
-                  ${daySet.has(String(i)) ? 'checked' : ''}
-                  style="width:14px;height:14px;cursor:pointer;accent-color:var(--primary)" />
-                ${name}
-              </label>
-            `).join('')}
+          <div style="display:flex;flex-direction:column;gap:4px">
+            ${DOW_NAMES.map((name, i) => {
+              const on = daySet.has(String(i));
+              return `
+              <div style="display:flex;align-items:center;gap:8px">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1;
+                              font-size:13px;color:var(--text);padding:2px">
+                  <input type="checkbox" class="dsDow" value="${i}" ${on ? 'checked' : ''}
+                    onchange="SettingsView._syncDelivDayRow(${i})"
+                    style="width:14px;height:14px;cursor:pointer;accent-color:var(--primary)" />
+                  ${name}
+                </label>
+                <input type="time" class="dsDowTime" id="dsTime${i}"
+                  value="${times[String(i)] || fallback}" ${on ? '' : 'disabled'}
+                  style="width:110px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;
+                         background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box;
+                         opacity:${on ? '1' : '0.4'}" />
+              </div>`;
+            }).join('')}
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
+            Each day can land at its own time. Shifts covering a delivery
+            (± 1 hour) count as delivery shifts in Insights.
           </div>
         </div>
 
@@ -1746,24 +1771,46 @@ const SettingsView = {
   },
 
   addDelivSchedule() {
-    this._delivScheduleModal(null, '', '', DEFAULT_DELIVERY_TIME);
+    this._delivScheduleModal(null, '', '', DEFAULT_DELIVERY_TIME, {});
   },
 
-  editDelivSchedule(id, effective_from, days, delivery_time) {
-    this._delivScheduleModal(id, effective_from, days, delivery_time);
+  editDelivSchedule(payload) {
+    const s = JSON.parse(decodeURIComponent(payload));
+    this._delivScheduleModal(s.id, s.effective_from, s.days, s.delivery_time, s.day_times);
+  },
+
+  /** Grey out a day's time box when the day isn't ticked. */
+  _syncDelivDayRow(i) {
+    const box = document.querySelector(`.dsDow[value="${i}"]`);
+    const time = document.getElementById(`dsTime${i}`);
+    if (!box || !time) return;
+    time.disabled = !box.checked;
+    time.style.opacity = box.checked ? '1' : '0.4';
   },
 
   async _saveDelivSchedule(id) {
     const effective_from = document.getElementById('dsFrm').value;
-    const days = [...document.querySelectorAll('.dsDow:checked')].map(c => c.value).join(',');
-    const delivery_time = document.getElementById('dsTime').value || DEFAULT_DELIVERY_TIME;
+    const checked = [...document.querySelectorAll('.dsDow:checked')].map(c => c.value);
+    const days = checked.join(',');
     if (!effective_from) { showToast('Please set a date', 'error'); return; }
     if (!days) { showToast('Please select at least one day', 'error'); return; }
+
+    const day_times = {};
+    for (const d of checked) {
+      day_times[d] = document.getElementById(`dsTime${d}`).value || DEFAULT_DELIVERY_TIME;
+    }
+    // delivery_time is the row's fallback for anything reading it without
+    // understanding day_times — the most common of the times chosen.
+    const tally = {};
+    for (const t of Object.values(day_times)) tally[t] = (tally[t] || 0) + 1;
+    const delivery_time = Object.keys(tally)
+      .sort((a, b) => tally[b] - tally[a] || a.localeCompare(b))[0] || DEFAULT_DELIVERY_TIME;
+
     try {
       if (id) {
-        await API.put(`/api/delivery-schedules/${id}`, { effective_from, days, delivery_time });
+        await API.put(`/api/delivery-schedules/${id}`, { effective_from, days, delivery_time, day_times });
       } else {
-        await API.post('/api/delivery-schedules', { effective_from, days, delivery_time });
+        await API.post('/api/delivery-schedules', { effective_from, days, delivery_time, day_times });
       }
       document.getElementById('delivSchedModal')?.remove();
       this.delivSchedList = await API.get('/api/delivery-schedules');

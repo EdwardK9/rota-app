@@ -12,7 +12,7 @@
 
 const express = require('express');
 const { db }  = require('./db');
-const { DEFAULT_DELIVERY_TIME } = require('./delivery');
+const { timeForDay } = require('./delivery');
 const router  = express.Router();
 
 function getSetting(key) {
@@ -118,7 +118,7 @@ const MAX_FORECAST_DAYS = 15;
 function deliveryTimeFor(dateStr) {
   const dow = String(new Date(dateStr + 'T12:00:00').getDay());   // 0=Sun … 6=Sat
   const schedules = db.prepare(
-    'SELECT effective_from, days, delivery_time FROM delivery_schedules ORDER BY effective_from DESC'
+    'SELECT effective_from, days, delivery_time, day_times FROM delivery_schedules ORDER BY effective_from DESC'
   ).all();
   const applicable = schedules.find(s => s.effective_from <= dateStr);
   const days = applicable
@@ -126,7 +126,7 @@ function deliveryTimeFor(dateStr) {
     : (schedules.length ? null : (getSetting('delivery_days') || '3,4,5'));
   if (!days) return null;
   if (!days.split(',').map(d => d.trim()).includes(dow)) return null;
-  return (applicable && applicable.delivery_time) || DEFAULT_DELIVERY_TIME;
+  return timeForDay(applicable, dow);
 }
 
 router.get('/commute/weather', async (req, res) => {

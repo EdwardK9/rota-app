@@ -225,16 +225,20 @@ db.exec(`
 `);
 
 // Delivery schedules — history of which days deliveries happen, and at what time.
-// Each row is "from this date onwards, deliveries land on these weekdays at this
-// time"; the newest row whose effective_from has been reached wins. Keeping the
-// history means past shifts are still judged against the schedule that was
+// Each row is "from this date onwards, deliveries land on these weekdays, each at
+// its own time"; the newest row whose effective_from has been reached wins. Keeping
+// the history means past shifts are still judged against the schedule that was
 // actually in force back then, not today's.
+//   days          '3,5'                       — which weekdays (0=Sun … 6=Sat)
+//   day_times     '{"3":"06:00","5":"18:00"}' — that day's time, where set
+//   delivery_time '18:00'                     — fallback for a day with no entry
 db.exec(`
   CREATE TABLE IF NOT EXISTS delivery_schedules (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     effective_from TEXT NOT NULL,
     days          TEXT NOT NULL,
     delivery_time TEXT NOT NULL DEFAULT '18:00',
+    day_times     TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
@@ -244,6 +248,9 @@ db.exec(`
 // of their own — they get the current 18:00 target as their backfill.
 const delivScheduleMigrations = [
   "ALTER TABLE delivery_schedules ADD COLUMN delivery_time TEXT NOT NULL DEFAULT '18:00'",
+  // Per-day times. NULL means "every day in this row uses delivery_time", which
+  // is exactly what a row written before this column meant.
+  "ALTER TABLE delivery_schedules ADD COLUMN day_times TEXT",
 ];
 delivScheduleMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* already exists */ }

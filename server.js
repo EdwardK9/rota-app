@@ -13,7 +13,7 @@ const { db, getPayRateForDate, calcHoursWorked, autoBreakMinutes, contractHoursF
 const { leaveHoursByMonth, leaveHoursByWeek } = require('./leaveHours');
 const workingWithRouter = require('./working-with');
 const commuteRouter = require('./commute');
-const { DEFAULT_DELIVERY_TIME, normaliseDeliveryTime, deliveryCaseSql } = require('./delivery');
+const { DEFAULT_DELIVERY_TIME, normaliseDeliveryTime, serialiseDayTimes, deliveryCaseSql } = require('./delivery');
 const { fetchHourlyForecast, nearestHourKey, buildAlerts } = commuteRouter;
 const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
@@ -726,23 +726,31 @@ app.get('/api/delivery-schedules', (req, res) => {
   res.json(db.prepare('SELECT * FROM delivery_schedules ORDER BY effective_from ASC').all());
 });
 
-app.post('/api/delivery-schedules', (req, res) => {
+// day_times carries a time per weekday; delivery_time stays as the fallback for
+// any day it doesn't mention, and for clients that don't send it at all.
+function deliveryScheduleBody(req) {
   const { effective_from, days } = req.body;
-  if (!effective_from || !days) return res.status(400).json({ error: 'effective_from and days required' });
+  if (!effective_from || !days) return { error: 'effective_from and days required' };
   const delivery_time = normaliseDeliveryTime(req.body.delivery_time);
-  if (!delivery_time) return res.status(400).json({ error: 'delivery_time must be HH:MM' });
-  const info = db.prepare('INSERT INTO delivery_schedules (effective_from, days, delivery_time) VALUES (?,?,?)')
-    .run(effective_from, days, delivery_time);
-  res.json({ id: info.lastInsertRowid, effective_from, days, delivery_time });
+  if (!delivery_time) return { error: 'delivery_time must be HH:MM' };
+  const day_times = serialiseDayTimes(req.body.day_times);
+  return { effective_from, days, delivery_time, day_times };
+}
+
+app.post('/api/delivery-schedules', (req, res) => {
+  const body = deliveryScheduleBody(req);
+  if (body.error) return res.status(400).json({ error: body.error });
+  const info = db.prepare(
+    'INSERT INTO delivery_schedules (effective_from, days, delivery_time, day_times) VALUES (?,?,?,?)'
+  ).run(body.effective_from, body.days, body.delivery_time, body.day_times);
+  res.json({ id: info.lastInsertRowid, ...body });
 });
 
 app.put('/api/delivery-schedules/:id', (req, res) => {
-  const { effective_from, days } = req.body;
-  if (!effective_from || !days) return res.status(400).json({ error: 'effective_from and days required' });
-  const delivery_time = normaliseDeliveryTime(req.body.delivery_time);
-  if (!delivery_time) return res.status(400).json({ error: 'delivery_time must be HH:MM' });
-  db.prepare('UPDATE delivery_schedules SET effective_from=?, days=?, delivery_time=? WHERE id=?')
-    .run(effective_from, days, delivery_time, req.params.id);
+  const body = deliveryScheduleBody(req);
+  if (body.error) return res.status(400).json({ error: body.error });
+  db.prepare('UPDATE delivery_schedules SET effective_from=?, days=?, delivery_time=?, day_times=? WHERE id=?')
+    .run(body.effective_from, body.days, body.delivery_time, body.day_times, req.params.id);
   res.json({ ok: true });
 });
 
@@ -1295,7 +1303,7 @@ app.get('/api/reports/insights', (req, res) => {
   // Delivery days — use delivery_schedules table (newest first) for per-date accuracy;
   // fall back to legacy delivery_days setting if no schedules exist
   const delivSchedules = db.prepare(
-    `SELECT effective_from, days, delivery_time FROM delivery_schedules ORDER BY effective_from DESC`
+    `SELECT effective_from, days, delivery_time, day_times FROM delivery_schedules ORDER BY effective_from DESC`
   ).all();
 
   // Each schedule contributes its own branch with its own time window, so a shift
