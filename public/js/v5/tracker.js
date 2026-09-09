@@ -24,6 +24,16 @@ const V5Tracker = {
   SESSION_KEY: 'v5Session',
   IDLE_MS: 30 * 60 * 1000,     // a gap this long makes the next open a new session
   FLUSH_MS: 60 * 1000,
+  // A view is only ever turned into a recorded row when it *closes* — normally
+  // via pagehide/visibilitychange. That's fine for a browsing session, but a
+  // "open the app, hit Clock In, close it" visit can be over in a few seconds,
+  // and iOS in particular does not reliably fire pagehide when an app is swiped
+  // away from the app switcher rather than backgrounded — so that whole visit,
+  // and the one thing V5 exists to measure about it (that a check happened
+  // before the shift), is silently never recorded. Chunking the still-open view
+  // into a completed row every VIEW_CHUNK_MS means a visit has already banked at
+  // least one row well before someone finishes clocking in and leaves.
+  VIEW_CHUNK_MS: 15 * 1000,
   GPS_TIMEOUT_MS: 12000,
 
   config: { analytics: true, location: false, locationOnOpen: false },
@@ -69,7 +79,7 @@ const V5Tracker = {
 
     this._wireLifecycle();
     this._wireRouter();
-    this._timer = setInterval(() => this.flush(), this.FLUSH_MS);
+    this._timer = setInterval(() => { this._chunkView(); this.flush(); }, this.FLUSH_MS);
   },
 
   /** A reload within the same tab continues the session it interrupted, unless
@@ -187,7 +197,30 @@ const V5Tracker = {
     this.viewCount++;
     if (!this.entryView) this.entryView = view;
     this._pendingFrom = from;
+    this._earlyPinged = false;
     this._persist();
+    // A safety net for a visit that's over before FLUSH_MS's periodic check
+    // would ever run — see the VIEW_CHUNK_MS comment above.
+    clearTimeout(this._chunkTimer);
+    this._chunkTimer = setTimeout(() => this._chunkView(), this.VIEW_CHUNK_MS);
+  },
+
+  /** Sends the still-open view as a completed row once, ~VIEW_CHUNK_MS after it
+   *  opened, instead of only recording it when it closes — see the
+   *  VIEW_CHUNK_MS comment. Deliberately a single early ping rather than a
+   *  repeating one: the goal is only to make sure a short visit has *something*
+   *  recorded before it can be killed outright, not to fragment an ordinary
+   *  longer session into a run of short rows (which would inflate "checks" and
+   *  "views opened" for exactly the visits that were never in doubt). A session
+   *  that continues past this point goes back to being closed normally, just
+   *  timed from here rather than from the original open. */
+  _chunkView() {
+    if (!this.currentView || !this._viewStarted || this._earlyPinged) return;
+    if (Date.now() - this._viewStarted < this.VIEW_CHUNK_MS) return;
+    this._earlyPinged = true;
+    this._closeCurrentView();
+    this._viewStarted = Date.now();
+    this.flush();
   },
 
   /** A view's row is written when you *leave* it, because that's when its dwell
@@ -202,6 +235,7 @@ const V5Tracker = {
     });
     this._viewStarted = 0;
     this._pendingFrom = null;
+    clearTimeout(this._chunkTimer);
   },
 
   /* ── Events ───────────────────────────────────────────────────────────── */

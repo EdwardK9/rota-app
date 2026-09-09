@@ -459,10 +459,17 @@ const DashboardView = {
     const diff = this._timeDiffMins(hhmm, schedStart);
     let note = null;
     if (diff > this._thr('in','late') || diff < -this._thr('in','early')) note = await this._promptReason(diff);
+    // Same as the dedicated Clock In/Out page: fire in parallel with the clock-in
+    // itself so a slow/refused GPS fix never delays it. This was missing here —
+    // the Dashboard's own Clock In button (likely the one actually used day to
+    // day, since it's the first thing on screen) recorded no location and no
+    // check-habit signal at all, unlike the separate Clock In/Out view.
+    const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('in') : null;
     try {
       await API.post('/api/clock/in', { time: hhmm, note });
       await this.render();
     } catch(e) { showToast('Clock in failed', 'error'); }
+    fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_in', detail: hhmm }); });
   },
 
   async clockOut() {
@@ -474,6 +481,8 @@ const DashboardView = {
     // Prompt when clocking out early or late beyond the configured leeway window
     let note = null;
     if (diff < -this._thr('out','early') || diff > this._thr('out','late')) note = await this._promptReason(diff, true);
+    const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('out') : null;
+    fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_out', detail: hhmm }); });
     try {
       await API.post('/api/clock/out', { time: hhmm, note });
     } catch(e) { showToast('Clock out failed', 'error'); return; }
