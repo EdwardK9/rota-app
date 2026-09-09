@@ -30,7 +30,7 @@ V3.register('shift-dna', '🧬 Shift DNA', {
     const years = getYears();
     return `<div class="toolbar">
       <div class="month-nav">
-        <label style="margin-bottom:0;margin-right:4px;font-weight:500">Person:</label>
+        <label style="margin-bottom:0;margin-right:4px;font-weight:500">Employee:</label>
         <select id="dnaPerson" style="width:auto">
           ${(this.people || []).map(p => `
             <option value="${esc(p.id)}" ${p.id === this.person ? 'selected' : ''}>

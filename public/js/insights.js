@@ -45,7 +45,7 @@ const InsightsView = {
 
     el.innerHTML = `
       <div class="toolbar" style="flex-wrap:wrap;row-gap:8px">
-        <label style="margin-bottom:0;font-weight:500">Viewing:</label>
+        <label style="margin-bottom:0;font-weight:500">Employee:</label>
         <select id="insightsPersonSelect" style="width:auto;max-width:200px">
           ${personOptions}
         </select>
