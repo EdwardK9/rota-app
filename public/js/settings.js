@@ -1,5 +1,9 @@
 /* ─── Settings View ───────────────────────────────────────────────────────── */
 
+// Fallback for delivery schedules saved before the time was configurable — matches
+// the column default in db.js and the server's own fallback.
+const DEFAULT_DELIVERY_TIME = '18:00';
+
 const SettingsView = {
   payRates: [],
   settings: {},
@@ -1648,15 +1652,17 @@ const SettingsView = {
     const sorted = [...list].sort((a,b) => b.effective_from.localeCompare(a.effective_from));
     el.innerHTML = `
       <table class="data-table" style="width:100%">
-        <thead><tr><th>From</th><th>Days</th><th></th></tr></thead>
+        <thead><tr><th>From</th><th>Days</th><th>Time</th><th></th></tr></thead>
         <tbody>
           ${sorted.map(s => {
             const dayLabels = s.days.split(',').map(d => DOW_NAMES[+d.trim()] || d).join(', ');
+            const time = s.delivery_time || DEFAULT_DELIVERY_TIME;
             return `<tr>
               <td>${s.effective_from}</td>
               <td>${dayLabels}</td>
+              <td>${time}</td>
               <td style="text-align:right">
-                <button class="btn btn-ghost btn-sm" onclick="SettingsView.editDelivSchedule(${s.id}, '${s.effective_from}', '${s.days}')">Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="SettingsView.editDelivSchedule(${s.id}, '${s.effective_from}', '${s.days}', '${time}')">Edit</button>
                 <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="SettingsView.deleteDelivSchedule(${s.id})">Delete</button>
               </td>
             </tr>`;
@@ -1666,7 +1672,7 @@ const SettingsView = {
     `;
   },
 
-  _delivScheduleModal(id, effective_from, days) {
+  _delivScheduleModal(id, effective_from, days, delivery_time) {
     const DOW_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const daySet = new Set((days || '').split(',').map(d => d.trim()));
     const existing = document.getElementById('delivSchedModal');
@@ -1693,6 +1699,18 @@ const SettingsView = {
           <input type="date" id="dsFrm" value="${effective_from || ''}"
             style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
                    background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box" />
+        </div>
+
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:5px">
+            Delivery time
+          </label>
+          <input type="time" id="dsTime" value="${delivery_time || DEFAULT_DELIVERY_TIME}"
+            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+                   background:var(--bg);color:var(--text);font-size:13px;box-sizing:border-box" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:5px">
+            Shifts covering this time (± 1 hour) count as delivery shifts in Insights.
+          </div>
         </div>
 
         <div style="margin-bottom:20px">
@@ -1728,23 +1746,24 @@ const SettingsView = {
   },
 
   addDelivSchedule() {
-    this._delivScheduleModal(null, '', '');
+    this._delivScheduleModal(null, '', '', DEFAULT_DELIVERY_TIME);
   },
 
-  editDelivSchedule(id, effective_from, days) {
-    this._delivScheduleModal(id, effective_from, days);
+  editDelivSchedule(id, effective_from, days, delivery_time) {
+    this._delivScheduleModal(id, effective_from, days, delivery_time);
   },
 
   async _saveDelivSchedule(id) {
     const effective_from = document.getElementById('dsFrm').value;
     const days = [...document.querySelectorAll('.dsDow:checked')].map(c => c.value).join(',');
+    const delivery_time = document.getElementById('dsTime').value || DEFAULT_DELIVERY_TIME;
     if (!effective_from) { showToast('Please set a date', 'error'); return; }
     if (!days) { showToast('Please select at least one day', 'error'); return; }
     try {
       if (id) {
-        await API.put(`/api/delivery-schedules/${id}`, { effective_from, days });
+        await API.put(`/api/delivery-schedules/${id}`, { effective_from, days, delivery_time });
       } else {
-        await API.post('/api/delivery-schedules', { effective_from, days });
+        await API.post('/api/delivery-schedules', { effective_from, days, delivery_time });
       }
       document.getElementById('delivSchedModal')?.remove();
       this.delivSchedList = await API.get('/api/delivery-schedules');

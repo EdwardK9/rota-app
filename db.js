@@ -224,15 +224,30 @@ db.exec(`
   )
 `);
 
-// Delivery schedules — history of which days deliveries happen
+// Delivery schedules — history of which days deliveries happen, and at what time.
+// Each row is "from this date onwards, deliveries land on these weekdays at this
+// time"; the newest row whose effective_from has been reached wins. Keeping the
+// history means past shifts are still judged against the schedule that was
+// actually in force back then, not today's.
 db.exec(`
   CREATE TABLE IF NOT EXISTS delivery_schedules (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     effective_from TEXT NOT NULL,
     days          TEXT NOT NULL,
+    delivery_time TEXT NOT NULL DEFAULT '18:00',
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+
+// Delivery-schedule migrations. Rows created before the time column existed were
+// written when the delivery hour was a hardcoded constant, so they carry no time
+// of their own — they get the current 18:00 target as their backfill.
+const delivScheduleMigrations = [
+  "ALTER TABLE delivery_schedules ADD COLUMN delivery_time TEXT NOT NULL DEFAULT '18:00'",
+];
+delivScheduleMigrations.forEach(sql => {
+  try { db.exec(sql); } catch (_) { /* already exists */ }
+});
 
 // Colleague-shifts migrations
 const colShiftMigrations = [

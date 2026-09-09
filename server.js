@@ -13,6 +13,7 @@ const { db, getPayRateForDate, calcHoursWorked, autoBreakMinutes, contractHoursF
 const { leaveHoursByMonth, leaveHoursByWeek } = require('./leaveHours');
 const workingWithRouter = require('./working-with');
 const commuteRouter = require('./commute');
+const { DEFAULT_DELIVERY_TIME, normaliseDeliveryTime, deliveryCaseSql } = require('./delivery');
 const { fetchHourlyForecast, nearestHourKey, buildAlerts } = commuteRouter;
 const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
@@ -728,14 +729,20 @@ app.get('/api/delivery-schedules', (req, res) => {
 app.post('/api/delivery-schedules', (req, res) => {
   const { effective_from, days } = req.body;
   if (!effective_from || !days) return res.status(400).json({ error: 'effective_from and days required' });
-  const info = db.prepare('INSERT INTO delivery_schedules (effective_from, days) VALUES (?,?)').run(effective_from, days);
-  res.json({ id: info.lastInsertRowid, effective_from, days });
+  const delivery_time = normaliseDeliveryTime(req.body.delivery_time);
+  if (!delivery_time) return res.status(400).json({ error: 'delivery_time must be HH:MM' });
+  const info = db.prepare('INSERT INTO delivery_schedules (effective_from, days, delivery_time) VALUES (?,?,?)')
+    .run(effective_from, days, delivery_time);
+  res.json({ id: info.lastInsertRowid, effective_from, days, delivery_time });
 });
 
 app.put('/api/delivery-schedules/:id', (req, res) => {
   const { effective_from, days } = req.body;
   if (!effective_from || !days) return res.status(400).json({ error: 'effective_from and days required' });
-  db.prepare('UPDATE delivery_schedules SET effective_from=?, days=? WHERE id=?').run(effective_from, days, req.params.id);
+  const delivery_time = normaliseDeliveryTime(req.body.delivery_time);
+  if (!delivery_time) return res.status(400).json({ error: 'delivery_time must be HH:MM' });
+  db.prepare('UPDATE delivery_schedules SET effective_from=?, days=?, delivery_time=? WHERE id=?')
+    .run(effective_from, days, delivery_time, req.params.id);
   res.json({ ok: true });
 });
 
@@ -1287,25 +1294,28 @@ app.get('/api/reports/insights', (req, res) => {
 
   // Delivery days — use delivery_schedules table (newest first) for per-date accuracy;
   // fall back to legacy delivery_days setting if no schedules exist
-  const delivSchedules = db.prepare(`SELECT effective_from, days FROM delivery_schedules ORDER BY effective_from DESC`).all();
+  const delivSchedules = db.prepare(
+    `SELECT effective_from, days, delivery_time FROM delivery_schedules ORDER BY effective_from DESC`
+  ).all();
+
+  // Each schedule contributes its own branch with its own time window, so a shift
+  // worked back when delivery landed at a different time is still judged against
+  // that time rather than today's.
   let delivDayList, delivDayExpr, DELIVERY_CASE;
   if (delivSchedules.length) {
-    // Build a SQL CASE expression: for each shift date, pick the applicable schedule
-    const cases = delivSchedules.map(s => {
-      const daysList = s.days.split(',').map(d => `'${d.trim()}'`).join(',');
-      return `WHEN date >= '${s.effective_from}' AND strftime('%w', date) IN (${daysList}) THEN 1`;
-    }).join('\n         ');
-    DELIVERY_CASE = `(CASE ${cases} ELSE 0 END)`;
+    DELIVERY_CASE = deliveryCaseSql(delivSchedules);
     // For the response delivDayList, use the most-recent schedule
     delivDayList = delivSchedules[0].days.split(',').map(d => d.trim()).filter(Boolean);
     delivDayExpr = delivDayList.map(d => `'${d}'`).join(',');
   } else {
-    // Legacy: single setting
+    // Legacy: a single setting with no history, judged against the default time
     const deliveryDaysSetting = db.prepare(`SELECT value FROM settings WHERE key='delivery_days'`).get();
     const deliveryDays = deliveryDaysSetting ? deliveryDaysSetting.value : '3,4,5';
     delivDayList = deliveryDays.split(',').map(d => d.trim()).filter(Boolean);
     delivDayExpr = delivDayList.map(d => `'${d}'`).join(',');
-    DELIVERY_CASE = null;
+    DELIVERY_CASE = deliveryCaseSql([
+      { effective_from: '0000-01-01', days: delivDayList.join(','), delivery_time: DEFAULT_DELIVERY_TIME },
+    ]);
   }
 
   // Top 10 most common shift times — grouped by EXACT (start_time, end_time) pair,
@@ -1372,11 +1382,10 @@ app.get('/api/reports/insights', (req, res) => {
                   (date < '2026-02-01' AND end_time >= '20:15') THEN 1 ELSE 0 END) as late_count,
     COUNT(*) as total`;
 
-  // Delivery shift = early start (05:30–08:00, covers ~6:30 arrivals) on a delivery day
-  const DELIVERY_SHIFT_EXPR = delivDayList.length
-    ? DELIVERY_CASE
-      ? `SUM(CASE WHEN ${DELIVERY_CASE} = 1 AND start_time >= '05:30' AND start_time <= '08:00' THEN 1 ELSE 0 END) as delivery_count`
-      : `SUM(CASE WHEN strftime('%w', date) IN (${delivDayExpr}) AND start_time >= '05:30' AND start_time <= '08:00' THEN 1 ELSE 0 END) as delivery_count`
+  // Delivery shift = on the floor across the delivery window of whichever schedule
+  // applied to that date. Both the days and the window live inside DELIVERY_CASE.
+  const DELIVERY_SHIFT_EXPR = DELIVERY_CASE
+    ? `SUM(CASE WHEN ${DELIVERY_CASE} = 1 THEN 1 ELSE 0 END) as delivery_count`
     : `0 as delivery_count`;
 
   const weeklyEarlyLate = forColleague
