@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-09T10:03:49.955Z",
-  "commit": "84ac0c0",
+  "generated_at": "2026-09-09T10:17:45.678Z",
+  "commit": "084419e",
   "entries": [
+    {
+      "version": "5.6.3",
+      "date": "2026-09-09",
+      "summary": "A check only ever got recorded when the app closed, and often it never closed cleanly",
+      "details": "Ed's report after v5.6.2: Check Habits was still showing ~98% \"walked in\nblind\" despite him opening the app before every single shift to clock in.\nRoot cause was two bugs deeper than the coverage-window fix in v5.6.2:\n\n1. A \"check\" (a view of Dashboard/Shifts/Calendar/Clock/etc.) is only ever\n   turned into a recorded row when it *closes* — via the pagehide or\n   visibilitychange browser events. That's fine for an ordinary browsing\n   session, but \"open the app, tap Clock In, close it\" can be over in a few\n   seconds, and iOS in particular does not reliably fire pagehide when an app\n   is swiped away from the app switcher rather than backgrounded normally —\n   so the entire visit, and the one thing this feature exists to measure about\n   it, was silently never recorded. Fixed by sending a one-time early \"ping\"\n   ~15s after a view opens if it hasn't closed yet, so a short visit has\n   already banked a row before it can be killed outright. Deliberately a\n   single ping rather than a repeating one — fragmenting an ordinary longer\n   session into a run of 15s rows would have inflated \"checks\" and \"views\n   opened\" for the sessions that were never the problem. Verified with a\n   scripted harness: a 5s visit that used to record nothing now records one\n   row at the 15s mark, and a session that continues afterwards still reports\n   its real total duration with no double-counting.\n\n2. The Dashboard's own Clock In/Out buttons — the ones actually on screen by\n   default, and so probably what's really being used day to day — never\n   called into V5Tracker at all, unlike the separate Clock In/Out page. That\n   meant no location fix and no explicit clock_in/clock_out event from what is\n   likely the primary path. Brought it in line with the dedicated page."
+    },
     {
       "version": "5.6.2",
       "date": "2026-09-09",
