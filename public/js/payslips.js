@@ -418,7 +418,10 @@ const PayslipsView = {
             let label = fmtCurrency(shiftPay);
             const notes = [];
             if (prevMerged) notes.push(`incl. ${fmtMonth(prev)} shifts`);
-            if (hasLeave) notes.push(`incl. ~${fmtCurrency(sd.leave_pay)} leave`);
+            // fmtCurrencyPlain here, not fmtCurrency — this note goes into a title="" attribute,
+            // and fmtCurrency's <span class="money"> markup breaks out of the attribute (its own
+            // quote closes title early), leaking "...</span>" as visible text next to the badge.
+            if (hasLeave) notes.push(`incl. ~${fmtCurrencyPlain(sd.leave_pay)} leave`);
             if (notes.length) label += ` <span style="font-size:11px;color:var(--text-muted)" title="${notes.join(', ')}">(${notes.map((n,i) => i===0 && prevMerged ? `+${fmtMonth(prev)}` : '🏖️').join(' ')})</span>`;
             return label;
           })()
