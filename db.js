@@ -212,17 +212,42 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_payslip_files_month ON payslip_files(month);
 `);
 
-// Clock in/out
+// Clock in/out — date is NOT unique: split-shift days get one row per shift
+// (clock in -> clock out -> clock in again -> clock out), all sharing the date.
 db.exec(`
   CREATE TABLE IF NOT EXISTS clock_entries (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    date        TEXT NOT NULL UNIQUE,
+    date        TEXT NOT NULL,
     clocked_in  TEXT,
     clocked_out TEXT,
     note        TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+db.exec('CREATE INDEX IF NOT EXISTS idx_clock_entries_date ON clock_entries(date)');
+
+// Older DBs still have the original UNIQUE(date) constraint, which SQLite can't
+// ALTER away -- rebuild the table without it, keeping every existing row.
+{
+  const existing = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='clock_entries'").get();
+  if (existing && /UNIQUE/i.test(existing.sql)) {
+    db.exec(`
+      ALTER TABLE clock_entries RENAME TO clock_entries_old;
+      CREATE TABLE clock_entries (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        date        TEXT NOT NULL,
+        clocked_in  TEXT,
+        clocked_out TEXT,
+        note        TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO clock_entries (id, date, clocked_in, clocked_out, note, created_at)
+        SELECT id, date, clocked_in, clocked_out, note, created_at FROM clock_entries_old;
+      DROP TABLE clock_entries_old;
+      CREATE INDEX IF NOT EXISTS idx_clock_entries_date ON clock_entries(date);
+    `);
+  }
+}
 
 // Delivery schedules — history of which days deliveries happen
 db.exec(`

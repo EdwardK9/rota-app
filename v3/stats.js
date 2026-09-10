@@ -135,8 +135,11 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
 
   // ── Clock-ins ────────────────────────────────────────────────────────────
   // Joined to the shift so "early" means early against the shift you were on.
+  // A split-shift day has multiple clock_entries rows: earliest clock-in and
+  // latest clock-out span the whole day, matched against the day's earliest
+  // scheduled start and latest scheduled end.
   const clockRows = db.prepare(`
-    SELECT ce.date, ce.clocked_in, ce.clocked_out,
+    SELECT ce.date, MIN(ce.clocked_in) AS clocked_in, MAX(ce.clocked_out) AS clocked_out,
            MIN(s.start_time) AS start_time, MAX(s.end_time) AS end_time
     FROM clock_entries ce JOIN shifts s ON s.date = ce.date
     WHERE ce.clocked_in IS NOT NULL

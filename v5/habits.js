@@ -47,8 +47,12 @@ router.get('/habits', (req, res) => {
   for (const s of shifts) (shiftsByDate[s.date] ||= []).push(s);
   const shiftDates = Object.keys(shiftsByDate).sort();
 
+  // A split-shift day has more than one row — collapse to the day's overall
+  // span (earliest in, latest out) rather than picking one row arbitrarily.
   const clockByDate = {};
-  for (const c of db.prepare('SELECT date, clocked_in, clocked_out FROM clock_entries WHERE date >= ?').all(addDays(since, -7))) {
+  for (const c of db.prepare(
+    'SELECT date, MIN(clocked_in) AS clocked_in, MAX(clocked_out) AS clocked_out FROM clock_entries WHERE date >= ? GROUP BY date'
+  ).all(addDays(since, -7))) {
     clockByDate[c.date] = c;
   }
 

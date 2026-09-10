@@ -336,18 +336,22 @@ const DashboardView = {
         ${shift.notes ? `<div class="dash-notes"><span class="dash-notes-icon">📝</span>${shift.notes}</div>` : ''}
 
         ${(() => {
+          // `entry` is the OPEN clock entry (clocked in, not out) — null between
+          // shifts on a split-shift day, not just before the first one.
           const ce = clockToday?.entry || null;
-          if (!ce || !ce.clocked_in) {
-            return `<button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>`;
-          } else if (!ce.clocked_out) {
+          const last = clockToday?.lastEntry || null;
+          if (ce) {
             return `<div class="dash-clock-status">
               <span class="dash-clock-in-time">Clocked in ${ce.clocked_in}</span>
               <button class="btn btn-clock-out" onclick="DashboardView.clockOut()">Clock Out</button>
             </div>`;
-          } else {
+          } else if (last && last.clocked_out) {
             return `<div class="dash-clock-status">
-              <span class="dash-clock-done">✓ Clocked out ${ce.clocked_out}</span>
+              <span class="dash-clock-done">✓ Clocked out ${last.clocked_out}</span>
+              <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Start Next Shift</button>
             </div>`;
+          } else {
+            return `<button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>`;
           }
         })()}
       </div>

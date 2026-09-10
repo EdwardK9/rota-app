@@ -92,11 +92,26 @@ router.get('/briefing', async (req, res) => {
     'SELECT * FROM shifts WHERE date < ? AND start_time = ? ORDER BY date DESC'
   ).all(today, shift.start_time)
     .filter(s => parseDate(s.date).getDay() === dow);
-  const pastClocks = past.length
-    ? db.prepare(
-        `SELECT * FROM clock_entries WHERE date IN (${past.map(() => '?').join(',')}) AND clocked_in IS NOT NULL`
-      ).all(...past.map(s => s.date))
-    : [];
+  // A past date can carry more than one clock entry now (a split-shift day) —
+  // match each occurrence of this slot to whichever clock-in on that date is
+  // closest to its start time, rather than pulling every entry for the date.
+  const pastClocksByDate = {};
+  if (past.length) {
+    for (const c of db.prepare(
+      `SELECT * FROM clock_entries WHERE date IN (${past.map(() => '?').join(',')}) AND clocked_in IS NOT NULL`
+    ).all(...past.map(s => s.date))) {
+      (pastClocksByDate[c.date] ||= []).push(c);
+    }
+  }
+  const pastClocks = past
+    .map(s => {
+      const candidates = pastClocksByDate[s.date] || [];
+      if (!candidates.length) return null;
+      return candidates.reduce((best, c) =>
+        Math.abs(toMins(c.clocked_in) - toMins(s.start_time)) < Math.abs(toMins(best.clocked_in) - toMins(s.start_time)) ? c : best
+      );
+    })
+    .filter(Boolean);
   const breakSkips = past.filter(s => s.break_taken === 'none' || s.break_taken === 'partial').length;
 
   // ── Week context ─────────────────────────────────────────────────────────

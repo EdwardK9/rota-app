@@ -186,10 +186,18 @@ function weekFacts(monday, colleagueId) {
   const clocks = colleagueId ? [] : db.prepare(
     'SELECT * FROM clock_entries WHERE date >= ? AND date <= ? AND clocked_in IS NOT NULL'
   ).all(monday, sunday);
+  const shiftsByDate = {};
+  for (const s of shifts) (shiftsByDate[s.date] ||= []).push(s);
   let lateClockIns = 0;
   for (const c of clocks) {
-    const s = shifts.find(x => x.date === c.date);
-    if (s && toMins(c.clocked_in) > toMins(s.start_time) + 5) lateClockIns++;
+    // A split-shift day can have more than one shift that date — match each
+    // clock-in against whichever is closest by start time, not just the first.
+    const dayShifts = shiftsByDate[c.date] || [];
+    if (!dayShifts.length) continue;
+    const s = dayShifts.reduce((best, x) =>
+      Math.abs(toMins(x.start_time) - toMins(c.clocked_in)) < Math.abs(toMins(best.start_time) - toMins(c.clocked_in)) ? x : best
+    );
+    if (toMins(c.clocked_in) > toMins(s.start_time) + 5) lateClockIns++;
   }
 
   return {

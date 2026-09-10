@@ -989,9 +989,12 @@ app.get('/api/streaks', (req, res) => {
   ).all();
   const breakStreak = _computeStreak(doneShifts, s => !!s.break_taken && s.break_taken !== 'none');
 
-  // Punctual clock-in streak — clock-in at or before shift start (5 min grace)
+  // Punctual clock-in streak — clock-in at or before shift start (5 min grace).
+  // A split-shift day has more than one clock_entries row, so both sides are
+  // aggregated explicitly (earliest clock-in vs earliest scheduled start) rather
+  // than leaving SQLite to pick an arbitrary row for the bare `clocked_in` column.
   const clockRows = db.prepare(`
-    SELECT ce.date, ce.clocked_in, MIN(s.start_time) as start_time
+    SELECT ce.date, MIN(ce.clocked_in) as clocked_in, MIN(s.start_time) as start_time
     FROM clock_entries ce
     JOIN shifts s ON s.date = ce.date
     WHERE ce.clocked_in IS NOT NULL
@@ -4437,7 +4440,13 @@ function _nearestShiftByField(shiftsForDate, field, targetTime) {
 // GET /api/clock/today
 app.get('/api/clock/today', (req, res) => {
   const today = localDateStr();
-  const entry = db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(today) || null;
+  const entries = db.prepare('SELECT * FROM clock_entries WHERE date = ? ORDER BY id ASC').all(today);
+  // `entry` is the OPEN entry (clocked in, not yet out), if any — what the Clock
+  // In/Out button acts on. A split-shift day can be between shifts (nothing
+  // open) while still having earlier entries, so `lastEntry` carries the most
+  // recent one regardless of state, for "last clocked out at..." display.
+  const entry = entries.find(e => e.clocked_in && !e.clocked_out) || null;
+  const lastEntry = entries.length ? entries[entries.length - 1] : null;
   const dayShifts = db.prepare(
     "SELECT id, start_time, end_time, break_scheduled_minutes FROM shifts WHERE date = ? ORDER BY start_time ASC"
   ).all(today);
@@ -4449,7 +4458,7 @@ app.get('/api/clock/today', (req, res) => {
         return dist < bestDist ? s : best;
       })
     : null;
-  res.json({ today, entry, shift });
+  res.json({ today, entries, entry, lastEntry, shift, shifts: dayShifts });
 });
 
 // GET /api/clock/history
@@ -4478,18 +4487,26 @@ app.get('/api/clock/history', (req, res) => {
   res.json({ entries });
 });
 
-// POST /api/clock/in
+// POST /api/clock/in — a split-shift day means "clock in" doesn't always mean
+// "there's nothing today yet": if the previous shift was already clocked out,
+// this starts a new entry rather than overwriting it. Only reuses an existing
+// row if one's already open (clocked in, not out), which just means re-recording
+// the time rather than accidentally spawning a duplicate open shift.
 app.post('/api/clock/in', (req, res) => {
   const date = req.body.date || localDateStr();
   const time = req.body.time || localTimeStr();
   const note = req.body.note || null;
-  db.prepare(`
-    INSERT INTO clock_entries (date, clocked_in, note) VALUES (?, ?, ?)
-    ON CONFLICT(date) DO UPDATE SET
-      clocked_in = excluded.clocked_in,
-      note = COALESCE(excluded.note, note)
-  `).run(date, time, note);
-  res.json(db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(date));
+  const openEntry = db.prepare(
+    'SELECT * FROM clock_entries WHERE date = ? AND clocked_in IS NOT NULL AND clocked_out IS NULL ORDER BY id DESC LIMIT 1'
+  ).get(date);
+  let id;
+  if (openEntry) {
+    db.prepare('UPDATE clock_entries SET clocked_in = ?, note = COALESCE(?, note) WHERE id = ?').run(time, note, openEntry.id);
+    id = openEntry.id;
+  } else {
+    id = db.prepare('INSERT INTO clock_entries (date, clocked_in, note) VALUES (?, ?, ?)').run(date, time, note).lastInsertRowid;
+  }
+  res.json(db.prepare('SELECT * FROM clock_entries WHERE id = ?').get(id));
 });
 
 // Clocking out is what "I've finished that shift" means, but marking the shift
@@ -4539,17 +4556,25 @@ function _autoCompleteShiftForClockOut(date, clockOutTime) {
   return updated;
 }
 
-// POST /api/clock/out
+// POST /api/clock/out — closes whichever entry is currently open for the day.
+// Falls back to the most recent entry (re-clock-out) if nothing's open, and to
+// a brand new out-only row if there's no entry at all yet — same defensive
+// fallbacks the old single-row version had, just no longer keyed by date alone.
 app.post('/api/clock/out', (req, res) => {
   const date = req.body.date || localDateStr();
   const time = req.body.time || localTimeStr();
   const note = req.body.note || null;
-  db.prepare(`
-    INSERT INTO clock_entries (date, clocked_out, note) VALUES (?, ?, ?)
-    ON CONFLICT(date) DO UPDATE SET
-      clocked_out = excluded.clocked_out,
-      note = COALESCE(excluded.note, note)
-  `).run(date, time, note);
+  const openEntry = db.prepare(
+    'SELECT * FROM clock_entries WHERE date = ? AND clocked_in IS NOT NULL AND clocked_out IS NULL ORDER BY id DESC LIMIT 1'
+  ).get(date);
+  let id;
+  if (openEntry) {
+    id = openEntry.id;
+  } else {
+    const last = db.prepare('SELECT * FROM clock_entries WHERE date = ? ORDER BY id DESC LIMIT 1').get(date);
+    id = last ? last.id : db.prepare('INSERT INTO clock_entries (date) VALUES (?)').run(date).lastInsertRowid;
+  }
+  db.prepare('UPDATE clock_entries SET clocked_out = ?, note = COALESCE(?, note) WHERE id = ?').run(time, note, id);
   let completedShift = null;
   try {
     completedShift = _autoCompleteShiftForClockOut(date, time);
@@ -4558,7 +4583,7 @@ app.post('/api/clock/out', (req, res) => {
     console.error('[Clock] auto-complete on clock-out failed:', e.message);
   }
   webhooksRouter.fireShiftEndedWebhook({ end_time: time }).catch(() => {});
-  const entry = db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(date);
+  const entry = db.prepare('SELECT * FROM clock_entries WHERE id = ?').get(id);
   res.json({ ...entry, completed_shift: completedShift });
 });
 
@@ -4694,10 +4719,11 @@ app.get('/api/clock/analytics', (req, res) => {
 // -----------------------------------------
 // A plain GET page (not /api/...) designed to be written to an NFC tag — tapping
 // your phone on the tag opens this URL directly with no app needed. Each tap
-// toggles: not clocked in today -> clock in, clocked in -> clock out, already both
-// set today -> updates the clock-out time (same as "Re-clock Out" in the app).
-// Protected by a token from Settings, since this is an unauthenticated GET with a
-// side effect and phones will happily open it in the background.
+// toggles against whatever's currently open: nothing open -> clock in (starting
+// a new entry, so a second/third shift on the same day just works), something
+// open -> clock out. Protected by a token from Settings, since this is an
+// unauthenticated GET with a side effect and phones will happily open it in
+// the background.
 function nfcTapPage(title, body, color = '#2e9e5b') {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -4724,25 +4750,20 @@ app.get('/clock-tap', (req, res) => {
 
   const today = localDateStr();
   const time  = localTimeStr();
-  const entry = db.prepare('SELECT * FROM clock_entries WHERE date = ?').get(today);
+  const openEntry = db.prepare(
+    'SELECT * FROM clock_entries WHERE date = ? AND clocked_in IS NOT NULL AND clocked_out IS NULL ORDER BY id DESC LIMIT 1'
+  ).get(today);
 
   let title, body;
-  if (!entry || !entry.clocked_in) {
-    db.prepare(`
-      INSERT INTO clock_entries (date, clocked_in) VALUES (?, ?)
-      ON CONFLICT(date) DO UPDATE SET clocked_in = excluded.clocked_in
-    `).run(today, time);
+  if (!openEntry) {
+    db.prepare('INSERT INTO clock_entries (date, clocked_in) VALUES (?, ?)').run(today, time);
     title = '✅ Clocked in';
     body  = `Recorded at ${time}.`;
-  } else if (!entry.clocked_out) {
-    db.prepare('UPDATE clock_entries SET clocked_out = ? WHERE date = ?').run(time, today);
+  } else {
+    db.prepare('UPDATE clock_entries SET clocked_out = ? WHERE id = ?').run(time, openEntry.id);
     webhooksRouter.fireShiftEndedWebhook({ end_time: time }).catch(() => {});
     title = '👋 Clocked out';
-    body  = `Recorded at ${time}. Open the app to log your break if you took one.`;
-  } else {
-    db.prepare('UPDATE clock_entries SET clocked_out = ? WHERE date = ?').run(time, today);
-    title = '🔁 Clock-out updated';
-    body  = `Updated to ${time}.`;
+    body  = `Recorded at ${time}. Tap again to start another shift, or open the app to log your break.`;
   }
   res.send(nfcTapPage(title, body));
 });

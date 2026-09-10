@@ -45,9 +45,12 @@ router.get('/locations', (req, res) => {
   const work = workPoint();
 
   // Clock entries for the same window, so a fix can be shown next to the time
-  // it was actually recorded against.
+  // it was actually recorded against. A split-shift day has more than one row —
+  // collapse to the day's overall span (earliest in, latest out).
   const clockByDate = {};
-  for (const c of db.prepare('SELECT date, clocked_in, clocked_out FROM clock_entries WHERE date >= ?').all(since)) {
+  for (const c of db.prepare(
+    'SELECT date, MIN(clocked_in) AS clocked_in, MAX(clocked_out) AS clocked_out FROM clock_entries WHERE date >= ? GROUP BY date'
+  ).all(since)) {
     clockByDate[c.date] = c;
   }
 

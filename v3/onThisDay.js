@@ -87,7 +87,12 @@ router.get('/on-this-day', (req, res) => {
     for (const n of db.prepare(`SELECT date, note FROM calendar_notes WHERE date IN (${placeholders})`).all(...dates)) {
       noteByDate[n.date] = n.note;
     }
-    for (const c of db.prepare(`SELECT * FROM clock_entries WHERE date IN (${placeholders})`).all(...dates)) {
+    // A split-shift day has more than one row — collapse to the day's overall
+    // span (earliest in, latest out) rather than picking one row arbitrarily.
+    for (const c of db.prepare(
+      `SELECT date, MIN(clocked_in) AS clocked_in, MAX(clocked_out) AS clocked_out
+       FROM clock_entries WHERE date IN (${placeholders}) GROUP BY date`
+    ).all(...dates)) {
       clockByDate[c.date] = c;
     }
   }

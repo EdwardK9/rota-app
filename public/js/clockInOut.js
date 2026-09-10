@@ -92,7 +92,13 @@ const ClockInOutView = {
     try {
       const data = await API.get('/api/clock/today');
       this.today = data.today;
+      this.entries = data.entries || [];
+      // `entry` is the OPEN entry (clocked in, not out) — what the Clock In/Out
+      // button acts on. `lastEntry` is whatever's most recent regardless of
+      // state, so the Today card still shows "last clocked out at..." between
+      // shifts on a split-shift day.
       this.entry = data.entry;
+      this.lastEntry = data.lastEntry;
       this.shift = data.shift;
       this.renderToday();
     } catch(e) { showToast('Failed to load clock data', 'error'); }
@@ -110,8 +116,11 @@ const ClockInOutView = {
       schedEl.textContent = 'No shift scheduled today';
     }
 
-    const inTime  = this.entry?.clocked_in  || null;
-    const outTime = this.entry?.clocked_out || null;
+    // Show the open entry's times while a shift is in progress; otherwise fall
+    // back to the most recent entry so the card doesn't go blank between shifts.
+    const display = this.entry || this.lastEntry;
+    const inTime  = display?.clocked_in  || null;
+    const outTime = this.entry ? null : (display?.clocked_out || null);
 
     document.getElementById('ckInTime').textContent  = inTime  || '--:--';
     document.getElementById('ckOutTime').textContent = outTime || '--:--';
@@ -124,31 +133,31 @@ const ClockInOutView = {
     if (inTarget)  inTarget.textContent  = this.shift ? `🎯 Start ${this.shift.start_time} · ${inLeeway} min leeway` : '';
     if (outTarget) outTarget.textContent = this.shift ? `🎯 End ${this.shift.end_time} · ${outLeeway} min leeway` : '';
 
-    // In button state
+    // In/Out buttons toggle on whether there's an open entry — mirrors the NFC
+    // tag's behaviour, so clocking in again after a shift's closed starts a new
+    // one instead of overwriting the last shift's time.
     const inBtn  = document.getElementById('ckInBtn');
     const outBtn = document.getElementById('ckOutBtn');
     const editIn  = document.getElementById('ckEditInBtn');
     const editOut = document.getElementById('ckEditOutBtn');
 
-    if (inTime) {
-      inBtn.textContent = 'Re-clock In';
+    if (this.entry) {
+      inBtn.textContent = 'Clocked In';
       inBtn.className = 'btn btn-ghost btn-sm';
-      editIn.style.display = '';
-    } else {
-      inBtn.textContent = 'Clock In';
-      inBtn.className = 'btn btn-primary';
-      editIn.style.display = 'none';
-    }
-
-    if (outTime) {
-      outBtn.textContent = 'Re-clock Out';
-      outBtn.className = 'btn btn-ghost btn-sm';
-      editOut.style.display = '';
-    } else {
-      outBtn.textContent = outTime ? 'Re-clock Out' : 'Clock Out';
+      inBtn.disabled = true;
+      outBtn.textContent = 'Clock Out';
       outBtn.className = 'btn btn-danger';
-      editOut.style.display = outTime ? '' : 'none';
+      outBtn.disabled = false;
+    } else {
+      inBtn.textContent = this.lastEntry ? 'Start Next Shift' : 'Clock In';
+      inBtn.className = 'btn btn-primary';
+      inBtn.disabled = false;
+      outBtn.textContent = 'Clock Out';
+      outBtn.className = 'btn btn-ghost btn-sm';
+      outBtn.disabled = true;
     }
+    editIn.style.display  = display?.clocked_in  ? '' : 'none';
+    editOut.style.display = (!this.entry && display?.clocked_out) ? '' : 'none';
 
     // Diff vs schedule
     this.renderDiff('ckInDiff',  inTime,  this.shift?.start_time, 'Arrived', false);
@@ -214,9 +223,7 @@ const ClockInOutView = {
   startTicker() {
     if (this._ticker) clearInterval(this._ticker);
     this._ticker = setInterval(() => {
-      const inTime  = this.entry?.clocked_in  || null;
-      const outTime = this.entry?.clocked_out || null;
-      if (inTime && !outTime) this.renderElapsed(inTime, null);
+      if (this.entry?.clocked_in) this.renderElapsed(this.entry.clocked_in, null);
     }, 60000);
   },
 
@@ -299,7 +306,7 @@ const ClockInOutView = {
     // tracking is switched off, so there is no permission prompt either.
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('in') : null;
     try {
-      this.entry = await API.post('/api/clock/in', { time: hhmm, note });
+      this.entry = this.lastEntry = await API.post('/api/clock/in', { time: hhmm, note });
       this.renderToday();
       showToast('Clocked in ✓', 'success');
       await this.loadHistory();
@@ -320,7 +327,8 @@ const ClockInOutView = {
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('out') : null;
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_out', detail: hhmm }); });
     try {
-      this.entry = await API.post('/api/clock/out', { time: hhmm, note });
+      this.lastEntry = await API.post('/api/clock/out', { time: hhmm, note });
+      this.entry = null;
       this.renderToday();
       showToast('Clocked out ✓', 'success');
       await this.loadHistory();
@@ -332,7 +340,7 @@ const ClockInOutView = {
     // scheduled break) so it can't be left open by a dismissed dialog or a
     // closed tab. All that's left here is to ask what break was actually taken
     // and correct it if the answer isn't "the full one".
-    const autoCompleted = this.entry?.completed_shift || null;
+    const autoCompleted = this.lastEntry?.completed_shift || null;
     // this.shift is whatever was loaded when the view opened; the clock-out
     // response is current. Prefer it, and fall back to a re-fetch rather than
     // giving up because a page left open since this morning has stale state.
@@ -430,12 +438,16 @@ const ClockInOutView = {
   },
 
   async editTime(which) {
-    const current = which === 'in' ? this.entry?.clocked_in : this.entry?.clocked_out;
+    const target = this.entry || this.lastEntry;
+    if (!target) return;
+    const current = which === 'in' ? target.clocked_in : target.clocked_out;
     const newTime = prompt(`Enter ${which === 'in' ? 'clock-in' : 'clock-out'} time (HH:MM):`, current || '');
     if (!newTime || !/^\d{2}:\d{2}$/.test(newTime.trim())) return;
     try {
       const patch = which === 'in' ? { clocked_in: newTime.trim() } : { clocked_out: newTime.trim() };
-      this.entry = await API.patch(`/api/clock/${this.entry.id}`, patch);
+      const updated = await API.patch(`/api/clock/${target.id}`, patch);
+      this.lastEntry = updated;
+      if (updated.clocked_in && !updated.clocked_out) this.entry = updated;
       this.renderToday();
       showToast('Updated ✓', 'success');
       await this.loadHistory();
@@ -682,7 +694,7 @@ const ClockInOutView = {
     if (!confirm('Delete this clock entry?')) return;
     try {
       await API.delete(`/api/clock/${id}`);
-      if (this.entry?.id === id) { this.entry = null; this.renderToday(); }
+      if (this.entry?.id === id || this.lastEntry?.id === id) await this.loadToday();
       await this.loadHistory();
       showToast('Deleted', 'success');
     } catch(e) { showToast('Failed to delete', 'error'); }
