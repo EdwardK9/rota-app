@@ -12,6 +12,7 @@
 
 const express = require('express');
 const { db }  = require('./db');
+const { timeForDay } = require('./delivery');
 const router  = express.Router();
 
 function getSetting(key) {
@@ -110,26 +111,23 @@ router.post('/commute/geocode', async (req, res) => {
 // Open-Meteo's practical forecast horizon — beyond this, don't bother calling out.
 const MAX_FORECAST_DAYS = 15;
 
-// Is this date a delivery day? Same rule the Insights page uses: the newest
-// delivery_schedules row whose effective_from has been reached wins, falling
-// back to the legacy single delivery_days setting when no schedules exist.
-function isDeliveryDay(dateStr) {
+// Which delivery schedule applies on this date? Same rule the Insights page uses:
+// the newest delivery_schedules row whose effective_from has been reached wins,
+// falling back to the legacy single delivery_days setting when no schedules exist.
+// Returns the schedule's target time as HH:MM when it's a delivery day, else null.
+function deliveryTimeFor(dateStr) {
   const dow = String(new Date(dateStr + 'T12:00:00').getDay());   // 0=Sun … 6=Sat
   const schedules = db.prepare(
-    'SELECT effective_from, days FROM delivery_schedules ORDER BY effective_from DESC'
+    'SELECT effective_from, days, delivery_time, day_times FROM delivery_schedules ORDER BY effective_from DESC'
   ).all();
   const applicable = schedules.find(s => s.effective_from <= dateStr);
   const days = applicable
     ? applicable.days
     : (schedules.length ? null : (getSetting('delivery_days') || '3,4,5'));
-  if (!days) return false;
-  return days.split(',').map(d => d.trim()).includes(dow);
+  if (!days) return null;
+  if (!days.split(',').map(d => d.trim()).includes(dow)) return null;
+  return timeForDay(applicable, dow);
 }
-
-// Delivery lands before the store opens, so the weather that matters for it is
-// the early morning — not whenever the shift happens to start. Unloading a cage
-// in the rain at 06:00 is the thing worth knowing about the night before.
-const DELIVERY_HOUR = 6;
 
 router.get('/commute/weather', async (req, res) => {
   const { date, start, end } = req.query;
@@ -174,12 +172,14 @@ router.get('/commute/weather', async (req, res) => {
     };
 
     // On a delivery day, add the weather at the store for the delivery slot
-    // itself — the shift might not start until 09:00, but the cages are being
-    // unloaded outside at 06:00 either way.
+    // itself — the shift might be over by then, but the cages are being unloaded
+    // outside at whatever time that date's schedule says either way.
     let delivery = null;
-    if (isDeliveryDay(date)) {
+    const deliveryTime = deliveryTimeFor(date);
+    if (deliveryTime) {
+      const [dh, dm] = deliveryTime.split(':').map(Number);
       const delivTime = new Date(`${date}T00:00:00`);
-      delivTime.setHours(DELIVERY_HOUR, 0, 0, 0);
+      delivTime.setHours(dh, dm, 0, 0);
       delivery = build(workForecast[nearestHourKey(delivTime)], delivTime);
     }
 

@@ -38,7 +38,17 @@ V3.register('briefing', '🎒 Shift Briefing', {
     if (s.is_bank_holiday) flags.push(['🎆', 'Bank holiday — double pay', 'badge-warning']);
     if (s.opening)         flags.push(['🌅', 'You are opening', 'badge-info']);
     if (s.closing)         flags.push(['🌙', 'You are closing', 'badge-info']);
-    if (d.delivery_day)    flags.push(['📦', 'Delivery day', 'badge-warning']);
+    // Delivery: say when it lands, and whether you're still on when it does —
+    // a delivery you finish before isn't the same warning as one you unload.
+    const del = d.delivery || { is_delivery_day: d.delivery_day, time: null, on_shift: false };
+    if (del.is_delivery_day) {
+      const missedBy = del.time && del.time > s.end_time ? 'after you finish'
+        : del.time && del.time < s.start_time ? 'before you start' : 'outside your shift';
+      const label = del.time
+        ? (del.on_shift ? `Delivery ${del.time} — you're on` : `Delivery day — ${del.time}, ${missedBy}`)
+        : 'Delivery day';
+      flags.push(['📦', label, del.on_shift ? 'badge-warning' : 'badge-info']);
+    }
     if (d.crew_summary.alone) flags.push(['🧍', 'Nobody else rostered', 'badge-danger']);
     if (d.turnaround && d.turnaround.clopening) flags.push(['🔄', 'Close then open', 'badge-danger']);
     else if (d.turnaround && d.turnaround.tight) flags.push(['⚠️', `Only ${d.turnaround.hours}h since your last shift`, 'badge-warning']);
