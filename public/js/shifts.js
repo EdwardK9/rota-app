@@ -309,6 +309,11 @@ const ShiftsView = {
     const sickShifts = realShifts.filter(s => s.absence_type === 'sick');
     const sickHours  = sickShifts.reduce((sum, s) => sum + (s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0)), 0);
 
+    // Overtime — hours over contract, summed across the whole Mon–Sun weeks
+    // shown below (same basis as the Contract strip, not the calendar month).
+    const contractWeeks = this.weekSummaries().filter(w => w.contracted !== null && w.real.length);
+    const overtimeHours = contractWeeks.reduce((sum, w) => sum + Math.max(0, w.overUnder || 0), 0);
+
     // Break stats — across all shifts (scheduled); taken from completed shifts only
     const shiftsWithBreak     = realShifts.filter(s => (s.break_scheduled_minutes || 0) > 0);
     const totalBreakSched     = realShifts.reduce((sum, s) => sum + (s.break_scheduled_minutes || 0), 0);
@@ -369,6 +374,11 @@ const ShiftsView = {
         <div class="stat-label">Pay So Far</div>
         <div class="stat-value" style="color:var(--text-muted)">${fmtCurrency(workedPay)}</div>
         <div class="stat-hint">Completed shifts only</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Overtime</div>
+        <div class="stat-value ${overtimeHours > 0 ? 'success' : ''}">${fmtHours(overtimeHours)}</div>
+        <div class="stat-hint">Hours over contract, whole weeks shown below</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Distance</div>
