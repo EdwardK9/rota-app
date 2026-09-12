@@ -454,6 +454,30 @@ const ClockInOutView = {
     } catch(e) { showToast('Failed: ' + e.message, 'error'); }
   },
 
+  // Edit for a past history row, identified by its own entry id — unlike editTime()
+  // above, which only ever touches whatever's showing on the Today card. Works just
+  // as well on an entry that's long since clocked out both ends; the clock_entries
+  // table is only ever a punctuality/analytics log, never what pay is calculated
+  // from (that's the shift's own scheduled start_time/end_time), so correcting a
+  // finished entry here can't retroactively change anyone's hours or pay.
+  async editHistoryTime(id, which, currentValue) {
+    const newTime = prompt(`Enter ${which === 'in' ? 'clock-in' : 'clock-out'} time (HH:MM):`, currentValue || '');
+    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime.trim())) return;
+    try {
+      const patch = which === 'in' ? { clocked_in: newTime.trim() } : { clocked_out: newTime.trim() };
+      const updated = await API.patch(`/api/clock/${id}`, patch);
+      // The edited row might be today's — keep the Today card in sync rather than
+      // leaving it showing the pre-edit time until the next full reload.
+      if (updated.date === this.today) {
+        if (this.entry?.id === updated.id) this.entry = updated;
+        if (this.lastEntry?.id === updated.id) this.lastEntry = updated;
+        this.renderToday();
+      }
+      showToast('Updated ✓', 'success');
+      await this.loadHistory();
+    } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+  },
+
   async loadHistory() {
     try {
       const { entries } = await API.get('/api/clock/history?limit=60');
@@ -517,12 +541,16 @@ const ClockInOutView = {
           </div>
           <div style="font-size:14px;min-width:110px">
             ${e.clocked_in
-              ? `<strong>${e.clocked_in}</strong> ${inDiff}`
+              ? `<strong>${e.clocked_in}</strong> ${inDiff}
+                 <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px"
+                   onclick="ClockInOutView.editHistoryTime(${e.id}, 'in', '${e.clocked_in}')" title="Edit clock-in time">✎</button>`
               : '<span style="color:var(--text-muted)">—</span>'}
           </div>
           <div style="font-size:14px;min-width:110px">
             ${e.clocked_out
-              ? `<strong>${e.clocked_out}</strong> ${outDiff}`
+              ? `<strong>${e.clocked_out}</strong> ${outDiff}
+                 <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px"
+                   onclick="ClockInOutView.editHistoryTime(${e.id}, 'out', '${e.clocked_out}')" title="Edit clock-out time">✎</button>`
               : '<span style="color:var(--text-muted)">—</span>'}
           </div>
           <div style="min-width:50px">${duration}</div>
