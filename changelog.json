@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-12T16:42:28.139Z",
-  "commit": "46574f6",
+  "generated_at": "2026-09-12T16:47:20.644Z",
+  "commit": "a351edb",
   "entries": [
+    {
+      "version": "5.9.0",
+      "date": "2026-09-12",
+      "summary": "Edit clock in/out times on finished history entries",
+      "details": "Editing was previously only possible for today's own open/last entry via\nthe Today card. Each finished row in the clock History list now has its\nown edit control for both times, since clock_entries is purely a\npunctuality/analytics log — pay is calculated from the shift's own\nscheduled start/end, not the clock times — so correcting a past entry\ncan't retroactively change anyone's hours or pay."
+    },
     {
       "version": "5.8.1",
       "date": "2026-09-12",
