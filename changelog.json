@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-10T14:45:55.266Z",
-  "commit": "0c448ca",
+  "generated_at": "2026-09-12T16:42:28.139Z",
+  "commit": "46574f6",
   "entries": [
+    {
+      "version": "5.8.1",
+      "date": "2026-09-12",
+      "summary": "NFC clock-out defaults to no break, ignores duplicate taps",
+      "details": "The scheduled-break assumption on clock-out (both NFC tap and the in-app\nflow) over-credited a break nobody necessarily took; default to none and\nlet the follow-up correction add one back if there was one. NFC taps are\nalso debounced for a few seconds, since a tag read twice in one physical\ntap (or a prefetching client) was clocking back in immediately after a\nclock-out. A late NFC clock-out now leaves a note flagging it, since\nthere's no way to prompt for a reason from a tag tap."
+    },
     {
       "version": "5.7.2",
       "date": "2026-09-09",
