@@ -358,7 +358,7 @@ const ClockInOutView = {
     if (breakResult === null) {
       showToast(
         autoCompleted
-          ? 'Kept the scheduled break — edit the shift if that\'s wrong'
+          ? 'Kept as no break taken — edit the shift if that\'s wrong'
           : 'Shift NOT marked complete (break question cancelled)',
         'warning'
       );
@@ -387,7 +387,7 @@ const ClockInOutView = {
         <div style="display:flex;flex-direction:column;gap:8px" id="ckBreakOpts">
           ${scheduledMins ? `
           <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--border)">
-            <input type="radio" name="ckBreak" value="full" style="accent-color:var(--primary)" checked />
+            <input type="radio" name="ckBreak" value="full" style="accent-color:var(--primary)" />
             <span style="font-size:14px">Full break (${scheduledMins} min)</span>
           </label>
           <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--border)">
@@ -395,7 +395,7 @@ const ClockInOutView = {
             <span style="font-size:14px">Shorter break…</span>
           </label>` : ''}
           <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--border)">
-            <input type="radio" name="ckBreak" value="none" style="accent-color:var(--primary)" ${!scheduledMins ? 'checked' : ''} />
+            <input type="radio" name="ckBreak" value="none" style="accent-color:var(--primary)" checked />
             <span style="font-size:14px">No break taken</span>
           </label>
         </div>
@@ -421,7 +421,7 @@ const ClockInOutView = {
         Modal.close(); resolve(null);
       });
       document.getElementById('ckBreakConfirm').addEventListener('click', () => {
-        const selected = document.querySelector('input[name="ckBreak"]:checked')?.value || 'full';
+        const selected = document.querySelector('input[name="ckBreak"]:checked')?.value || 'none';
         let break_taken = selected;
         let break_taken_minutes;
         if (selected === 'full') {

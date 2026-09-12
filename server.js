@@ -4531,8 +4531,9 @@ app.post('/api/clock/in', (req, res) => {
 // came back — behind a break-length modal. Dismiss that modal, lose signal, lock
 // the phone, or close the tab, and the clock entry saved while the shift stayed
 // open, which is exactly the "I clocked out and it didn't mark it done" case.
-// So the server does it too: assume the scheduled break, which is the common
-// case, and let the client's follow-up PATCH correct it if the answer differs.
+// So the server does it too: assume no break was taken (the safer default —
+// it under-pays hours_worked rather than over-crediting a break nobody had),
+// and let the client's follow-up PATCH correct it if a break was actually taken.
 // Never touches an already-completed shift.
 function _autoCompleteShiftForClockOut(date, clockOutTime) {
   // Only ever a candidate if it isn't already done. On a split-shift day the
@@ -4548,7 +4549,7 @@ function _autoCompleteShiftForClockOut(date, clockOutTime) {
   const shift = _nearestShiftByField(dayShifts, 'end_time', clockOutTime) || dayShifts[0];
   if (!shift) return null;
 
-  const actualBreak     = resolveBreakMinutes('full', shift.break_scheduled_minutes, shift.break_taken_minutes);
+  const actualBreak     = resolveBreakMinutes('none', shift.break_scheduled_minutes, shift.break_taken_minutes);
   const hours_worked    = calcHoursWorked(shift.start_time, shift.end_time, actualBreak);
   const hours_paid      = calcHoursWorked(shift.start_time, shift.end_time, shift.break_scheduled_minutes);
   const effectiveRate   = shift.hourly_rate ? shift.hourly_rate * (shift.is_bank_holiday ? 2 : 1) : null;
@@ -4558,7 +4559,7 @@ function _autoCompleteShiftForClockOut(date, clockOutTime) {
     UPDATE shifts SET completed=1, break_taken=?, break_taken_minutes=?,
       hours_worked=?, hours_paid=?, calculated_pay=?, updated_at=datetime('now')
     WHERE id=?
-  `).run('full', actualBreak, hours_worked, hours_paid, calculated_pay, shift.id);
+  `).run('none', actualBreak, hours_worked, hours_paid, calculated_pay, shift.id);
 
   const updated = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift.id);
   logAudit({
@@ -4566,7 +4567,7 @@ function _autoCompleteShiftForClockOut(date, clockOutTime) {
     action: 'completed',
     changed_fields: ['completed', 'break_taken', 'break_taken_minutes'],
     old_values: { completed: shift.completed, break_taken: shift.break_taken, break_taken_minutes: shift.break_taken_minutes },
-    new_values: { completed: 1, break_taken: 'full', break_taken_minutes: actualBreak },
+    new_values: { completed: 1, break_taken: 'none', break_taken_minutes: actualBreak },
     source: 'clock-out',
   });
   gcal.safeUpsert(updated);
@@ -4755,6 +4756,17 @@ function nfcTapPage(title, body, color = '#2e9e5b') {
 <body><div class="card"><h1>${title}</h1><p>${body}</p><p><a href="/">Open Rota App</a></p></div></body></html>`;
 }
 
+// NFC tags routinely get read more than once per physical tap (the phone's NFC
+// radio re-discovers the same NDEF record if the tag lingers in range a moment
+// too long), and a link opened in a browser can get silently re-fetched by link
+// preview/prefetch behaviour. Since this route toggles state, a duplicate GET
+// a heartbeat after the first would immediately undo it (clock out, then right
+// back in again for an "unscheduled" shift nobody worked). Debouncing repeat
+// hits for a few seconds absorbs that without getting in the way of someone
+// deliberately tapping again later to start a new shift.
+let _lastClockTapResult = null;
+const NFC_TAP_DEBOUNCE_MS = 6000;
+
 app.get('/clock-tap', (req, res) => {
   const tokenRow = db.prepare("SELECT value FROM settings WHERE key = 'nfc_clock_token'").get();
   const configuredToken = tokenRow && tokenRow.value && tokenRow.value.trim();
@@ -4763,6 +4775,11 @@ app.get('/clock-tap', (req, res) => {
   }
   if (!req.query.token || req.query.token !== configuredToken) {
     return res.status(403).send(nfcTapPage('Not authorised', "This link's token doesn't match what's configured in Settings.", '#e5573c'));
+  }
+
+  const now = Date.now();
+  if (_lastClockTapResult && now - _lastClockTapResult.at < NFC_TAP_DEBOUNCE_MS) {
+    return res.send(nfcTapPage(_lastClockTapResult.title, _lastClockTapResult.body));
   }
 
   const today = localDateStr();
@@ -4778,10 +4795,27 @@ app.get('/clock-tap', (req, res) => {
     body  = `Recorded at ${time}.`;
   } else {
     db.prepare('UPDATE clock_entries SET clocked_out = ? WHERE id = ?').run(time, openEntry.id);
+    let completedShift = null;
+    try {
+      completedShift = _autoCompleteShiftForClockOut(today, time);
+    } catch (e) {
+      console.error('[Clock] auto-complete on NFC clock-out failed:', e.message);
+    }
+    // There's no way to prompt for a reason from a tag tap, so a late finish at
+    // least gets flagged on the entry rather than silently recorded — same as a
+    // manager would want to know if asked "why does this say you left late?".
+    if (completedShift && completedShift.end_time) {
+      const toMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+      if (toMins(time) - toMins(completedShift.end_time) > 5) {
+        db.prepare('UPDATE clock_entries SET note = COALESCE(note, ?) WHERE id = ?')
+          .run('Stayed late — no reason given (clocked out via NFC tap)', openEntry.id);
+      }
+    }
     webhooksRouter.fireShiftEndedWebhook({ end_time: time }).catch(() => {});
     title = '👋 Clocked out';
-    body  = `Recorded at ${time}. Tap again to start another shift, or open the app to log your break.`;
+    body  = `Recorded at ${time}. Assumed no break was taken — open the app to correct that if you had one.`;
   }
+  _lastClockTapResult = { at: now, title, body };
   res.send(nfcTapPage(title, body));
 });
 
