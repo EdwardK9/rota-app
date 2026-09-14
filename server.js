@@ -3649,8 +3649,18 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
   const changeMessages = [];
   const diffs = [];  // read-only record of every difference found (used by compare/diff-all)
 
+  // Dates to check = any date Rotageek still returned a journal for, UNION any date
+  // in the sync window that has a DB shift. Without the DB side, a day that Rotageek
+  // now returns ZERO shifts for (fully cancelled, not just changed) never appears in
+  // rgByDate and its stale DB shift(s) would never be looked at, let alone removed.
+  const dbDatesInRange = db.prepare(
+    "SELECT DISTINCT date FROM shifts WHERE date >= ? AND date <= ?"
+  ).all(fromDate, toDate).map(r => r.date);
+  const allDates = new Set([...Object.keys(rgByDate), ...dbDatesInRange]);
+
   const doSync = db.transaction(() => {
-    for (const [date, rgShifts] of Object.entries(rgByDate)) {
+    for (const date of allDates) {
+      const rgShifts = rgByDate[date] || [];
       // Include completed shifts — a past shift may have been retroactively changed on Rotageek
       const dbShifts = db.prepare(
         "SELECT * FROM shifts WHERE date = ? ORDER BY start_time"
