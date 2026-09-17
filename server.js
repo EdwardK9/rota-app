@@ -4778,6 +4778,11 @@ let _lastClockTapResult = null;
 const NFC_TAP_DEBOUNCE_MS = 6000;
 
 app.get('/clock-tap', (req, res) => {
+  // This route toggles clock state, so the response must never be served from
+  // cache — a cached "Clocked in" page from this morning would prevent the
+  // evening clock-out tap from ever reaching the server.
+  res.set('Cache-Control', 'no-store');
+
   const tokenRow = db.prepare("SELECT value FROM settings WHERE key = 'nfc_clock_token'").get();
   const configuredToken = tokenRow && tokenRow.value && tokenRow.value.trim();
   if (!configuredToken) {
