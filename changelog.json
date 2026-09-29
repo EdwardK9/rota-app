@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-12T16:47:20.644Z",
-  "commit": "a351edb",
+  "generated_at": "2026-09-29T10:34:05.180Z",
+  "commit": "2adf4b0",
   "entries": [
+    {
+      "version": "5.10.0",
+      "date": "2026-09-29",
+      "summary": "Savings & Share Plans, split-shift clock fixes, sturdier Rotageek and Calendar sync",
+      "details": "New: Savings & Share Plans (V3, Money group). Name your own tracker, set a\nmonthly payment, length and start date; it works out progress, payout date and\nwhat is left. Share plans add an option price and today's share price to show\nhow many shares the pot buys and whether that beats taking the cash. Payments\nso far can come from the schedule, from payslip Sharesave lines, or a typed\nnumber.\n\nClock / split shifts\n- Clocking out of shift 1 close to shift 2's start marked shift 2 complete (the\n  dashboard picked \"nearest shift to now\"). It now uses the shift the server\n  actually completed, and /api/clock/today prefers unfinished shifts and the one\n  that was started (nearest to the clock-in time).\n- Hours added mid-shift: if Rotageek extends a shift after it has been worked\n  and completed, the sync now updates that shift in place (last two days)\n  instead of inserting a duplicate on top of it.\n\nRotageek\n- Sync summary and the Import/Notifications pages now report removed shifts.\n- The refreshed session cookie Rotageek returns is kept (sliding expiry), the\n  expiry is shown on the Import page, and keep-alive runs every 10 minutes.\n- A dead session (401/403 or a redirect to the login page) now logs out for\n  real: disconnected state, banner and ntfy, instead of looking connected.\n\nGoogle Calendar: shift changes were fired as simultaneous calls, so a sync of\nmany shifts tripped Google's rate limit and the losers were never retried.\nCalls now go through one paced queue, and a 10-minute catch-up pass repairs any\nshift with no event or a stale one. Also fixes UTC/BST date maths for\novernight shifts, and flags \"needs reconnect\" from background failures.\n\nTeam Upload: queue starts reading straight away and drains until empty instead\nof three per 30s tick; a retired/404 Gemini model now falls back to another.\n\nWho's In: shows every shift a person has that day (one row, one bar each).\n\nPayslips/Reports: estimates were compared against gross for months with no\npayslip yet, and Reports left leave pay out, so pay looked ~£1000 short. Est.\nvs Gross is now paid minus estimated over months that have a payslip, on the\nsame basis as the Payslips page, and green means paid more / red means less."
+    },
     {
       "version": "5.9.0",
       "date": "2026-09-12",
