@@ -475,14 +475,20 @@ RULES — follow exactly:
 // API version") is the same story: this model can't help, another one can — without
 // this the whole import failed outright the day Google retired the configured model.
 function isGeminiOverloadError(status, message) {
-  return status === 503 || status === 404 ||
-    /overloaded|high demand|unavailable|try again later|no longer available|is not found|deprecated/i.test(message || '');
+  return status === 503 || status === 404 || status === 429 ||
+    /overloaded|high demand|unavailable|try again later|no longer available|is not found|deprecated|quota|resource[_ ]exhausted|rate.?limit/i.test(message || '');
 }
 
 // Same live-model fetch as GET /colleagues/gemini-models, reused here so the fallback
 // list never goes stale the way a hardcoded one would (see the gemini-2.5-flash
 // retirement this was already bitten by once).
+let geminiModelCache = { at: 0, key: '', models: [] };
 async function fetchAvailableGeminiModels(apiKey) {
+  // Cached: this used to be re-fetched (8s timeout) on every fallback, adding
+  // latency exactly when Gemini was already struggling.
+  if (geminiModelCache.key === apiKey && geminiModelCache.models.length && Date.now() - geminiModelCache.at < 10 * 60_000) {
+    return geminiModelCache.models;
+  }
   let r;
   try {
     r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
@@ -491,25 +497,78 @@ async function fetchAvailableGeminiModels(apiKey) {
   } catch (_) { return []; }
   if (!r.ok) return [];
   const data = await r.json();
-  return (data.models || [])
+  const models = (data.models || [])
     .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
     .map(m => (m.name || '').replace(/^models\//, ''))
     .filter(Boolean)
-    .filter(name => !/embedding|aqa/i.test(name));
+    // Only general text/vision models — image-generation, TTS, live/audio,
+    // robotics and computer-use variants can't do this job.
+    .filter(name => !/embedding|aqa|image|tts|audio|live|robotics|computer-use|imagen|veo|learnlm|gemma/i.test(name));
+  geminiModelCache = { at: Date.now(), key: apiKey, models };
+  return models;
 }
 
-// Rough capability ranking so fallback tries the next-BEST available model rather
-// than whatever happens to sort first alphabetically — newer/higher-tier models tend
-// to read cluttered screenshots more reliably than "lite"/8b-class ones.
+// Rough ranking for fallback: stable Flash models first. They are fast and have
+// the free-tier quota; Pro/preview/experimental models are slow (they were
+// timing out at 45s) and frequently have a free-tier quota of zero, so they
+// used to waste the whole fallback budget.
 function rankGeminiModel(name) {
   let score = 0;
   const ver = name.match(/(\d+)\.(\d+)/);
-  if (ver) score += parseFloat(`${ver[1]}.${ver[2]}`) * 100;
-  if (/\bpro\b/i.test(name)) score += 50;
-  if (/\bflash\b/i.test(name)) score += 20;
-  if (/flash-lite|flash-8b/i.test(name)) score -= 60;
-  if (/preview|exp/i.test(name)) score -= 10;
+  if (ver) score += parseFloat(`${ver[1]}.${ver[2]}`) * 10;
+  if (/flash/i.test(name)) score += 100;
+  if (/flash-lite|flash-8b/i.test(name)) score -= 30;
+  if (/\bpro\b/i.test(name)) score -= 40;
+  if (/preview|exp|thinking/i.test(name)) score -= 50;
   return score;
+}
+
+// Models that just failed (quota / timeout) are skipped for a few minutes so
+// every screenshot doesn't re-pay the same failing call before reaching one
+// that works.
+const geminiModelCooldown = new Map();
+const GEMINI_MODEL_COOLDOWN_MS = 5 * 60_000;
+function modelCoolingDown(model) { return (geminiModelCooldown.get(model) || 0) > Date.now(); }
+
+// Shared primary → fallbacks driver for the vision and text paths.
+async function runWithGeminiFallback(apiKey, primaryModel, callOne) {
+  let lastErr;
+  const attempt = async model => {
+    try {
+      const r = await callOne(model);
+      geminiModelCooldown.delete(model);
+      return { ok: r };
+    } catch (err) {
+      if (err.overloaded) geminiModelCooldown.set(model, Date.now() + GEMINI_MODEL_COOLDOWN_MS);
+      lastErr = err;
+      if (!err.overloaded) throw err;
+      return null;
+    }
+  };
+
+  if (!modelCoolingDown(primaryModel)) {
+    const r = await attempt(primaryModel);
+    if (r) return r.ok;
+  }
+
+  let fallbacks = [];
+  try {
+    const available = await fetchAvailableGeminiModels(apiKey);
+    fallbacks = available
+      .filter(m => m !== primaryModel && !modelCoolingDown(m))
+      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
+      .slice(0, 3);
+  } catch (_) { /* no model list available */ }
+
+  for (const model of fallbacks) {
+    const r = await attempt(model);
+    if (r) return r.ok;
+  }
+
+  // Everything was cooling down and nothing else exists — give the primary one more go.
+  if (!lastErr) return callOne(primaryModel);
+  lastErr.message = `${primaryModel}${fallbacks.length ? ` and ${fallbacks.length} fallback model(s)` : ''} unavailable right now (${lastErr.message})`;
+  throw lastErr;
 }
 
 // Vision requests are naturally slower than the text-only path (image
@@ -584,37 +643,8 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
   }
 
   const imageB64 = imageBuffer.toString('base64');
-
-  let lastErr;
-  try {
-    return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, primaryModel);
-  } catch (err) {
-    if (!err.overloaded) throw err;
-    lastErr = err;
-  }
-
-  let fallbacks = [];
-  try {
-    const available = await fetchAvailableGeminiModels(apiKey);
-    fallbacks = available
-      .filter(m => m !== primaryModel)
-      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
-      .slice(0, 3);
-  } catch (_) { /* no model list available — fall through with nothing to try */ }
-
-  for (const model of fallbacks) {
-    try {
-      return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, model);
-    } catch (err) {
-      lastErr = err;
-      if (!err.overloaded) throw err;
-    }
-  }
-
-  lastErr.message = fallbacks.length
-    ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all overloaded right now — try again shortly. (${lastErr.message})`
-    : lastErr.message;
-  throw lastErr;
+  return runWithGeminiFallback(apiKey, primaryModel, model =>
+    callGeminiOnce(imageB64, mimeType, prompt, apiKey, model));
 }
 
 // A stuck/slow model is functionally the same problem as an overloaded one
@@ -717,38 +747,7 @@ async function callGeminiText(prompt) {
     throw err;
   }
 
-  let lastErr;
-  try {
-    const { text } = await callGeminiOnceText(prompt, apiKey, primaryModel);
-    return text;
-  } catch (err) {
-    if (!err.overloaded) throw err;
-    lastErr = err;
-  }
-
-  let fallbacks = [];
-  try {
-    const available = await fetchAvailableGeminiModels(apiKey);
-    fallbacks = available
-      .filter(m => m !== primaryModel)
-      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
-      .slice(0, 3);
-  } catch (_) { /* no model list available — fall through with nothing to try */ }
-
-  for (const model of fallbacks) {
-    try {
-      const { text } = await callGeminiOnceText(prompt, apiKey, model);
-      return text;
-    } catch (err) {
-      lastErr = err;
-      if (!err.overloaded) throw err;
-    }
-  }
-
-  lastErr.message = fallbacks.length
-    ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all overloaded right now — try again shortly. (${lastErr.message})`
-    : lastErr.message;
-  throw lastErr;
+  return runWithGeminiFallback(apiKey, primaryModel, async model => (await callGeminiOnceText(prompt, apiKey, model)).text);
 }
 
 // Read a screenshot with Gemini and return the raw { date_range, schedule } JSON —
@@ -2371,8 +2370,12 @@ router.get('/colleagues/screenshot-queue', (req, res) => {
     ORDER BY id ASC
   `).all();
   res.json({
-    pending: rows.filter(r => !r.process_error),
-    failed:  rows.filter(r =>  r.process_error),
+    // Failed = out of attempts. A row with an error but attempts left (including
+    // every quota/timeout wait) is still being retried, so it stays in pending
+    // with its reason rather than looking permanently broken.
+    pending: rows.filter(r => (r.process_attempts || 0) <  SCREENSHOT_QUEUE_MAX_ATTEMPTS),
+    failed:  rows.filter(r => (r.process_attempts || 0) >= SCREENSHOT_QUEUE_MAX_ATTEMPTS),
+    paused_seconds: geminiPaused() ? geminiPauseSecsLeft() : 0,
   });
 });
 

@@ -785,6 +785,10 @@ app.get('/api/colleagues/next-shifts', (req, res) => {
     ORDER BY cs.date ASC, cs.start_time ASC, c.name ASC
   `).all(from, to);
 
+  // The dashboard only shows the window itself; `lite=1` skips the two heavier
+  // "later"/"none" queries it would otherwise compute and throw away.
+  if (req.query.lite === '1') return res.json({ from, to, days: windowRows, later: [], none: [] });
+
   // Next shift per colleague *after* the window
   const laterRows = db.prepare(`
     SELECT c.id, c.name,

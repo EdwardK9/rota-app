@@ -501,7 +501,7 @@ RULES — follow exactly:
     const grid = document.getElementById('tuQueueGrid');
     if (!card || !grid) return;
     try {
-      const { pending, failed } = await API.getScreenshotQueue();
+      const { pending, failed, paused_seconds } = await API.getScreenshotQueue();
       // A drop in the queue count means something just finished since the
       // last check — refresh Recent Imports so it shows up there promptly
       // rather than waiting for that list's own poll to happen to land.
@@ -527,16 +527,24 @@ RULES — follow exactly:
 
       let html = '';
 
+      const reason = text => text ? `<div style="padding:0 6px 6px;font-size:10px;line-height:1.3;
+        color:var(--text-muted);word-break:break-word" title="${esc(text)}">${esc(text.length > 110 ? text.slice(0, 110) + '…' : text)}</div>` : '';
+      const pausedNote = paused_seconds > 0
+        ? `Gemini paused — retrying in ${paused_seconds >= 60 ? Math.ceil(paused_seconds / 60) + ' min' : paused_seconds + 's'}`
+        : '';
+
       html += pending.map(p => cardWrap(`
         ${thumb(p.id)}
-        ${badge('⏳ Waiting…', 'rgba(0,0,0,0.55)', '#fff')}
+        ${badge(p.process_error ? '⏳ Retrying…' : '⏳ Waiting…', 'rgba(0,0,0,0.55)', '#fff')}
         ${caption(p.filename)}
+        ${reason(p.process_error || pausedNote)}
       `, 'transparent')).join('');
 
       html += failed.map(f => cardWrap(`
         ${thumb(f.id)}
         ${badge('⚠️ Failed', 'var(--danger)', '#fff')}
         ${caption(f.filename)}
+        ${reason(f.process_error)}
         <button class="btn btn-sm btn-ghost" data-retry-screenshot="${f.id}"
           style="width:100%;border-radius:0;font-size:11px" title="${esc(f.process_error)}">Retry</button>
       `, 'var(--danger)')).join('');

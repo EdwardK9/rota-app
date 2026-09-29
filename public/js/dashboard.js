@@ -46,14 +46,19 @@ const DashboardView = {
     const monthStart = `${todayStr.slice(0, 7)}-01`;
     const monthEnd = _fmtDateDash(new Date(today.getFullYear(), today.getMonth() + 1, 0));
 
+    // One shifts request covering both the month-so-far and the next 60 days
+    // (they overlap), split client-side — was two round trips over the same rows.
+    const rangeEnd = monthEnd > futureStr ? monthEnd : futureStr;
     let shifts = [], nextIn = null, clockToday = null, monthShifts = [];
     try {
-      [shifts, nextIn, clockToday, monthShifts] = await Promise.all([
-        API.get(`/api/shifts?from=${todayStr}&to=${futureStr}`),
-        API.get(`/api/colleagues/next-shifts?from=${nextInAnchor}&days=2`).catch(() => null),
+      let allShifts;
+      [allShifts, nextIn, clockToday] = await Promise.all([
+        API.get(`/api/shifts?from=${monthStart}&to=${rangeEnd}`),
+        API.get(`/api/colleagues/next-shifts?from=${nextInAnchor}&days=2&lite=1`).catch(() => null),
         API.get('/api/clock/today').catch(() => null),
-        API.get(`/api/shifts?from=${monthStart}&to=${monthEnd}`).catch(() => []),
       ]);
+      shifts = allShifts.filter(s => s.date >= todayStr && s.date <= futureStr);
+      monthShifts = allShifts.filter(s => s.date <= monthEnd);
     } catch (e) {
       el.innerHTML = `<div class="dash-error">Could not load shifts.</div>`;
       return;
@@ -100,7 +105,7 @@ const DashboardView = {
         </div>
       `;
     } else {
-      await this.renderHero(upcoming[0], clockToday);
+      this.renderHero(upcoming[0], clockToday);   // not awaited — colleagues fill in after the card paints
       this.renderUpcoming(upcoming.slice(1));
     }
 
@@ -256,7 +261,10 @@ const DashboardView = {
     // It's now fetched in the background after the hero paints and dropped
     // into its own slot once (if) it resolves.
     if (clockToday === undefined) clockToday = this._clockToday || null;
-    const colleagues = await API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []);
+    // Colleagues are fetched in parallel with painting: the hero card renders at
+    // once with a placeholder and the chips swap in when the request returns.
+    const colleaguesPromise = API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []);
+    let colleagues = [];
 
     const el = document.getElementById('dash-hero');
     const isToday  = shift.date === _fmtDateDash(new Date());
@@ -282,16 +290,17 @@ const DashboardView = {
         : `IN ${diffDays} DAYS`;
     }
 
-    const colleagueHtml = colleagues.length > 0
+    const buildColleagueHtml = (list, loading) => list.length > 0
       ? `<div class="dash-colleagues dash-colleagues-clickable" title="Tap to see who you're working with">
            <div class="dash-colleagues-label">👥 Working with</div>
            <div class="dash-colleagues-list">
-             ${colleagues.map(c => `<span class="dash-colleague-chip${c.relation === 'crossover' ? ' dash-colleague-chip-crossover' : ''}"${c.note ? ` title="${c.note.replace(/"/g,'&quot;')}"` : ''}>${c.relation === 'crossover' ? '🔄 ' : ''}${c.name}</span>`).join('')}
+             ${list.map(c => `<span class="dash-colleague-chip${c.relation === 'crossover' ? ' dash-colleague-chip-crossover' : ''}"${c.note ? ` title="${c.note.replace(/"/g,'&quot;')}"` : ''}>${c.relation === 'crossover' ? '🔄 ' : ''}${c.name}</span>`).join('')}
            </div>
          </div>`
       : `<div class="dash-colleagues dash-colleagues-clickable" title="Tap to see who you're working with">
-           <div class="dash-colleagues-label dash-colleagues-none">👤 No colleagues recorded for this shift</div>
+           <div class="dash-colleagues-label dash-colleagues-none">${loading ? '👥 Checking who you\'re working with…' : '👤 No colleagues recorded for this shift'}</div>
          </div>`;
+    const colleagueHtml = buildColleagueHtml([], true);
 
     el.innerHTML = `
       <div class="dash-hero-card${isOngoing ? ' dash-hero-live' : ''}">
@@ -357,8 +366,18 @@ const DashboardView = {
       </div>
     `;
 
-    const colleaguesEl = el.querySelector('.dash-colleagues-clickable');
-    if (colleaguesEl) colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+    const wireColleagues = () => {
+      const colleaguesEl = el.querySelector('.dash-colleagues-clickable');
+      if (colleaguesEl) colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+    };
+    wireColleagues();
+    colleaguesPromise.then(list => {
+      colleagues = list;
+      const slot = el.querySelector('.dash-colleagues-clickable');
+      if (!slot || !slot.isConnected) return;   // navigated away / re-rendered meanwhile
+      slot.outerHTML = buildColleagueHtml(list, false);
+      wireColleagues();
+    });
 
     // Background-fill the weather slot — see the comment above on why this
     // isn't awaited before the hero renders. If the user's already navigated

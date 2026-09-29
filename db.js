@@ -120,6 +120,7 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_colleague_shifts_date ON colleague_shifts(date);
   CREATE INDEX IF NOT EXISTS idx_colleague_shifts_colleague ON colleague_shifts(colleague_id);
+  CREATE INDEX IF NOT EXISTS idx_colleague_shifts_colleague_date ON colleague_shifts(colleague_id, date);
 `);
 
 // The Ollama/LM Studio local-OCR job queue was removed (Gemini covers AI screenshot
