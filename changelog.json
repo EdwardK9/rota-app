@@ -1,7 +1,13 @@
 {
   "generated_at": "2026-09-29T10:37:44.365Z",
-  "commit": "79ead1a",
+  "commit": "b9f2259",
   "entries": [
+    {
+      "version": "6.0.1",
+      "date": "2026-09-29",
+      "summary": "Fix stalled screenshot import/rename queue, faster dashboard load",
+      "details": "Gemini quota errors now fall back to other models (quota is per-model), fallback\nprefers stable Flash models, queue cards show the real retry/paused/failed reason,\nand the dashboard makes fewer requests and paints the hero card without waiting\nfor colleagues."
+    },
     {
       "version": "6.0.0",
       "date": "2026-09-29",
