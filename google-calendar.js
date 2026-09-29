@@ -26,6 +26,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_gcal_log_created ON gcal_sync_log(created_at);
 `);
 
+// What was last successfully pushed for each shift (date|start|end|title). A shift
+// whose current hash differs — or that has no event at all — hasn't reached the
+// calendar yet, so the catch-up pass below can find and repair anything that a
+// failed/rate-limited call left behind instead of it staying missing for good.
+try { db.exec('ALTER TABLE shifts ADD COLUMN gcal_hash TEXT'); } catch (_) { /* already there */ }
+
 let google = null;
 let loadError = null;
 try {
@@ -230,10 +236,31 @@ async function listCalendars() {
     .sort(function (a, b) { return (b.primary ? 1 : 0) - (a.primary ? 1 : 0) || a.summary.localeCompare(b.summary); });
 }
 
+function localYmd(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+// Local-date arithmetic. (toISOString() is UTC, so in BST local midnight came out as
+// the PREVIOUS day — overnight shifts ended a day early.)
 function addDaysStr(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
+  const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return localYmd(d);
+}
+function shiftHash(shift) {
+  return [shift.date, shift.start_time, shift.end_time, eventTitle()].join('|');
+}
+
+// ── Serialised, paced call queue ────────────────────────────────────────────
+// Every shift change used to fire its own Google call straight away. A sync that
+// touched a few dozen shifts therefore made a few dozen SIMULTANEOUS calls, which
+// trips Google's per-user rate limit; the ones that lost out failed for good and
+// those shifts never appeared in the calendar. Everything now goes through one
+// queue, one call at a time, with a gap between them.
+let _queue = Promise.resolve();
+function enqueue(task) {
+  const run = _queue.then(task);
+  _queue = run.catch(function () {}).then(function () { return sleep(PACE_MS); });
+  return run;
 }
 
 function shiftTimes(shift) {
@@ -270,6 +297,7 @@ async function upsertShift(shift, opts) {
   if (shift.google_event_id) {
     try {
       await withRetry(function () { return cal.events.update({ calendarId: calendarId, eventId: shift.google_event_id, requestBody: resource }); });
+      db.prepare('UPDATE shifts SET gcal_hash = ? WHERE id = ?').run(shiftHash(shift), shift.id);
       if (logUpdates) logSync('updated', { shift_id: shift.id, event_id: shift.google_event_id, date: shift.date });
       return shift.google_event_id;
     } catch (e) {
@@ -278,7 +306,7 @@ async function upsertShift(shift, opts) {
   }
   const res = await withRetry(function () { return cal.events.insert({ calendarId: calendarId, requestBody: resource }); });
   const eventId = res.data.id;
-  db.prepare('UPDATE shifts SET google_event_id = ? WHERE id = ?').run(eventId, shift.id);
+  db.prepare('UPDATE shifts SET google_event_id = ?, gcal_hash = ? WHERE id = ?').run(eventId, shiftHash(shift), shift.id);
   logSync('created', { shift_id: shift.id, event_id: eventId, date: shift.date });
   return eventId;
 }
@@ -297,13 +325,53 @@ async function deleteShiftEvent(shift) {
 
 function safeUpsert(shift) {
   if (!isAvailable() || !isEnabled() || !isConnected()) return;
-  Promise.resolve().then(function () { return upsertShift(shift); })
-    .catch(function (e) { console.error('[gcal] upsert failed:', e.message); logSync('error', { shift_id: shift && shift.id, date: shift && shift.date, status: 'error', detail: 'upsert: ' + e.message }); });
+  enqueue(function () {
+    // Re-read at the moment it's this shift's turn: it may have been edited (or
+    // deleted) while waiting, and its event id may have just been assigned.
+    const fresh = shift && shift.id != null ? db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift.id) : shift;
+    return fresh ? upsertShift(fresh) : null;
+  }).catch(function (e) {
+    const msg = explainGoogleError(e);   // flags "needs reconnect" for invalid_grant
+    console.error('[gcal] upsert failed:', e.message);
+    logSync('error', { shift_id: shift && shift.id, date: shift && shift.date, status: 'error', detail: 'upsert: ' + msg });
+  });
 }
 function safeDelete(shift) {
   if (!isAvailable() || !isEnabled() || !isConnected()) return;
-  Promise.resolve().then(function () { return deleteShiftEvent(shift); })
-    .catch(function (e) { console.error('[gcal] delete failed:', e.message); logSync('error', { shift_id: shift && shift.id, date: shift && shift.date, status: 'error', detail: 'delete: ' + e.message }); });
+  enqueue(function () { return deleteShiftEvent(shift); }).catch(function (e) {
+    const msg = explainGoogleError(e);
+    console.error('[gcal] delete failed:', e.message);
+    logSync('error', { shift_id: shift && shift.id, date: shift && shift.date, status: 'error', detail: 'delete: ' + msg });
+  });
+}
+
+// Catch-up: push every upcoming shift that has no event yet, or whose event is out
+// of date with the shift (a call that failed earlier). Runs on a timer, so a
+// hiccup fixes itself rather than leaving gaps until someone presses Sync.
+let _catchingUp = false;
+async function syncPending() {
+  if (_catchingUp || !isAvailable() || !isEnabled() || !isConnected()) return { pending: 0 };
+  if (getSetting('gcal_needs_reconnect') === '1') return { pending: 0 };
+  _catchingUp = true;
+  try {
+    const today = localYmd(new Date());
+    const rows = db.prepare('SELECT * FROM shifts WHERE date >= ? ORDER BY date ASC').all(today)
+      .filter(function (s) { return !s.google_event_id || s.gcal_hash !== shiftHash(s); });
+    let done = 0, failed = 0;
+    for (const s of rows) {
+      try {
+        const fresh = db.prepare('SELECT * FROM shifts WHERE id = ?').get(s.id);
+        if (fresh) { await enqueue(function () { return upsertShift(fresh, { logUpdates: false }); }); done++; }
+      } catch (e) {
+        failed++;
+        const msg = explainGoogleError(e);
+        logSync('error', { shift_id: s.id, date: s.date, status: 'error', detail: 'catch-up: ' + msg });
+        if (getSetting('gcal_needs_reconnect') === '1') break;   // no point hammering a dead token
+      }
+    }
+    if (rows.length) console.log('[gcal] catch-up: ' + done + ' pushed, ' + failed + ' failed of ' + rows.length + ' out of step');
+    return { pending: rows.length, synced: done, failed: failed };
+  } finally { _catchingUp = false; }
 }
 
 async function syncAll(opts) {
@@ -311,7 +379,7 @@ async function syncAll(opts) {
   const futureOnly = opts.futureOnly !== false;
   if (!isAvailable()) throw new Error('googleapis not installed');
   if (!isConnected()) throw new Error('Not connected to Google');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localYmd(new Date());
   const rows = futureOnly
     ? db.prepare('SELECT * FROM shifts WHERE date >= ? ORDER BY date ASC').all(today)
     : db.prepare('SELECT * FROM shifts ORDER BY date ASC').all();
@@ -323,7 +391,7 @@ async function syncAll(opts) {
       // otherwise be upserted with stale times and/or a stale (missing) google_event_id,
       // creating a second orphaned event instead of updating the real one.
       const fresh = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift.id);
-      if (fresh) { await upsertShift(fresh, { logUpdates: false }); synced++; }
+      if (fresh) { await enqueue(function () { return upsertShift(fresh, { logUpdates: false }); }); synced++; }
     }
     catch (e) { failed++; console.error('[gcal] syncAll item failed:', e.message); logSync('error', { shift_id: shift.id, date: shift.date, status: 'error', detail: 'sync: ' + e.message }); }
     await sleep(PACE_MS);
@@ -362,7 +430,7 @@ async function reconcile(opts) {
   if (!isAvailable()) throw new Error('googleapis not installed');
   if (!isConnected()) throw new Error('Not connected to Google');
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localYmd(new Date());
   const rows = futureOnly
     ? db.prepare('SELECT * FROM shifts WHERE date >= ? ORDER BY date ASC').all(today)
     : db.prepare('SELECT * FROM shifts ORDER BY date ASC').all();
@@ -372,7 +440,7 @@ async function reconcile(opts) {
     try {
       // See syncAll: re-read the row so a mid-loop edit doesn't get upserted from a stale snapshot.
       const fresh = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shift.id);
-      if (fresh) { await upsertShift(fresh, { logUpdates: false }); synced++; }
+      if (fresh) { await enqueue(function () { return upsertShift(fresh, { logUpdates: false }); }); synced++; }
     }
     catch (e) { failed++; logSync('error', { shift_id: shift.id, date: shift.date, status: 'error', detail: 'reconcile sync: ' + e.message }); }
     await sleep(PACE_MS);
@@ -430,12 +498,19 @@ function applyAutoSyncSchedule() {
 }
 applyAutoSyncSchedule();
 
+// Independent of the optional full auto-sync above: every 10 minutes (and shortly
+// after boot) repair anything that didn't make it to the calendar.
+const _catchUpTimer = setInterval(function () { syncPending().catch(function (e) { console.error('[gcal] catch-up failed:', e.message); }); }, 10 * 60 * 1000);
+if (_catchUpTimer.unref) _catchUpTimer.unref();
+const _bootCatchUp = setTimeout(function () { syncPending().catch(function () {}); }, 45 * 1000);
+if (_bootCatchUp.unref) _bootCatchUp.unref();
+
 module.exports = {
   isAvailable: isAvailable, hasCredentials: hasCredentials, isConnected: isConnected,
   isEnabled: isEnabled, status: status, getConfig: getConfig, setSetting: setSetting,
   getAuthUrl: getAuthUrl, handleCallback: handleCallback, disconnect: disconnect,
   listCalendars: listCalendars, getSyncLog: getSyncLog,
   upsertShift: upsertShift, deleteShiftEvent: deleteShiftEvent,
-  safeUpsert: safeUpsert, safeDelete: safeDelete, syncAll: syncAll, reconcile: reconcile,
+  safeUpsert: safeUpsert, safeDelete: safeDelete, syncPending: syncPending, syncAll: syncAll, reconcile: reconcile,
   applyAutoSyncSchedule: applyAutoSyncSchedule, explainGoogleError: explainGoogleError,
 };

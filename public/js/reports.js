@@ -92,6 +92,7 @@ const ReportsView = {
   renderSummaryStats(summary) {
     const s = summary.shifts || {};
     const p = summary.payslips || {};
+    const paidVsEst = (p.total_gross_paid || 0) - (summary.matched_est_pay || 0);
     document.getElementById('reportSummaryStats').innerHTML = `
       <div class="stat-card">
         <div class="stat-label">Total Shifts</div>
@@ -106,12 +107,16 @@ const ReportsView = {
         <div class="stat-value">${fmtHours(s.total_hours || 0)}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Est. Pay (shifts)</div>
-        <div class="stat-value">${fmtCurrency(s.total_calculated_pay || 0)}</div>
+        <div class="stat-label" title="Shifts + leave pay, for the months that have a payslip">Est. Pay (paid months)</div>
+        <div class="stat-value">${fmtCurrency(summary.matched_est_pay || 0)}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Gross Paid</div>
         <div class="stat-value">${fmtCurrency(p.total_gross_paid || 0)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label" title="Gross paid minus what your shifts add up to, over the months that have a payslip. Green = paid more, red = paid less.">Paid vs Est.</div>
+        <div class="stat-value ${diffClass(paidVsEst)}">${paidVsEst >= 0 ? '+' : '−'}${fmtCurrency(Math.abs(paidVsEst))}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Net Paid</div>
@@ -182,7 +187,7 @@ const ReportsView = {
                 <th>Contracted</th>
                 <th title="Booked leave falling in this month — counts towards your contract">Leave</th>
                 <th title="Logged hours plus leave, against contracted">Over/Under</th>
-                <th>Est. Pay</th>
+                <th title="Every rostered shift in the month plus booked-leave pay">Est. Pay</th>
                 <th>Gross (slip)</th>
                 <th>Net Paid</th>
                 <th>Diff</th>
@@ -195,9 +200,12 @@ const ReportsView = {
               ${monthly.map(m => {
                 const gross = m.payslip ? (m.payslip.total_gross || 0) : null;
                 const net   = m.payslip ? (m.payslip.net_payment || 0) : null;
-                const diff  = gross !== null ? (m.calculated_pay || 0) - gross : null;
+                // Paid minus estimated: positive = paid MORE than the shifts add up to
+                // (green), negative = paid LESS (red). Green always means good.
+                const estPay = (m.scheduled_pay ?? m.calculated_pay ?? 0) + (m.leave_pay || 0);
+                const diff  = gross !== null ? gross - estPay : null;
                 const diffHtml = diff !== null
-                  ? `<span class="${diffClass(diff)}">${diff >= 0 ? '+' : ''}${fmtCurrency(Math.abs(diff))}</span>`
+                  ? `<span class="${diffClass(diff)}">${diff >= 0 ? '+' : '−'}${fmtCurrency(Math.abs(diff))}</span>`
                   : '—';
                 const contracted = m.contracted_hours != null ? m.contracted_hours : null;
                 // Leave counts towards the contract — see leaveHours.js
@@ -216,7 +224,7 @@ const ReportsView = {
                   <td>${contractedHtml}</td>
                     <td style="color:${(m.leave_hours || 0) > 0 ? 'var(--info)' : 'var(--text-muted)'}">${(m.leave_hours || 0) > 0 ? fmtHours(m.leave_hours) : '—'}</td>
                   <td>${overUnderHtml}</td>
-                  <td>${fmtCurrency(m.calculated_pay)}</td>
+                  <td>${fmtCurrency(estPay)}</td>
                   <td>${gross !== null ? fmtCurrency(gross) : '<span style="color:var(--text-muted)">—</span>'}</td>
                   <td style="color:var(--success);font-weight:600">${net !== null ? fmtCurrency(net) : '<span style="color:var(--text-muted)">—</span>'}</td>
                   <td>${diffHtml}</td>
@@ -233,7 +241,7 @@ const ReportsView = {
                 <td style="color:var(--text-muted)">${fmtHours(monthly.reduce((s,m)=>s+(m.contracted_hours||0),0))}</td>
                 <td style="color:var(--info)">${fmtHours(monthly.reduce((s,m)=>s+(m.leave_hours||0),0))}</td>
                 <td>${(() => { const d = monthly.reduce((s,m)=>s+(m.scheduled_hours||0)+(m.leave_hours||0),0) - monthly.reduce((s,m)=>s+(m.contracted_hours||0),0); return `<span class="${diffClass(d)}">${d>=0?'+':'−'}${fmtHours(Math.abs(d))}</span>`; })()}</td>
-                <td>${fmtCurrency(monthly.reduce((s,m)=>s+(m.calculated_pay||0),0))}</td>
+                <td>${fmtCurrency(monthly.reduce((s,m)=>s+(m.scheduled_pay ?? m.calculated_pay ?? 0)+(m.leave_pay||0),0))}</td>
                 <td>${fmtCurrency(monthly.reduce((s,m)=>s+(m.payslip?.total_gross||0),0))}</td>
                 <td style="color:var(--success)">${fmtCurrency(monthly.reduce((s,m)=>s+(m.payslip?.net_payment||0),0))}</td>
                 <td>—</td>
@@ -336,16 +344,17 @@ const ReportsView = {
             </thead>
             <tbody>
               ${yearly.map(y => {
-                const diff = (y.calculated_pay || 0) - (y.total_gross || 0);
+                // Only months that have a payslip are compared (see matched_est_pay).
+                const diff = (y.total_gross || 0) - (y.matched_est_pay || 0);   // paid − estimated
                 return `<tr>
                   <td><strong>${y.year}</strong></td>
                   <td>${y.shift_count}</td>
                   <td><span class="badge badge-success">${y.completed_count}</span></td>
                   <td>${fmtHours(y.hours_worked)}</td>
-                  <td>${fmtCurrency(y.calculated_pay)}</td>
+                  <td title="Shifts + leave pay for the months that have a payslip">${fmtCurrency(y.matched_est_pay || 0)}</td>
                   <td>${y.total_gross ? fmtCurrency(y.total_gross) : '<span style="color:var(--text-muted)">—</span>'}</td>
                   <td style="color:var(--success);font-weight:600">${y.net_payment ? fmtCurrency(y.net_payment) : '<span style="color:var(--text-muted)">—</span>'}</td>
-                  <td>${y.total_gross ? `<span class="${diffClass(diff)}">${diff >= 0 ? '+' : ''}${fmtCurrency(Math.abs(diff))}</span>` : '—'}</td>
+                  <td>${y.total_gross ? `<span class="${diffClass(diff)}">${diff >= 0 ? '+' : '−'}${fmtCurrency(Math.abs(diff))}</span>` : '—'}</td>
                   <td style="color:var(--warning)">${y.tax_paid ? fmtCurrency(y.tax_paid) : '—'}</td>
                   <td>${fmtMiles(y.distance_miles)}</td>
                 </tr>`;
@@ -523,14 +532,14 @@ const ReportsView = {
                 return months.map(month => {
                   const p  = tyPayslips.find(x => x.month === month);
                   const sd = monthlyMap[month];
-                  const shiftEst = sd ? (sd.calculated_pay || 0) : null;
+                  const shiftEst = sd ? (sd.scheduled_pay ?? sd.calculated_pay ?? 0) + (sd.leave_pay || 0) : null;
                   const gross    = p  ? (p.total_gross || 0)      : null;
-                  const diff     = shiftEst !== null && gross !== null ? shiftEst - gross : null;
+                  const diff     = shiftEst !== null && gross !== null ? gross - shiftEst : null;   // paid − estimated
                   const isLarge  = diff !== null && Math.abs(diff) > 5;
                   const diffHtml = diff !== null
                     ? isLarge
-                      ? `<span class="diff-alert ${diff >= 0 ? 'diff-alert-over' : 'diff-alert-under'}">⚠️ ${diff >= 0 ? '+' : ''}${fmtCurrency(Math.abs(diff))}</span>`
-                      : `<span class="${diffClass(diff)}">${diff >= 0 ? '+' : ''}${fmtCurrency(Math.abs(diff))}</span>`
+                      ? `<span class="diff-alert ${diff >= 0 ? 'diff-alert-over' : 'diff-alert-under'}">${diff >= 0 ? '✓' : '⚠️'} ${diff >= 0 ? '+' : '−'}${fmtCurrency(Math.abs(diff))}</span>`
+                      : `<span class="${diffClass(diff)}">${diff >= 0 ? '+' : '−'}${fmtCurrency(Math.abs(diff))}</span>`
                     : '—';
                   if (!p && !sd) {
                     return `<tr style="color:var(--text-muted)">
@@ -715,16 +724,16 @@ const ReportsView = {
       const summary = await API.getReportSummary({ from, to });
       const s = summary.shifts || {};
       const p = summary.payslips || {};
-      const diff = (s.total_calculated_pay || 0) - (p.total_gross_paid || 0);
+      const diff = (p.total_gross_paid || 0) - (summary.matched_est_pay || 0);   // paid − estimated (months with a payslip only)
 
       resultEl.innerHTML = `
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Shifts (completed)</div><div class="stat-value">${s.completed_shifts || 0} / ${s.total_shifts || 0}</div></div>
           <div class="stat-card"><div class="stat-label">Hours Worked</div><div class="stat-value">${fmtHours(s.total_hours||0)}</div></div>
-          <div class="stat-card"><div class="stat-label">Est. Pay (shifts)</div><div class="stat-value">${fmtCurrency(s.total_calculated_pay||0)}</div></div>
+          <div class="stat-card"><div class="stat-label" title="Shifts + leave pay, for the months in range that have a payslip">Est. Pay (paid months)</div><div class="stat-value">${fmtCurrency(summary.matched_est_pay||0)}</div></div>
           <div class="stat-card"><div class="stat-label">Gross Paid</div><div class="stat-value">${fmtCurrency(p.total_gross_paid||0)}</div></div>
           <div class="stat-card"><div class="stat-label">Net Paid</div><div class="stat-value success">${fmtCurrency(p.total_net_paid||0)}</div></div>
-          <div class="stat-card"><div class="stat-label">Est. vs Gross Diff</div><div class="stat-value ${diffClass(diff)}">${diff>=0?'+':''}${fmtCurrency(Math.abs(diff))}</div></div>
+          <div class="stat-card"><div class="stat-label" title="Gross paid minus what your shifts add up to. Green = paid more than estimated, red = paid less.">Est. vs Gross Diff</div><div class="stat-value ${diffClass(diff)}">${diff>=0?'+':'−'}${fmtCurrency(Math.abs(diff))}</div></div>
           <div class="stat-card"><div class="stat-label">Tax Paid</div><div class="stat-value warning">${fmtCurrency(p.total_tax||0)}</div></div>
           <div class="stat-card"><div class="stat-label">Distance</div><div class="stat-value">${fmtMiles(s.total_distance||0)}</div></div>
         </div>`;

@@ -20,6 +20,26 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_v3_goals_archived ON v3_goals(archived);
 
+  -- Savings & Share Plans: user-named trackers for anything paid in monthly
+  -- towards a payout (a Sharesave, a Christmas club...). option_price is only set
+  -- for share plans; count_mode says where "payments made so far" comes from.
+  CREATE TABLE IF NOT EXISTS v3_savings (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    name               TEXT NOT NULL,
+    kind               TEXT NOT NULL DEFAULT 'savings',      -- 'savings' | 'shares'
+    monthly_amount     REAL NOT NULL,
+    duration_months    INTEGER NOT NULL,
+    start_date         TEXT NOT NULL,
+    count_mode         TEXT NOT NULL DEFAULT 'schedule',     -- 'schedule' | 'payslips' | 'manual'
+    manual_paid_months INTEGER,
+    option_price       REAL,
+    current_price      REAL,
+    bonus              REAL NOT NULL DEFAULT 0,
+    notes              TEXT,
+    archived           INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   -- Trophy Cabinet: remembers the first time each achievement was earned, so a
   -- trophy keeps its original unlock date even if the underlying stat later
   -- dips back below the threshold.

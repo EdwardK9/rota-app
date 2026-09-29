@@ -487,14 +487,19 @@ const DashboardView = {
     if (diff < -this._thr('out','early') || diff > this._thr('out','late')) note = await this._promptReason(diff, true);
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('out') : null;
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_out', detail: hhmm }); });
+    let clockOutRes;
     try {
-      await API.post('/api/clock/out', { time: hhmm, note });
+      clockOutRes = await API.post('/api/clock/out', { time: hhmm, note });
     } catch(e) { showToast('Clock out failed', 'error'); return; }
 
     // Ask about the break and mark the linked shift complete (same as the Clock In/Out page).
     // Every way this can fall through says so out loud — a shift quietly staying
     // incomplete is worse than a noisy toast, since you only notice weeks later.
-    const shift = clockData?.shift;
+    // The server has already completed the shift this clock-out belongs to and
+    // says which in its response. Never re-derive it from "nearest to now": on a
+    // split day that can be the NEXT shift, which then got marked complete
+    // before it had even started.
+    const shift = clockOutRes?.completed_shift || clockData?.shift;
     if (!shift?.id) {
       showToast("Clocked out ✓ — no shift on today's rota to mark complete", 'warning');
     } else {

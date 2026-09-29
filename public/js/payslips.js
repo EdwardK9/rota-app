@@ -291,7 +291,13 @@ const PayslipsView = {
     const totalNet   = this.payslips.reduce((s,p) => s + (p.net_payment  || 0), 0);
     const totalTax   = this.payslips.reduce((s,p) => s + (p.tax_paid     || 0), 0);
     const totalNI    = this.payslips.reduce((s,p) => s + (p.ni_employee  || 0), 0);
-    const shiftEst   = this.monthly.reduce((s,m) => s + (m.scheduled_pay ?? m.calculated_pay ?? 0) + (m.leave_pay || 0), 0);
+    // Only months whose payslip is in (or whose pay was folded into a later slip that
+    // is). Counting the current month's shifts against payslips that don't exist yet
+    // made the card read "underpaid by a month's pay" until the slip arrived.
+    const slipMonths = new Set(this.payslips.map(p => p.month));
+    const counted    = m => slipMonths.has(m.month)
+      || (this.settings[`paid_in_next_${m.month}`] === '1' && slipMonths.has(nextMonthStr(m.month)));
+    const shiftEst   = this.monthly.filter(counted).reduce((s,m) => s + (m.scheduled_pay ?? m.calculated_pay ?? 0) + (m.leave_pay || 0), 0);
     const diff       = totalGross - shiftEst;  // positive = paid more than estimated (good)
 
     document.getElementById('payslipYearStats').innerHTML = `
@@ -312,7 +318,7 @@ const PayslipsView = {
         <div class="stat-value warning">${fmtCurrency(totalNI)}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Shifts Estimated</div>
+        <div class="stat-label" title="Shifts + leave pay for the months that have a payslip">Shifts Estimated</div>
         <div class="stat-value">${fmtCurrency(shiftEst)}</div>
       </div>
       <div class="stat-card">

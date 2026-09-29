@@ -206,7 +206,8 @@ const WhosInView = {
   },
 
   _renderLeft(data) {
-    const { isToday, myName, myStatus, teamShifts, myShift, date, today } = data;
+    const { isToday, myName, myStatus, teamShifts, date, today } = data;
+    const myShifts = data.myShifts || (data.myShift ? [data.myShift] : []);
 
     const titleEl = document.getElementById('wiLeftTitle');
     const bodyEl  = document.getElementById('wiLeftBody');
@@ -280,7 +281,7 @@ const WhosInView = {
       titleEl.textContent = 'Opening';
 
       const all = [];
-      if (myShift) all.push({ name: myName, ...myShift, isMe: true });
+      myShifts.forEach(s => all.push({ name: myName, ...s, isMe: true }));
       teamShifts.forEach(s => all.push({ ...s, isMe: false }));
 
       if (!all.length) {
@@ -301,15 +302,23 @@ const WhosInView = {
   },
 
   _renderTimeline(data) {
-    const { isToday, myName, currentTime, teamShifts, myShift } = data;
+    const { isToday, myName, currentTime, teamShifts } = data;
+    const myShifts = data.myShifts || (data.myShift ? [data.myShift] : []);
 
     const wrap = document.getElementById('wiTlWrap');
     if (!wrap) return;
 
-    // Build entries: me first, then colleagues sorted by start
+    // One row per PERSON, with a bar for each of their shifts — someone on a split
+    // day used to get two identical-looking rows (or, for me, just the first shift).
     const entries = [];
-    if (myShift) entries.push({ name: myName, start: myShift.start, end: myShift.end, isMe: true });
-    teamShifts.forEach(s => entries.push({ name: s.name, start: s.start, end: s.end, isMe: false }));
+    if (myShifts.length) entries.push({ name: myName, isMe: true, spans: myShifts.map(s => ({ start: s.start, end: s.end })) });
+    const byName = new Map();
+    teamShifts.forEach(s => {
+      let e = byName.get(s.name);
+      if (!e) { e = { name: s.name, isMe: false, spans: [] }; byName.set(s.name, e); entries.push(e); }
+      e.spans.push({ start: s.start, end: s.end });
+    });
+    entries.forEach(e => { e.spans.sort((a, b) => a.start.localeCompare(b.start)); e.start = e.spans[0].start; });
     entries.sort((a, b) => {
       if (a.isMe && !b.isMe) return -1;
       if (!a.isMe && b.isMe) return 1;
@@ -322,8 +331,8 @@ const WhosInView = {
     }
 
     const toMins = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
-    const allStarts = entries.map(e => toMins(e.start));
-    const allEnds   = entries.map(e => toMins(e.end));
+    const allStarts = entries.flatMap(e => e.spans.map(sp => toMins(sp.start)));
+    const allEnds   = entries.flatMap(e => e.spans.map(sp => toMins(sp.end)));
     const axisStart = Math.floor(Math.min(...allStarts) / 60) * 60;
     const axisEnd   = Math.ceil(Math.max(...allEnds)   / 60) * 60;
     const axisDur   = axisEnd - axisStart;
@@ -350,17 +359,21 @@ const WhosInView = {
       : '';
 
     const rows = entries.map(e => {
-      const st = toMins(e.start), en = toMins(e.end);
-      const barLeft  = pct(st);
-      const barWidth = ((en - st) / axisDur * 100).toFixed(3) + '%';
-
-      const isActive   = isToday && st <= nowMins && en > nowMins;
-      const isPast     = isToday && en <= nowMins;
-      const barClass   = e.isMe      ? 'wi-bar wi-bar-me'
-                       : !isToday    ? 'wi-bar wi-bar-future'
-                       : isActive    ? 'wi-bar wi-bar-active'
-                       : isPast      ? 'wi-bar wi-bar-past'
-                       :               'wi-bar wi-bar-upcoming';
+      const bars = e.spans.map(sp => {
+        const st = toMins(sp.start), en = toMins(sp.end);
+        const barLeft  = pct(st);
+        const barWidth = ((en - st) / axisDur * 100).toFixed(3) + '%';
+        const isActive   = isToday && st <= nowMins && en > nowMins;
+        const isPast     = isToday && en <= nowMins;
+        const barClass   = e.isMe      ? 'wi-bar wi-bar-me'
+                         : !isToday    ? 'wi-bar wi-bar-future'
+                         : isActive    ? 'wi-bar wi-bar-active'
+                         : isPast      ? 'wi-bar wi-bar-past'
+                         :               'wi-bar wi-bar-upcoming';
+        return `<div class="${barClass}" style="left:${barLeft};width:${barWidth}" title="${e.name}: ${sp.start}–${sp.end}">
+              <span>${sp.start}–${sp.end}</span>
+            </div>`;
+      }).join('');
 
       return `
         <div class="wi-tl-row">
@@ -368,9 +381,7 @@ const WhosInView = {
           <div class="wi-tl-track">
             ${gridLines}
             ${nowLine}
-            <div class="${barClass}" style="left:${barLeft};width:${barWidth}" title="${e.name}: ${e.start}–${e.end}">
-              <span>${e.start}–${e.end}</span>
-            </div>
+            ${bars}
           </div>
         </div>`;
     }).join('');

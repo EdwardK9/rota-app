@@ -820,6 +820,31 @@ app.get('/api/colleagues/next-shifts', (req, res) => {
 // REPORTS
 // ─────────────────────────────────────────
 
+// What the shifts add up to for the months in [fromYm, toYm] THAT HAVE A PAYSLIP —
+// every rostered shift plus booked-leave pay, the same basis the Payslips page uses.
+// Comparing a payslip total against shifts from months with no payslip yet (this
+// month, or last month before its slip arrives) reads as being underpaid by a whole
+// month's pay, and leaving leave pay out reads as being overpaid by it; both are
+// artefacts of the comparison, not of the pay.
+function estimateForPayslipMonths(fromYm, toYm) {
+  const slipMonths = db.prepare('SELECT month FROM payslips WHERE month >= ? AND month <= ?').all(fromYm, toYm).map(r => r.month);
+  if (!slipMonths.length) return { est: 0, months: 0 };
+  const rates = db.prepare('SELECT * FROM pay_rates ORDER BY effective_date ASC').all();
+  const rateFor = ym => { let r = null; for (const x of rates) if (x.effective_date <= ym + '-01') r = x; return r; };
+  const payByMonth = {};
+  db.prepare(`SELECT strftime('%Y-%m', date) AS m, SUM(calculated_pay) AS p FROM shifts
+              WHERE strftime('%Y-%m', date) >= ? AND strftime('%Y-%m', date) <= ? GROUP BY m`)
+    .all(fromYm, toYm).forEach(r => { payByMonth[r.m] = r.p || 0; });
+  const [ty, tm] = toYm.split('-').map(Number);
+  const leave = leaveHoursByMonth(fromYm + '-01', toYm + '-' + String(new Date(ty, tm, 0).getDate()).padStart(2, '0'));
+  let est = 0;
+  for (const m of slipMonths) {
+    const r = rateFor(m);
+    est += (payByMonth[m] || 0) + (r ? (leave[m] || 0) * r.hourly_rate : 0);
+  }
+  return { est: Math.round(est * 100) / 100, months: slipMonths.length };
+}
+
 // GET /api/reports/summary?from=YYYY-MM&to=YYYY-MM
 app.get('/api/reports/summary', (req, res) => {
   const { from, to } = req.query;
@@ -853,7 +878,8 @@ app.get('/api/reports/summary', (req, res) => {
     FROM payslips WHERE 1=1 ${payslipWhere}
   `).get(...payslipParams);
 
-  res.json({ shifts: shiftStats, payslips: payslipStats });
+  const matched = estimateForPayslipMonths(from || '0000-01', to || '9999-12');
+  res.json({ shifts: shiftStats, payslips: payslipStats, matched_est_pay: matched.est, matched_months: matched.months });
 });
 
 // Helper: count Mon-Fri working days in a YYYY-MM month
@@ -1146,6 +1172,7 @@ app.get('/api/reports/yearly', (req, res) => {
       hours_worked:    s.hours_worked    || 0,
       calculated_pay:  s.calculated_pay  || 0,
       distance_miles:  s.distance_miles  || 0,
+      matched_est_pay: estimateForPayslipMonths(year + '-01', year + '-12').est,
       total_gross:     p.total_gross     || 0,
       net_payment:     p.net_payment     || 0,
       tax_paid:        p.tax_paid        || 0,
@@ -2922,6 +2949,77 @@ function rgUpsert(key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('rotageek_' + key, value);
 }
 
+// ── Rotageek session lifetime ────────────────────────────────────────────────
+// Rotageek's session cookie is refreshed by the server as it's used (sliding
+// expiry) up to some hard maximum. To stay logged in for that whole maximum the
+// app has to (a) keep using the session and (b) keep the REFRESHED cookie Rotageek
+// hands back — previously only the cookie from the initial login was ever kept, so
+// however often the keep-alive ran, the stored copy still died on its original
+// schedule. Cookie names that carry the login (same test the login proxy uses):
+const RG_AUTH_COOKIE_RE = /auth|session|\.aspnet|identity|user/i;
+
+function parseSetCookie(str) {
+  const parts = String(str).split(';').map(p => p.trim());
+  const eq = parts[0].indexOf('=');
+  if (eq < 1) return null;
+  const c = { name: parts[0].slice(0, eq), value: parts[0].slice(eq + 1), expires: null };
+  for (const attr of parts.slice(1)) {
+    const i = attr.indexOf('=');
+    const key = (i < 0 ? attr : attr.slice(0, i)).toLowerCase();
+    const val = i < 0 ? '' : attr.slice(i + 1);
+    if (key === 'max-age') {
+      const n = parseInt(val, 10);
+      if (!isNaN(n)) c.expires = Date.now() + n * 1000;
+    } else if (key === 'expires' && c.expires === null) {
+      const t = Date.parse(val);
+      if (!isNaN(t)) c.expires = t;
+    }
+  }
+  return c;
+}
+
+// Fold Set-Cookie headers from a Rotageek response into the stored session cookie
+// (newer values win, expired/emptied cookies are dropped) and remember when the
+// login cookie next expires, so the Import page can show it.
+function rgAbsorbSetCookies(setCookies) {
+  if (!setCookies || !setCookies.length) return;
+  const map = new Map();
+  for (const part of (rgSetting('cookie') || '').split(';')) {
+    const t = part.trim(); const eq = t.indexOf('=');
+    if (eq > 0) map.set(t.slice(0, eq), t.slice(eq + 1));
+  }
+  let changed = false, authExpiry = null;
+  for (const raw of setCookies) {
+    const c = parseSetCookie(raw);
+    if (!c) continue;
+    if (c.value === '' || (c.expires !== null && c.expires <= Date.now())) {
+      if (map.delete(c.name)) changed = true;
+      continue;
+    }
+    if (map.get(c.name) !== c.value) { map.set(c.name, c.value); changed = true; }
+    if (c.expires !== null && RG_AUTH_COOKIE_RE.test(c.name)) authExpiry = Math.max(authExpiry || 0, c.expires);
+  }
+  if (changed) rgUpsert('cookie', [...map.entries()].map(([k, v]) => k + '=' + v).join('; '));
+  if (authExpiry) rgUpsert('session_expires_at', String(authExpiry));
+}
+
+// The session is gone (Rotageek rejected it and password re-auth couldn't revive
+// it): log out for real rather than carrying on looking connected. Stored
+// credentials (username/password) stay so a later sync can still try to sign back
+// in on its own; the Import page shows "session expired" until it does.
+async function rgAutoLogout(reason) {
+  ['cookie', 'csrf_token', 'token', 'auth_mode', 'session_expires_at'].forEach(k =>
+    db.prepare('DELETE FROM settings WHERE key = ?').run('rotageek_' + k)
+  );
+  rgUpsert('session_expired', '1');
+  rgUpsert('disconnected_at', new Date().toISOString());
+  stopRgKeepAlive();
+  console.log('[Rotageek] Logged out —', reason);
+  if (rgSetting('ntfy_disconnect_alert') !== '0') {
+    await sendNtfy('Rota sync - disconnected', reason, 'high');
+  }
+}
+
 // POST /api/rotageek/auth — try username/password login against multiple known endpoint formats
 app.post('/api/rotageek/auth', async (req, res) => {
   const { username, password, base_url } = req.body;
@@ -3081,7 +3179,9 @@ app.all(`${RG_PROXY_BASE}*`, (req, res) => {
         const merged = mergeCookies(existing, cookieStr);
         rgUpsert('cookie', merged);
         rgUpsert('auth_mode', 'session');
+        rgUpsert('session_expired', '0');
         rgUpsert('base_url', 'https://' + RG_PROXY_TARGET);
+        rgAbsorbSetCookies(setCookieHeaders);   // records the login cookie's expiry
         startAutoSync();
         startRgKeepAlive();
         console.log('[proxy] Auth cookie captured and saved');
@@ -3173,6 +3273,8 @@ app.get('/api/rotageek/status', (req, res) => {
   res.json({
     connected:       !!(token || cookie),
     session_expired: sessionExpired,
+    session_expires_at: parseInt(rgSetting('session_expires_at') || '0', 10) || null,
+    disconnected_at: rgSetting('disconnected_at') || null,
     auth_mode:       auth_mode || null,
     token:           token || null,
     base_url:        base_url || 'https://screwfix.rotageek.com',
@@ -3435,6 +3537,7 @@ async function rgReAuth(base_url) {
         const cookieStr = cookies.map(c => c.split(';')[0].trim()).join('; ');
         rgUpsert('cookie',    cookieStr);
         rgUpsert('auth_mode', 'session');
+        rgAbsorbSetCookies(cookies);   // records the login cookie's expiry
         console.log('[Rotageek] Re-auth captured new session cookie');
       }
 
@@ -3508,16 +3611,24 @@ async function rgFetchSchedule(fromDate, toDate) {
     const r = await fetch(`${base_url}/api/graphql-userschedules`, {
       method: 'POST', headers, body: gqlBody,
     });
-    const data = await r.json().catch(() => null);
-    return { status: r.status, ok: r.ok, data };
+    const text = await r.text().catch(() => '');
+    let data = null; try { data = JSON.parse(text); } catch (_) {}
+    // A dead session is often a redirect to the login page rather than a 401.
+    const loginPage = !data && ((r.redirected && /login|sign.?in|auth/i.test(r.url)) || /<form[^>]*>[\s\S]*type=["']?password/i.test(text.slice(0, 20000)));
+    // Keep whatever refreshed cookie Rotageek sends back (sliding session expiry)
+    if (headers['Cookie'] && typeof r.headers.getSetCookie === 'function') rgAbsorbSetCookies(r.headers.getSetCookie());
+    return { status: r.status, ok: r.ok, data, loginPage };
   }
+  // Rotageek can reject a dead session as 401/403, or by redirecting to its login
+  // page (a 200 that isn't JSON). All three mean the same thing.
+  const authFailed = r => r.status === 401 || r.status === 403 || (r.ok && !r.data && r.loginPage);
 
   try {
     // Attempt 1: cookie auth
     let result = await doGqlRequest(makeHeaders(true));
 
-    if (result.status === 401) {
-      console.log('[Rotageek] Cookie auth 401 — trying re-auth then bearer token fallback');
+    if (authFailed(result)) {
+      console.log('[Rotageek] Cookie auth rejected (' + result.status + ') — trying re-auth then bearer token fallback');
 
       // Try password re-auth (may fail if MFA is required)
       const auth = await rgReAuth(base_url);
@@ -3528,18 +3639,15 @@ async function rgFetchSchedule(fromDate, toDate) {
       }
 
       // Attempt 3: stored bearer token (works if MFA blocks password re-auth)
-      if (result.status === 401) {
+      if (authFailed(result) && rgSetting('token')) {
         console.log('[Rotageek] Trying stored bearer token on GraphQL endpoint');
         result = await doGqlRequest(makeHeaders(false));
       }
 
-      // Still 401 — session expired, notify user but keep stored credentials intact
-      if (result.status === 401) {
-        rgUpsert('session_expired', '1');
+      // Still rejected — the session has expired. Log out properly (and say so).
+      if (authFailed(result)) {
         const msg = 'Rotageek session expired. Open the Import page, log in to Rotageek Live, and your session will be stored automatically.';
-        if (rgSetting('ntfy_disconnect_alert') !== '0') {
-          await sendNtfy('Rota sync - session expired', msg, 'high');
-        }
+        await rgAutoLogout('Your Rotageek session has expired, so the app has disconnected. Open the Import page and log in again to keep syncing.');
         return { error: msg };
       }
     }
@@ -3573,13 +3681,13 @@ async function rgFetchSchedule(fromDate, toDate) {
 // a real sync would, rather than leaving the Import page's "Connected" badge
 // stale for up to an hour.
 async function rgKeepAlive() {
-  if (!rgSetting('cookie') && !rgSetting('token')) return; // nothing to keep alive
+  if (!rgSetting('cookie') && !rgSetting('token')) { stopRgKeepAlive(); return; } // logged out — nothing to keep alive
   const today = localDateStr();
   const result = await rgFetchSchedule(today, today);
   if (result.error) console.log('[Rotageek] Keep-alive:', result.error);
 }
 
-const RG_KEEPALIVE_INTERVAL_MS = 20 * 60 * 1000; // 20 min — shorter than Rotageek's own session TTL
+const RG_KEEPALIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 min — well inside any plausible idle timeout
 let rgKeepAliveTimer = null;
 function startRgKeepAlive() {
   if (rgKeepAliveTimer) return;
@@ -3642,7 +3750,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     rgByDate[date].push({ date, start_time, end_time, breakMins, rgId: j.id });
   }
 
-  let imported = 0, changed = 0, skipped = 0;
+  let imported = 0, changed = 0, removed = 0, skipped = 0;
   const gcalUpsertIds = [];   // shift ids to push to Google Calendar after the sync applies
   const gcalDeleteRows = [];  // full shift rows to remove from Google Calendar after the sync applies
   const errors = [];
@@ -3658,6 +3766,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
   ).all(fromDate, toDate).map(r => r.date);
   const allDates = new Set([...Object.keys(rgByDate), ...dbDatesInRange]);
 
+  const recentCutoff = localDateStr(new Date(Date.now() - 86400000));
   const doSync = db.transaction(() => {
     for (const date of allDates) {
       const rgShifts = rgByDate[date] || [];
@@ -3732,7 +3841,50 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
         // Completed shifts are left untouched — times are locked once worked
         const existingForDate = dbShifts.find(d => d.completed === 0 && !rgSet.has(dbKey(d)) && !consumedDbIds.has(d.id));
 
-        if (existingForDate) {
+        // Hours added mid-shift: the shift is worked, clocked out at the new later
+        // time (so it's already completed and time-locked), and only afterwards
+        // does the sync see Rotageek's longer version. Without this it looked
+        // like a brand new shift and got inserted ON TOP of the completed one,
+        // double-counting the hours. Only for shifts from the last day or two —
+        // older completed shifts stay untouched (they're in the compare report).
+        const extendedCompleted = (!existingForDate && date >= recentCutoff)
+          ? dbShifts.find(d => d.completed === 1 && !d.absence_type && !rgSet.has(dbKey(d)) && !consumedDbIds.has(d.id)
+              && _timeToMins(rg.start_time) < _timeToMins(d.end_time) && _timeToMins(d.start_time) < _timeToMins(rg.end_time))
+          : null;
+
+        if (extendedCompleted) {
+          consumedDbIds.add(extendedCompleted.id);
+          const ec = extendedCompleted;
+          const schedBreak = ec.break_locked ? ec.break_scheduled_minutes : rg.breakMins;
+          const takenBreak = resolveBreakMinutes(ec.break_taken, schedBreak, ec.break_taken_minutes);
+          const ecWorked = calcHoursWorked(rg.start_time, rg.end_time, takenBreak);
+          const ecPaid   = calcHoursWorked(rg.start_time, rg.end_time, schedBreak);
+          const ecBH     = ec.is_bank_holiday || isBankHolDate;
+          const ecRate   = hourly_rate ? hourly_rate * (ecBH ? 2 : 1) : null;
+          const ecPay    = ecRate ? Math.round(ecPaid * ecRate * 100) / 100 : null;
+          diffs.push({ id: ec.id, date, type: 'changed_completed', old_start: ec.start_time, old_end: ec.end_time,
+            new_start: rg.start_time, new_end: rg.end_time, new_break: rg.breakMins, completed: true });
+          if (!compareOnly) {
+            db.prepare(`
+              UPDATE shifts
+              SET start_time=?, end_time=?, break_scheduled_minutes=?, break_taken_minutes=?,
+                  hours_worked=?, hours_paid=?, calculated_pay=?, is_bank_holiday=?, updated_at=datetime('now')
+              WHERE id=?
+            `).run(rg.start_time, rg.end_time, schedBreak, takenBreak, ecWorked, ecPaid, ecPay, ecBH ? 1 : 0, ec.id);
+            changeMessages.push({ date, old_start: ec.start_time, old_end: ec.end_time, new_start: rg.start_time, new_end: rg.end_time });
+            logAudit({
+              shift_id: ec.id,
+              action: 'sync_changed',
+              changed_fields: ['start_time','end_time'],
+              old_values: { date, start_time: ec.start_time, end_time: ec.end_time },
+              new_values: { date, start_time: rg.start_time, end_time: rg.end_time },
+              source,
+              note: `Rotageek journal ${rg.rgId} — completed shift extended/changed after it was worked`,
+            });
+            gcalUpsertIds.push(ec.id);
+            changed++;
+          }
+        } else if (existingForDate) {
           consumedDbIds.add(existingForDate.id);
           // Never un-flag a shift someone manually marked as a bank holiday — only add the flag
           const isBH = existingForDate.is_bank_holiday || isBankHolDate;
@@ -3809,6 +3961,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
                 note: 'Removed — no longer in Rotageek',
               });
               changeMessages.push({ date: dbS.date, type: 'removed', old_start: dbS.start_time, old_end: dbS.end_time });
+              removed++;
             }
           } else {
             // Past/completed shift missing — record + log once, never delete
@@ -3857,7 +4010,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
       merged.push(d);
     }
     // Read-only comparison — don't notify or persist last-run state
-    return { compareOnly: true, imported, changed, skipped, errors, total: journals.length, from: fromDate, to: toDate, diffs: merged };
+    return { compareOnly: true, imported, changed, removed, skipped, errors, total: journals.length, from: fromDate, to: toDate, diffs: merged };
   }
 
   // Send ntfy notification for each changed/removed shift individually
@@ -3878,7 +4031,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     await sendNtfy(`Rota sync - ${imported} new shift${imported > 1 ? 's' : ''} added`, `${imported} new shift${imported > 1 ? 's' : ''} imported from Rotageek`, 'default');
   }
 
-  const summary = { imported, changed, skipped, errors, total: journals.length, from: fromDate, to: toDate, changeDetails: changeMessages, diffs };
+  const summary = { imported, changed, removed, skipped, errors, total: journals.length, from: fromDate, to: toDate, changeDetails: changeMessages, diffs };
   rgUpsert('autosync_last_run',    new Date().toISOString());
   rgUpsert('autosync_last_result', JSON.stringify(summary));
 
@@ -3894,7 +4047,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
 
 // DELETE /api/rotageek/disconnect — clear stored credentials
 app.delete('/api/rotageek/disconnect', (req, res) => {
-  ['token', 'base_url', 'username', 'auth_mode', 'cookie', 'csrf_token'].forEach(k =>
+  ['token', 'base_url', 'username', 'auth_mode', 'cookie', 'csrf_token', 'session_expires_at', 'session_expired'].forEach(k =>
     db.prepare('DELETE FROM settings WHERE key = ?').run('rotageek_' + k)
   );
   stopRgKeepAlive();
@@ -4475,16 +4628,23 @@ app.get('/api/clock/today', (req, res) => {
   const entry = entries.find(e => e.clocked_in && !e.clocked_out) || null;
   const lastEntry = entries.length ? entries[entries.length - 1] : null;
   const dayShifts = db.prepare(
-    "SELECT id, start_time, end_time, break_scheduled_minutes FROM shifts WHERE date = ? ORDER BY start_time ASC"
+    "SELECT id, start_time, end_time, break_scheduled_minutes, completed FROM shifts WHERE date = ? AND absence_type IS NULL ORDER BY start_time ASC"
   ).all(today);
   const nowMins = _timeToMins(localTimeStr());
-  const shift = dayShifts.length
-    ? dayShifts.reduce((best, s) => {
-        const dist     = Math.min(Math.abs(_timeToMins(s.start_time) - nowMins), Math.abs(_timeToMins(s.end_time) - nowMins));
-        const bestDist = Math.min(Math.abs(_timeToMins(best.start_time) - nowMins), Math.abs(_timeToMins(best.end_time) - nowMins));
-        return dist < bestDist ? s : best;
-      })
-    : null;
+  // `shift` is the one the Clock In/Out buttons measure against and complete.
+  // "Nearest to now" is wrong on a split day: finishing shift 1 a few minutes
+  // before shift 2 starts made shift 2 the nearest, so clock-out marked the
+  // NEXT shift complete. Prefer shifts still to be worked, and when clocked in,
+  // the one that was started (start nearest the clock-in time).
+  const pending = dayShifts.filter(s => !s.completed);
+  const pool = pending.length ? pending : dayShifts;
+  const nearest = (list, dist) => list.reduce((best, s) => dist(s) < dist(best) ? s : best);
+  let shift = null;
+  if (pool.length) {
+    shift = entry && entry.clocked_in
+      ? nearest(pool, s => Math.abs(_timeToMins(s.start_time) - _timeToMins(entry.clocked_in)))
+      : nearest(pool, s => Math.min(Math.abs(_timeToMins(s.start_time) - nowMins), Math.abs(_timeToMins(s.end_time) - nowMins)));
+  }
   res.json({ today, entries, entry, lastEntry, shift, shifts: dayShifts });
 });
 
@@ -4545,7 +4705,7 @@ app.post('/api/clock/in', (req, res) => {
 // it under-pays hours_worked rather than over-crediting a break nobody had),
 // and let the client's follow-up PATCH correct it if a break was actually taken.
 // Never touches an already-completed shift.
-function _autoCompleteShiftForClockOut(date, clockOutTime) {
+function _autoCompleteShiftForClockOut(date, clockOutTime, clockedInTime) {
   // Only ever a candidate if it isn't already done. On a split-shift day the
   // nearest shift by end time is often the morning one you already completed,
   // and picking it would mean the afternoon shift you just clocked out of stays
@@ -4556,7 +4716,12 @@ function _autoCompleteShiftForClockOut(date, clockOutTime) {
   ).all(date);
   if (!dayShifts.length) return null;
 
-  const shift = _nearestShiftByField(dayShifts, 'end_time', clockOutTime) || dayShifts[0];
+  // Which shift did this clock-out finish? The one that was started: start time
+  // nearest the clock-in. Matching on end time alone breaks when someone works
+  // well past a shift's end (extra hours added mid-shift) and the clock-out
+  // lands closer to a LATER shift's end than to the one they actually worked.
+  const shift = (clockedInTime && _nearestShiftByField(dayShifts, 'start_time', clockedInTime))
+    || _nearestShiftByField(dayShifts, 'end_time', clockOutTime) || dayShifts[0];
   if (!shift) return null;
 
   const actualBreak     = resolveBreakMinutes('none', shift.break_scheduled_minutes, shift.break_taken_minutes);
@@ -4605,7 +4770,7 @@ app.post('/api/clock/out', (req, res) => {
   db.prepare('UPDATE clock_entries SET clocked_out = ?, note = COALESCE(?, note) WHERE id = ?').run(time, note, id);
   let completedShift = null;
   try {
-    completedShift = _autoCompleteShiftForClockOut(date, time);
+    completedShift = _autoCompleteShiftForClockOut(date, time, openEntry ? openEntry.clocked_in : null);
   } catch (e) {
     // Clocking out must still succeed even if completing the shift can't.
     console.error('[Clock] auto-complete on clock-out failed:', e.message);
@@ -4812,7 +4977,7 @@ app.get('/clock-tap', (req, res) => {
     db.prepare('UPDATE clock_entries SET clocked_out = ? WHERE id = ?').run(time, openEntry.id);
     let completedShift = null;
     try {
-      completedShift = _autoCompleteShiftForClockOut(today, time);
+      completedShift = _autoCompleteShiftForClockOut(today, time, openEntry.clocked_in);
     } catch (e) {
       console.error('[Clock] auto-complete on NFC clock-out failed:', e.message);
     }

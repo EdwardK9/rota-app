@@ -1227,6 +1227,15 @@ const ImportView = {
           expiryHtml = `&nbsp;·&nbsp; ${label}`;
         }
       }
+      if (isSession && s.session_expires_at) {
+        // Rotageek's sliding cookie: the app keeps refreshing it, this is when the
+        // current copy runs out if nothing more happens (it moves forward as it's used).
+        const left = s.session_expires_at - Date.now();
+        const when = new Date(s.session_expires_at).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+        expiryHtml = left > 0
+          ? `&nbsp;·&nbsp; <span style="color:var(--text-muted)">stays logged in until ~${esc(when)} (auto-renewed while in use)</span>`
+          : '';
+      }
       const modeLabel = isSession ? '🍪 Session auth' : '🔑 Token auth';
       if (s.session_expired) {
         banner.innerHTML = `<div class="card card-body" style="border-left:4px solid var(--warning);padding:10px 14px;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1253,7 +1262,12 @@ const ImportView = {
         if (st && !st.value) st.value = localStr(to);
       }
     } else {
-      banner.innerHTML = s.session_stale
+      banner.innerHTML = s.session_expired
+        ? `<div class="card card-body" style="border-left:4px solid var(--danger);padding:10px 14px;font-size:13px">
+            🔌 <strong>Disconnected — Rotageek session expired</strong>${s.disconnected_at ? ` (${esc(new Date(s.disconnected_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))})` : ''}.
+            Log in again below to reconnect — auto-sync is paused until you do.
+          </div>`
+        : s.session_stale
         ? `<div class="card card-body" style="border-left:4px solid var(--warning);padding:10px 14px;font-size:13px">
             ⚠️ <strong>Session no longer saved</strong> — it's been over 30 minutes since it was last saved, so it's treated as stale.
             Re-paste your cookie + CSRF token below to reconnect.
@@ -1302,10 +1316,11 @@ const ImportView = {
           ✗ ${esc(result.error)}${result.error.includes('expired') ? ' — use the bookmarklet or paste fresh session values below.' : ''}
         </div>`;
         showToast('Sync failed', 'error');
-      } else if (result.imported > 0 || result.changed > 0) {
+      } else if (result.imported > 0 || result.changed > 0 || result.removed > 0) {
         const parts = [];
         if (result.imported > 0) parts.push(`${result.imported} new shift${result.imported !== 1 ? 's' : ''} added`);
         if (result.changed  > 0) parts.push(`${result.changed} shift${result.changed !== 1 ? 's' : ''} updated`);
+        if (result.removed  > 0) parts.push(`${result.removed} shift${result.removed !== 1 ? 's' : ''} removed`);
         const changeRows = (result.changeDetails || []).map(c => {
           if (c.type === 'removed') return `<div style="margin-top:4px;font-size:12px;color:var(--danger)">✗ ${esc(c.date)}: ${esc(c.old_start)}–${esc(c.old_end)} removed</div>`;
           return `<div style="margin-top:4px;font-size:12px;color:var(--text-muted)">${esc(c.date)}: ${esc(c.old_start)}–${esc(c.old_end)} → ${esc(c.new_start)}–${esc(c.new_end)}</div>`;

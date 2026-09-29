@@ -270,7 +270,7 @@ const NotificationsView = {
     if (s.lastResult) {
       const r = s.lastResult;
       if (r.error) parts.push(`<span style="color:var(--danger)">Last error: ${r.error}</span>`);
-      else         parts.push(`Last result: ${r.imported} new, ${r.changed} changed`);
+      else         parts.push(`Last result: ${r.imported} new, ${r.changed} changed${r.removed ? `, ${r.removed} removed` : ''}`);
     }
     el.innerHTML = parts.join(' &nbsp;·&nbsp; ') || 'Not run yet.';
   },
@@ -388,7 +388,7 @@ const NotificationsView = {
         showToast('Sync error: ' + r.error, 'error');
         statusEl.innerHTML = `<span style="color:var(--danger)">${r.error}</span>`;
       } else {
-        showToast(`Sync complete — ${r.imported} new, ${r.changed} changed`, 'success');
+        showToast(`Sync complete — ${r.imported} new, ${r.changed} changed${r.removed ? `, ${r.removed} removed` : ''}`, 'success');
         await this.loadSettings();
       }
     } catch(e) { showToast('Sync failed: ' + e.message, 'error'); }

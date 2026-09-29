@@ -69,6 +69,10 @@ const V3 = {
     createGoal:   (d)         => API.post('/api/v3/goals', d),
     updateGoal:   (id, d)     => API.put('/api/v3/goals/' + id, d),
     deleteGoal:   (id)        => API.delete('/api/v3/goals/' + id),
+    savings:      ()          => API.get('/api/v3/savings'),
+    createSaving: (d)         => API.post('/api/v3/savings', d),
+    updateSaving: (id, d)     => API.put('/api/v3/savings/' + id, d),
+    deleteSaving: (id)        => API.delete('/api/v3/savings/' + id),
   },
 
   /* ── Render helpers ───────────────────────────────────────────────────── */

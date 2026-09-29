@@ -471,8 +471,12 @@ RULES — follow exactly:
 
 // "Overloaded" is Google's own wording for a model at capacity — worth retrying with
 // a different model, unlike a bad request or auth error which would just fail again.
+// A retired/renamed model (404 "no longer available to new users", "not found for
+// API version") is the same story: this model can't help, another one can — without
+// this the whole import failed outright the day Google retired the configured model.
 function isGeminiOverloadError(status, message) {
-  return status === 503 || /overloaded|high demand|unavailable|try again later/i.test(message || '');
+  return status === 503 || status === 404 ||
+    /overloaded|high demand|unavailable|try again later|no longer available|is not found|deprecated/i.test(message || '');
 }
 
 // Same live-model fetch as GET /colleagues/gemini-models, reused here so the fallback
@@ -1952,18 +1956,20 @@ router.get('/whos-in', (req, res) => {
 
   // My own shift for the target date
   const myName = db.prepare("SELECT value FROM settings WHERE key='employee_name'").get()?.value || 'Me';
-  const myShiftRow = db.prepare(
-    'SELECT * FROM shifts WHERE date = ? ORDER BY start_time ASC LIMIT 1'
-  ).get(target);
-  const myShift = myShiftRow ? { start: myShiftRow.start_time, end: myShiftRow.end_time } : null;
+  // ALL of my shifts that day — a split day has two, and only ever returning the
+  // first made the second invisible here. `myShift` stays as the first for
+  // anything that only wants one.
+  const myShifts = db.prepare(
+    'SELECT start_time, end_time FROM shifts WHERE date = ? ORDER BY start_time ASC'
+  ).all(target).map(r => ({ start: r.start_time, end: r.end_time }));
+  const myShift = myShifts[0] || null;
 
   let myStatus = null;
-  if (isToday && myShift) {
-    if (myShift.start <= currentTime && myShift.end > currentTime) {
-      myStatus = { status: 'in', start: myShift.start, end: myShift.end };
-    } else if (myShift.start > currentTime && myShift.start <= soonTime) {
-      myStatus = { status: 'soon', start: myShift.start, end: myShift.end };
-    }
+  if (isToday && myShifts.length) {
+    const onNow = myShifts.find(s => s.start <= currentTime && s.end > currentTime);
+    const soon  = myShifts.find(s => s.start > currentTime && s.start <= soonTime);
+    if (onNow)     myStatus = { status: 'in',   start: onNow.start, end: onNow.end };
+    else if (soon) myStatus = { status: 'soon', start: soon.start,  end: soon.end };
   }
 
   res.json({
@@ -1971,7 +1977,7 @@ router.get('/whos-in', (req, res) => {
     isToday, isDefaultRollover,
     currentTime, myName, myStatus,
     inNow, inSoon, leavingInHour,
-    teamShifts, myShift,
+    teamShifts, myShift, myShifts,
   });
 });
 
@@ -2346,6 +2352,8 @@ router.post('/colleagues/screenshot-queue', upload.array('screenshots', 10), (re
       return id;
     });
     res.json({ ok: true, queued: fileIds.length, fileIds });
+    // Start reading them now instead of waiting for the next 30s tick.
+    setImmediate(() => processScreenshotQueue().catch(e => console.error('[ScreenshotQueue] kick error:', e.message)));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2469,14 +2477,23 @@ async function processScreenshotQueue() {
   if (screenshotQueueRunning || geminiPaused()) return;
   screenshotQueueRunning = true;
   try {
+   // Keep pulling batches until nothing is left (or Gemini throttles us): a
+   // 10-screenshot upload used to take three 30s ticks minimum, doing three at
+   // a time and then sitting idle. Rows that already failed this run are
+   // skipped so a permanently failing one can't spin the loop.
+   const seenThisRun = new Set();
+   while (!geminiPaused()) {
     const rows = db.prepare(`
       SELECT * FROM photo_files
       WHERE queued_for_import = 1 AND processed_at IS NULL
         AND (process_error IS NULL OR process_attempts < ?)
       ORDER BY id ASC LIMIT ?
-    `).all(SCREENSHOT_QUEUE_MAX_ATTEMPTS, SCREENSHOT_QUEUE_BATCH_SIZE);
+    `).all(SCREENSHOT_QUEUE_MAX_ATTEMPTS, SCREENSHOT_QUEUE_BATCH_SIZE + seenThisRun.size).filter(r => !seenThisRun.has(r.id));
+    if (!rows.length) break;
+    let throttled = false;
 
     for (const row of rows) {
+      seenThisRun.add(row.id);
       try {
         await processOneQueuedScreenshot(row);
         noteGeminiOk();
@@ -2491,9 +2508,11 @@ async function processScreenshotQueue() {
         db.prepare(
           'UPDATE photo_files SET process_error = ?, process_attempts = process_attempts + ? WHERE id = ?'
         ).run(transient ? waitingMessage(err) : err.message, transient ? 0 : 1, row.id);
-        if (transient) break;
+        if (transient) { throttled = true; break; }
       }
     }
+    if (throttled) break;
+   }
   } finally {
     screenshotQueueRunning = false;
   }

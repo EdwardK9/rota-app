@@ -62,6 +62,8 @@ const FEATURES = [
     blurb: 'Hours worked against hours paid, totalled so arrears timing cannot hide a gap.' },
   { view: 'tax-check',    icon: '💷', name: 'Tax Check',        module: './taxCheck',
     blurb: 'Checks the tax and NI actually deducted against what PAYE should have taken.' },
+  { view: 'savings',      icon: '🐖', name: 'Savings & Share Plans', module: './savings',
+    blurb: 'Track a Sharesave or any pot you pay into monthly: progress, payout date and what the shares are worth.' },
   { view: 'health-check', icon: '🩺', name: 'Data Doctor',      module: './healthCheck',
     blurb: 'Finds duplicate shifts, missed bank holidays, failed imports and stale figures.' },
 ];
