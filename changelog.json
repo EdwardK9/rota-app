@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-09-29T10:34:05.180Z",
-  "commit": "2adf4b0",
+  "generated_at": "2026-09-29T10:37:44.365Z",
+  "commit": "79ead1a",
   "entries": [
+    {
+      "version": "6.0.0",
+      "date": "2026-09-29",
+      "summary": "Ship the v5.10.0 changes as V6",
+      "details": "Version-only bump: everything in v5.10.0 (Savings & Share Plans, split-shift\nclock fixes, sturdier Rotageek and Google Calendar sync, Who's In and payslip\ncomparison fixes) is now the V6 release."
+    },
     {
       "version": "5.10.0",
       "date": "2026-09-29",
