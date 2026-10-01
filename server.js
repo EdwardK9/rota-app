@@ -30,6 +30,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', true);   // correct protocol/host behind Cloudflare proxy
+app.disable('x-powered-by');
+// Cheap hardening headers. No CSP: the UI leans on inline onclick handlers
+// throughout, so a useful policy would need 'unsafe-inline' anyway.
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'Referrer-Policy': 'same-origin',
+  });
+  next();
+});
 // Gzip everything (JS/CSS/JSON) — the JS bundle alone is ~800KB uncompressed,
 // which is fine on localhost but noticeably slow over a real network connection.
 app.use(compression());
@@ -5433,5 +5444,23 @@ app.get('/calendar.ics', (req, res) => {
 // -----------------------------------------
 // START SERVER
 // -----------------------------------------
+
+// Unknown API routes answer in JSON rather than Express's HTML 404 page, which
+// the client would otherwise try (and fail) to parse.
+app.use('/api', (req, res) => res.status(404).json({ error: `No such endpoint: ${req.method} ${req.path}` }));
+
+// Last-resort error handler: a thrown error in any route comes back as JSON the
+// client can show, not an HTML stack trace. Malformed JSON bodies land here too.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error(`[error] ${req.method} ${req.originalUrl}:`, err);
+  res.status(status).json({ error: status >= 500 ? 'Server error: ' + err.message : err.message });
+});
+
+// An unhandled rejection in some background job (sync, backup, notifications)
+// would otherwise kill the whole process under Node's default policy. Log it
+// and keep serving; the container's restart policy covers genuine crashes.
+process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', reason));
 
 app.listen(PORT, () => console.log(`Rota app listening on port ${PORT}`));

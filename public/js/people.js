@@ -38,7 +38,7 @@ const PeopleView = {
       this.renderPills(colleagues);
       this.renderTable(colleagues, rows);
     } catch (e) {
-      document.getElementById('ppTableWrap').innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      document.getElementById('ppTableWrap').innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
     }
   },
 
@@ -52,7 +52,7 @@ const PeopleView = {
     el.innerHTML = colleagues.map(c => `
       <button class="btn" style="border-radius:20px;padding:5px 14px;font-size:13px;background:var(--sidebar-bg);color:#fff"
         onclick="PeopleView.openModal(${c.id})">
-        ${c.name.split(' ')[0]}
+        ${esc(c.name.split(' ')[0])}
       </button>
     `).join('');
   },
@@ -82,7 +82,7 @@ const PeopleView = {
 
     // Header row — date | my times | one col per colleague
     const headerCols = colleagues.map(c =>
-      `<th style="min-width:100px;text-align:center;padding:8px 6px;white-space:nowrap;font-size:12px">${c.name.split(' ')[0]}</th>`
+      `<th style="min-width:100px;text-align:center;padding:8px 6px;white-space:nowrap;font-size:12px">${esc(c.name.split(' ')[0])}</th>`
     ).join('');
 
     const dataRows = rows.map(({ shift, overlap }) => {
@@ -129,7 +129,7 @@ const PeopleView = {
 
       if (!shifts.length) {
         document.getElementById('modalBody').innerHTML =
-          `<p style="color:var(--text-muted)">No upcoming shared shifts found with ${c.name}.</p>`;
+          `<p style="color:var(--text-muted)">No upcoming shared shifts found with ${esc(c.name)}.</p>`;
         return;
       }
 
@@ -147,7 +147,7 @@ const PeopleView = {
           <div style="font-weight:600;margin-bottom:6px">${fmtDate(s.date)}</div>
           <div style="display:flex;gap:20px;font-size:13px;color:var(--text-muted)">
             <span>You: <strong style="color:var(--text)">${s.myStart}–${s.myEnd}</strong></span>
-            <span>${c.name.split(' ')[0]}: <strong style="color:var(--text)">${s.theirStart}–${s.theirEnd}</strong></span>
+            <span>${esc(c.name.split(' ')[0])}: <strong style="color:var(--text)">${s.theirStart}–${s.theirEnd}</strong></span>
             <span>Together: <strong style="color:var(--primary-text)">${fmt(s.overlapMins)}</strong></span>
           </div>
         </div>
@@ -155,7 +155,7 @@ const PeopleView = {
 
       document.getElementById('modalBody').innerHTML = cards;
     } catch (e) {
-      document.getElementById('modalBody').innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      document.getElementById('modalBody').innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
     }
   },
 };

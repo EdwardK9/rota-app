@@ -354,7 +354,7 @@ const DashboardView = {
           <div class="dash-colleagues-list"><span class="dash-colleague-chip dash-chip-loading">…</span></div>
         </div>
 
-        ${shift.notes ? `<div class="dash-notes"><span class="dash-notes-icon">📝</span>${shift.notes}</div>` : ''}
+        ${shift.notes ? `<div class="dash-notes"><span class="dash-notes-icon">📝</span>${esc(shift.notes)}</div>` : ''}
 
         ${(() => {
           // `entry` is the OPEN clock entry (clocked in, not out) — null between

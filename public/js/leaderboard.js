@@ -102,7 +102,7 @@ const LeaderboardView = {
       this.renderColleagueList(colleagues);
       this.renderTable(data);
     } catch (e) {
-      content.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      content.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
     }
   },
 
@@ -121,13 +121,13 @@ const LeaderboardView = {
         <div data-id="${c.id}" draggable="true" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--card-bg);user-select:none;-webkit-user-select:none">
           <span style="cursor:grab;color:var(--text-muted);font-size:16px;user-select:none" class="lb-drag-handle">⠿</span>
           <div style="flex:1;font-size:13px">
-            <strong>${c.name}</strong>
+            <strong>${esc(c.name)}</strong>
             <span style="color:var(--text-muted)">${bday}${hrs}</span>
           </div>
           <button onclick="LeaderboardView.openEdit(${c.id})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 6px" title="Edit">✏️</button>
           <button onclick="LeaderboardView.moveUp(${i})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px" ${i===0?'disabled':''} title="Move up">▲</button>
           <button onclick="LeaderboardView.moveDown(${i})" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px" ${i===colleagues.length-1?'disabled':''} title="Move down">▼</button>
-          <button onclick="LeaderboardView.deleteColleague(${c.id},'${c.name.replace(/'/g,"\\'")}')"
+          <button onclick="LeaderboardView.deleteColleague(${c.id},${jsArg(c.name)})"
             style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:16px;line-height:1;padding:2px 4px" title="Remove">&times;</button>
         </div>`;
     }).join('');
@@ -256,7 +256,7 @@ const LeaderboardView = {
         : '';
       return '<tr style="' + (r.left_date ? 'opacity:0.7' : '') + '">' +
         '<td style="width:40px;text-align:center;font-size:18px">' + medal + '</td>' +
-        '<td style="font-weight:500">' + r.name + leftBadge + '</td>' +
+        '<td style="font-weight:500">' + esc(r.name) + leftBadge + '</td>' +
         '<td style="text-align:right;font-weight:700;color:var(--primary-text)">' + val + '</td>' +
         '<td style="width:120px;padding-left:12px">' +
           '<div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden">' +

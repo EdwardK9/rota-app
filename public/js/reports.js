@@ -598,7 +598,7 @@ const ReportsView = {
       await this.renderTaxRefunds(ty);
     } catch(e) {
       const contentEl = document.getElementById('taxYearContent');
-      if (contentEl) contentEl.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      if (contentEl) contentEl.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
     }
   },
 
@@ -646,7 +646,7 @@ const ReportsView = {
                 <tr>
                   <td>${fmtDate(r.date) || '—'}</td>
                   <td style="color:var(--success);font-weight:600">${fmtCurrency(r.amount)}</td>
-                  <td>${r.notes || '—'}</td>
+                  <td>${esc(r.notes) || '—'}</td>
                   <td><button class="btn-icon danger tr-delete-btn" data-id="${r.id}" title="Delete">🗑️</button></td>
                 </tr>
               `).join('')}
@@ -787,7 +787,7 @@ const ReportsView = {
               return `
                 <div style="margin-bottom:8px">
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-                    <span style="font-size:13px;font-weight:${i < 3 ? '600' : '400'}">${label} ${p.name}</span>
+                    <span style="font-size:13px;font-weight:${i < 3 ? '600' : '400'}">${label} ${esc(p.name)}</span>
                     <span style="font-size:12px;color:var(--text-muted)">${p.count} shift${p.count !== 1 ? 's' : ''}</span>
                   </div>
                   <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">

@@ -352,3 +352,15 @@ body {
 .dash-section-title + .dash-nextin-day { margin-top: 2px; }
 .dash-nextin-row { padding: 7px 0; font-size: 14px; }
 .dash-nextin-date { font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* ── View error (replaces the raw red stack trace) ── */
+.view-error {
+  max-width: 460px; margin: 40px auto; padding: 28px 22px; text-align: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+}
+.view-error-icon  { font-size: 34px; margin-bottom: 6px; }
+.view-error-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.view-error-msg   { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; overflow-wrap: anywhere; }
+.view-error-details { margin-top: 16px; text-align: left; font-size: 12px; color: var(--text-muted); }
+.view-error-details pre { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }

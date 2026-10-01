@@ -386,7 +386,7 @@ const ManagePeopleView = {
           user-select:none;-webkit-user-select:none">
           <span style="cursor:grab;color:var(--text-muted);font-size:16px" class="mp-drag-handle">⠿</span>
           <div style="flex:1;font-size:13px">
-            <strong style="color:${c.left_date ? 'var(--text-muted)' : 'var(--text)'}">${c.name}</strong>${synergy}${start}
+            <strong style="color:${c.left_date ? 'var(--text-muted)' : 'var(--text)'}">${esc(c.name)}</strong>${synergy}${start}
             <span style="color:var(--text-muted)">${bday}${hrs}${rate}${left}</span>
           </div>
           <button onclick="ManagePeopleView.openEdit(${c.id})"
@@ -398,7 +398,7 @@ const ManagePeopleView = {
           <button onclick="ManagePeopleView.moveDown(${i})"
             style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px"
             ${i===colleagues.length-1?'disabled':''}>▼</button>
-          <button onclick="ManagePeopleView.deleteColleague(${c.id},'${c.name.replace(/'/g,"\\'")}')"
+          <button onclick="ManagePeopleView.deleteColleague(${c.id},${jsArg(c.name)})"
             style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:16px;padding:2px 4px"
             title="Remove">&times;</button>
         </div>`;
@@ -665,7 +665,7 @@ const ManagePeopleView = {
       showToast(`Merged "${r.from}" into "${r.into}"`, 'success');
     } catch(e) {
       document.getElementById('mpMergeResult').innerHTML =
-        `<span style="color:var(--danger)">✗ ${e.message}</span>`;
+        `<span style="color:var(--danger)">✗ ${esc(e.message)}</span>`;
       btn.disabled = false;
       btn.textContent = 'Merge';
     }

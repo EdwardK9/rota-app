@@ -1465,7 +1465,7 @@ const SettingsView = {
       if (!resp.ok) throw new Error(data.error || ('Server returned ' + resp.status));
       this._paintSyncLog(data);
     } catch (e) {
-      wrap.innerHTML = `<p style="padding:12px;color:var(--danger);font-size:13px;margin:0">${e.message}</p>`;
+      wrap.innerHTML = `<p style="padding:12px;color:var(--danger);font-size:13px;margin:0">${esc(e.message)}</p>`;
     }
   },
 

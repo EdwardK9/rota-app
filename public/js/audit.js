@@ -316,7 +316,7 @@ const AuditView = {
       document.getElementById('auditPrev')?.addEventListener('click', () => { this.page--; this.loadLog(); });
       document.getElementById('auditNext')?.addEventListener('click', () => { this.page++; this.loadLog(); });
     } catch(e) {
-      body.innerHTML = `<p style="padding:16px;color:var(--danger)">Error loading audit log: ${e.message}</p>`;
+      body.innerHTML = `<p style="padding:16px;color:var(--danger)">Error loading audit log: ${esc(e.message)}</p>`;
     }
   },
 

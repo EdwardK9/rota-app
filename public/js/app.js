@@ -292,7 +292,14 @@ const App = {
     } catch(navErr) {
       console.error('[navigate] error in view "' + view + '":', navErr);
       const errEl = document.getElementById('view-' + view);
-      if (errEl) errEl.innerHTML = '<div style="padding:40px;color:red;font-family:monospace">View error: ' + navErr.message + '<br><pre>' + navErr.stack + '</pre></div>';
+      if (errEl) errEl.innerHTML = `
+        <div class="view-error">
+          <div class="view-error-icon">⚠️</div>
+          <div class="view-error-title">This page couldn't load</div>
+          <div class="view-error-msg">${esc(navErr.message)}</div>
+          <button class="btn btn-primary" onclick="App.navigate(${jsArg(view)})">Try again</button>
+          <details class="view-error-details"><summary>Technical details</summary><pre>${esc(navErr.stack)}</pre></details>
+        </div>`;
     }
   },
 

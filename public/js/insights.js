@@ -29,9 +29,9 @@ const InsightsView = {
 
     const personOptions = [
       `<option value="">Me</option>`,
-      activeLeft.map(c => `<option value="${c.id}" ${this.colleagueId == c.id ? 'selected':''}>${c.name}</option>`).join(''),
+      activeLeft.map(c => `<option value="${c.id}" ${this.colleagueId == c.id ? 'selected':''}>${esc(c.name)}</option>`).join(''),
       pastLeft.length
-        ? `<optgroup label="Past employees">${pastLeft.map(c => `<option value="${c.id}" ${this.colleagueId == c.id ? 'selected':''}>${c.name} (left)</option>`).join('')}</optgroup>`
+        ? `<optgroup label="Past employees">${pastLeft.map(c => `<option value="${c.id}" ${this.colleagueId == c.id ? 'selected':''}>${esc(c.name)} (left)</option>`).join('')}</optgroup>`
         : ''
     ].join('');
 
@@ -100,7 +100,7 @@ const InsightsView = {
       this.data = await API.getInsightsReport(params);
       this.renderContent();
     } catch(e) {
-      el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">${e.message}</div>`;
+      el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">${esc(e.message)}</div>`;
     }
   },
 
@@ -410,7 +410,7 @@ const InsightsView = {
               return `
                 <div style="margin-bottom:8px">
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-                    <span style="font-size:13px;font-weight:${i < 3 ? '600' : '400'}">${label} ${p.name}</span>
+                    <span style="font-size:13px;font-weight:${i < 3 ? '600' : '400'}">${label} ${esc(p.name)}</span>
                     <span style="font-size:12px;color:var(--text-muted)">${p.count} shift${p.count !== 1 ? 's' : ''}</span>
                   </div>
                   <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
@@ -594,7 +594,7 @@ const InsightsView = {
           const firstName = c.name.split(' ')[0];
           return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;
             background:var(--bg);border:1px solid var(--border);font-size:11px;color:var(--text-muted);white-space:nowrap"
-            title="${c.name}: ${c.count}/${stats.total} bank holidays">
+            title="${esc(c.name)}: ${c.count}/${stats.total} bank holidays">
             ${firstName}${c.left_date ? '†' : ''} <strong style="color:var(--text)">${pct}%</strong>
           </span>`;
         }).join('');
