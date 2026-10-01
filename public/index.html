@@ -12,6 +12,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rota" />
+  <script>
+    // Applied before first paint so dark mode doesn't flash white while the app loads.
+    try { if (localStorage.getItem('darkMode') === 'true') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+  </script>
   <link rel="stylesheet" href="/css/style.css?v=20260821a" />
   <!-- V3.0 feature styles — separate file so the whole feature set stays liftable -->
   <link rel="stylesheet" href="/css/v3.css?v=20260821d" />

@@ -6,10 +6,15 @@ const App = {
   V2_VIEWS: ['synergy', 'team-metrics', 'fatigue-audit', 'shift-heatmap', 'weather', 'what-if', 'streaks', 'wrapped'],
 
   async start() {
-    // Dark mode — restore saved preference
-    if (localStorage.getItem('darkMode') === 'true') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
+    // Start the opening view's data loading alongside settings rather than
+    // after them — on a phone that's a whole round trip off the first paint.
+    const initialView = window.location.hash.replace('#', '') || 'dashboard';
+    const settingsP = API.getSettings();
+    settingsP.catch(() => {});   // handled where it's awaited below
+    if (initialView === 'dashboard') DashboardView.prefetch();
+
+    // Dark mode — the saved preference is applied by an inline script in
+    // <head> before first paint; this just wires the toggle.
     document.getElementById('darkModeToggle').addEventListener('click', () => {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
       document.documentElement.setAttribute('data-theme', isDark ? '' : 'dark');
@@ -54,7 +59,7 @@ const App = {
 
     // Load settings first (needed by other views)
     try {
-      this.settings = await API.getSettings();
+      this.settings = await settingsP;
     } catch(e) {
       console.warn('Could not load settings:', e.message);
     }

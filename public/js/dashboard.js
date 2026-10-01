@@ -31,33 +31,50 @@ const DashboardView = {
     return _fmtDateDash(tomorrow);
   },
 
-  async render() {
-    const el = document.getElementById('view-dashboard');
-    el.innerHTML = `<div class="dash-loading">Loading…</div>`;
-
-    // Fetch upcoming shifts (today → 60 days ahead)
+  // Kick off the dashboard's data requests. App.start() calls this before it
+  // has finished loading settings, so on a cold open the two run in parallel
+  // instead of back to back; render() picks the in-flight promise up if it's
+  // still fresh.
+  prefetch() {
     const today = new Date();
     const todayStr = _fmtDateDash(today);
     const future = new Date(today); future.setDate(future.getDate() + 60);
-    const futureStr = _fmtDateDash(future);
     const nextInAnchor = this._nextInAnchorDate(today);
-
-    // Whole current month (for the month summary card)
+    // One shifts request covering both the month summary (from the 1st) and
+    // the 60-day upcoming list, split client-side.
     const monthStart = `${todayStr.slice(0, 7)}-01`;
     const monthEnd = _fmtDateDash(new Date(today.getFullYear(), today.getMonth() + 1, 0));
-
-    let shifts = [], nextIn = null, clockToday = null, monthShifts = [];
-    try {
-      [shifts, nextIn, clockToday, monthShifts] = await Promise.all([
-        API.get(`/api/shifts?from=${todayStr}&to=${futureStr}`),
-        API.get(`/api/colleagues/next-shifts?from=${nextInAnchor}&days=2`).catch(() => null),
+    const rangeEnd = _fmtDateDash(future) > monthEnd ? _fmtDateDash(future) : monthEnd;
+    this._prefetched = {
+      at: Date.now(), todayStr, nextInAnchor, monthStart, monthEnd,
+      data: Promise.all([
+        API.get(`/api/shifts?from=${monthStart}&to=${rangeEnd}`),
+        API.get(`/api/colleagues/next-shifts?from=${nextInAnchor}&days=2&lite=1`).catch(() => null),
         API.get('/api/clock/today').catch(() => null),
-        API.get(`/api/shifts?from=${monthStart}&to=${monthEnd}`).catch(() => []),
-      ]);
+      ]),
+    };
+    this._prefetched.data.catch(() => {});   // handled when render() awaits it
+    return this._prefetched;
+  },
+
+  async render() {
+    const el = document.getElementById('view-dashboard');
+    if (!el.querySelector('.dash-wrap')) el.innerHTML = `<div class="dash-loading">Loading…</div>`;
+
+    let pf = this._prefetched;
+    if (!pf || Date.now() - pf.at > 5000 || pf.todayStr !== _fmtDateDash(new Date())) pf = this.prefetch();
+    this._prefetched = null;   // one use only — later renders (after clocking in, etc.) fetch fresh
+    const { todayStr, nextInAnchor, monthStart, monthEnd } = pf;
+
+    let allShifts = [], nextIn = null, clockToday = null;
+    try {
+      [allShifts, nextIn, clockToday] = await pf.data;
     } catch (e) {
       el.innerHTML = `<div class="dash-error">Could not load shifts.</div>`;
       return;
     }
+    const shifts = allShifts.filter(s => s.date >= todayStr);
+    const monthShifts = allShifts.filter(s => s.date >= monthStart && s.date <= monthEnd);
     this._clockToday = clockToday;
 
     const now = new Date();
@@ -256,7 +273,9 @@ const DashboardView = {
     // It's now fetched in the background after the hero paints and dropped
     // into its own slot once (if) it resolves.
     if (clockToday === undefined) clockToday = this._clockToday || null;
-    const colleagues = await API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []);
+    // Colleagues are filled in the same way once their request lands, so the
+    // hero paints on the first round trip rather than the second.
+    const colleaguesP = API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []);
 
     const el = document.getElementById('dash-hero');
     const isToday  = shift.date === _fmtDateDash(new Date());
@@ -282,16 +301,12 @@ const DashboardView = {
         : `IN ${diffDays} DAYS`;
     }
 
-    const colleagueHtml = colleagues.length > 0
-      ? `<div class="dash-colleagues dash-colleagues-clickable" title="Tap to see who you're working with">
-           <div class="dash-colleagues-label">👥 Working with</div>
-           <div class="dash-colleagues-list">
-             ${colleagues.map(c => `<span class="dash-colleague-chip${c.relation === 'crossover' ? ' dash-colleague-chip-crossover' : ''}"${c.note ? ` title="${c.note.replace(/"/g,'&quot;')}"` : ''}>${c.relation === 'crossover' ? '🔄 ' : ''}${c.name}</span>`).join('')}
-           </div>
+    const colleagueHtml = colleagues => colleagues.length > 0
+      ? `<div class="dash-colleagues-label">👥 Working with</div>
+         <div class="dash-colleagues-list">
+           ${colleagues.map(c => `<span class="dash-colleague-chip${c.relation === 'crossover' ? ' dash-colleague-chip-crossover' : ''}"${c.note ? ` title="${esc(c.note)}"` : ''}>${c.relation === 'crossover' ? '🔄 ' : ''}${esc(c.name)}</span>`).join('')}
          </div>`
-      : `<div class="dash-colleagues dash-colleagues-clickable" title="Tap to see who you're working with">
-           <div class="dash-colleagues-label dash-colleagues-none">👤 No colleagues recorded for this shift</div>
-         </div>`;
+      : `<div class="dash-colleagues-label dash-colleagues-none">👤 No colleagues recorded for this shift</div>`;
 
     el.innerHTML = `
       <div class="dash-hero-card${isOngoing ? ' dash-hero-live' : ''}">
@@ -331,7 +346,10 @@ const DashboardView = {
           </div>${payHtml}`;
         })()}
 
-        ${colleagueHtml}
+        <div class="dash-colleagues dash-colleagues-clickable" id="dashColleagues" title="Tap to see who you're working with">
+          <div class="dash-colleagues-label">👥 Working with</div>
+          <div class="dash-colleagues-list"><span class="dash-colleague-chip dash-chip-loading">…</span></div>
+        </div>
 
         ${shift.notes ? `<div class="dash-notes"><span class="dash-notes-icon">📝</span>${shift.notes}</div>` : ''}
 
@@ -357,8 +375,9 @@ const DashboardView = {
       </div>
     `;
 
-    const colleaguesEl = el.querySelector('.dash-colleagues-clickable');
-    if (colleaguesEl) colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+    const colleaguesEl = el.querySelector('#dashColleagues');
+    colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+    colleaguesP.then(colleagues => { if (colleaguesEl.isConnected) colleaguesEl.innerHTML = colleagueHtml(colleagues); });
 
     // Background-fill the weather slot — see the comment above on why this
     // isn't awaited before the hero renders. If the user's already navigated

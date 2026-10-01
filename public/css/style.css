@@ -1494,8 +1494,15 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 /* Narrow screens: stack vertically.
    940px = 220px sidebar + 720px content minimum for two columns */
 @media (max-width: 940px) {
-  .dash-wrap { flex-direction: column; }
+  /* stretch, not the desktop flex-start: in a column, flex-start shrinks each
+     column to its content's width, which left the hero card narrower than the
+     screen and pinned to the left whenever its content was short. */
+  .dash-wrap { flex-direction: column; align-items: stretch; }
+  .dash-left-col { flex: none; width: 100%; }
   .dash-right-col { flex: none; width: 100%; }
+}
+@media (max-width: 768px) {
+  .dash-wrap { padding: 4px 0 32px; }   /* .view already supplies the side gutter */
 }
 .dash-loading, .dash-error {
   text-align: center;

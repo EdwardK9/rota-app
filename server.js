@@ -38,14 +38,95 @@ app.use(express.json({ limit: '10mb' }));
 // token. Hand-maintained tokens were a standing trap: forget to bump one and the
 // browser keeps last week's JS while the API moves on, which fails in exactly the
 // confusing way (new HTML, old script, "X is not a function"). Deriving the token
-// from package.json means a version bump busts every asset automatically, and the
-// cost is one re-download per deploy.
+// from package.json plus each file's content hash (see _assetToken) means any
+// change busts exactly the assets it touched.
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
+
+// JS bundle: index.html lists ~70 separate <script defer> files, which on a phone
+// meant ~70 round trips before the first view could render. They're all classic
+// scripts sharing one global scope, so concatenating them in their listed order
+// behaves the same — built once in memory (and pre-gzipped) at startup, then
+// served as a single request. index.html keeps the individual tags as the source
+// of truth; RAW_ASSETS=1 serves them unbundled for debugging, and so does a
+// bundle that fails to compile (a clash between two files' top-level names
+// would otherwise take down every script instead of just the later one).
+const SCRIPT_TAG_RE = /[ \t]*<script src="(\/js\/[^"?]+)(?:\?[^"]*)?"[^>]*><\/script>\r?\n?/g;
+const _jsBundle = (() => {
+  if (process.env.RAW_ASSETS === '1') return null;
+  try {
+    const html = fs.readFileSync(INDEX_HTML, 'utf8');
+    const srcs = [...html.matchAll(SCRIPT_TAG_RE)].map(m => m[1]);
+    const code = srcs.map(src =>
+      `/* ${src} */\n` + fs.readFileSync(path.join(__dirname, 'public', src), 'utf8')
+    ).join('\n;\n');
+    new (require('vm').Script)(code, { filename: 'app.bundle.js' });   // syntax / redeclaration check only
+    const buf = Buffer.from(code, 'utf8');
+    return {
+      count: srcs.length,
+      raw: buf,
+      gz: require('zlib').gzipSync(buf, { level: 9 }),
+      etag: '"' + require('crypto').createHash('sha1').update(buf).digest('hex').slice(0, 16) + '"',
+    };
+  } catch (e) {
+    console.warn('[bundle] serving scripts unbundled:', e.message);
+    return null;
+  }
+})();
+if (_jsBundle) console.log(`[bundle] ${_jsBundle.count} scripts → ${Math.round(_jsBundle.raw.length / 1024)}KB (${Math.round(_jsBundle.gz.length / 1024)}KB gzipped)`);
+
+// ?v= token for an asset URL: the app version plus a hash of the file itself, so
+// any change to a file — not just a version bump — gives it a new URL. Assets are
+// cached as immutable (and kept by the service worker), so a token that didn't
+// change with the content would pin phones to old code. Memoised per mtime.
+const _assetTokens = new Map();
+function _assetToken(urlPath) {
+  if (urlPath === '/js/app.bundle.js' && _jsBundle) return packageJson.version + '-' + _jsBundle.etag.slice(1, 9);
+  const file = path.join(__dirname, 'public', urlPath);
+  try {
+    const mtime = fs.statSync(file).mtimeMs;
+    const hit = _assetTokens.get(file);
+    if (hit && hit.mtime === mtime) return hit.token;
+    const hash = require('crypto').createHash('sha1').update(fs.readFileSync(file)).digest('hex').slice(0, 8);
+    const token = packageJson.version + '-' + hash;
+    _assetTokens.set(file, { mtime, token });
+    return token;
+  } catch (e) {
+    return packageJson.version;
+  }
+}
+
+app.get('/js/app.bundle.js', (req, res, next) => {
+  if (!_jsBundle) return next();
+  res.set({
+    'Content-Type': 'application/javascript; charset=utf-8',
+    'Cache-Control': 'public, max-age=31536000, immutable',
+    ETag: _jsBundle.etag,
+    Vary: 'Accept-Encoding',
+  });
+  if (req.headers['if-none-match'] === _jsBundle.etag) return res.status(304).end();
+  // Content-Encoding set here makes the compression middleware leave it alone.
+  if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+    res.set('Content-Encoding', 'gzip');
+    return res.end(_jsBundle.gz);
+  }
+  res.end(_jsBundle.raw);
+});
+
 app.get(['/', '/index.html'], (req, res, next) => {
   fs.readFile(INDEX_HTML, 'utf8', (err, html) => {
     if (err) return next();   // fall through to static, which will 404 properly
+    if (_jsBundle) {
+      // Swap the first script tag for the bundle and drop the rest.
+      let first = true;
+      html = html.replace(SCRIPT_TAG_RE, () => {
+        if (!first) return '';
+        first = false;
+        return '  <script src="/js/app.bundle.js?v=0" defer></script>\n';
+      });
+    }
     res.set('Cache-Control', 'no-cache');
-    res.type('html').send(html.replace(/\?v=[\w.]+/g, '?v=' + packageJson.version));
+    res.type('html').send(html.replace(/(["'])(\/[^"'?]+)\?v=[\w.]+/g,
+      (m, q, p) => `${q}${p}?v=${_assetToken(p)}`));
   });
 });
 
@@ -57,6 +138,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
     // everything else (versioned JS/CSS, icons) can be cached hard.
     if (filePath.endsWith('.html') || filePath.endsWith('sw.js') || filePath.endsWith('.webmanifest')) {
       res.setHeader('Cache-Control', 'no-cache');
+    } else if (/\.(js|css)$/.test(filePath)) {
+      // Always requested with a ?v=<version> token, so a new deploy is a new URL.
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     } else {
       res.setHeader('Cache-Control', 'public, max-age=604800');
     }
@@ -784,6 +868,10 @@ app.get('/api/colleagues/next-shifts', (req, res) => {
       AND (cs.store IS NULL OR cs.store = '')
     ORDER BY cs.date ASC, cs.start_time ASC, c.name ASC
   `).all(from, to);
+
+  // ?lite=1 (the dashboard) only reads `days` — skip the two per-colleague
+  // look-ahead queries below, which are the expensive part of this endpoint.
+  if (req.query.lite === '1') return res.json({ from, to, days: windowRows, later: [], none: [] });
 
   // Next shift per colleague *after* the window
   const laterRows = db.prepare(`
