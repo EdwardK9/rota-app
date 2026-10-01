@@ -75,6 +75,21 @@ For example: `http://192.168.1.x:3000`
 
 The app is a single-page application — all navigation happens within the one page without full reloads.
 
+### Weak or no signal (offline mode)
+
+Once the app has been opened once on a phone, it keeps working with poor or no signal:
+
+- **It still opens.** The app's code is stored on the phone, and the last data you loaded is
+  shown with a bar at the top: *📴 No signal — showing saved info from 07:52*. With signal,
+  everything is always live — the saved copy is only used when the network fails.
+- **Clock in/out never gets lost.** If the server can't be reached, the clock in/out is saved
+  on the phone with the time you pressed it (*⏳ 1 clock-in waiting to send*) and sent by
+  itself when signal returns. The break question is still asked at clock-out and sent along
+  with it. Each saved action has an ID the server remembers, so a resend can never clock you
+  out twice.
+- **NFC tag taps too.** Tapping the tag with no signal saves the tap the same way; it's
+  replayed in order (background sync on Android, otherwise next time the app opens).
+
 ---
 
 ## Features

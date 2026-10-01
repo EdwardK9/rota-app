@@ -1977,3 +1977,35 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
   font-size: 12px; line-height: 1; padding: 4px; cursor: pointer; opacity: .7;
 }
 .nav-edit-btn:hover { opacity: 1; }
+
+/* ─────────────────────────────────────────
+   Connection status bar (NetStatus) — only shown when offline / items queued
+   ───────────────────────────────────────── */
+.net-status {
+  display: none;
+  position: sticky; top: var(--topbar-height); z-index: 49;
+  align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 10px;
+  padding: 7px 14px;
+  background: #3a2f0b; color: #ffe58a;
+  font-size: 13px; font-weight: 600; text-align: center;
+}
+.net-status.show { display: flex; }
+.net-status.net-status-pending { background: #10314f; color: #bfe0ff; }
+.net-status-sep { opacity: 0.5; }
+.net-status-btn {
+  border: 1px solid currentColor; background: transparent; color: inherit;
+  font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+}
+/* Below 860px the topbar is position:fixed (see above), so the bar is pinned
+   under it the same way and the content pushed down to make room. */
+@media (max-width: 860px) {
+  .net-status {
+    position: fixed; left: var(--sidebar-width); right: 0;
+    top: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
+  }
+  body.has-net-status .main-content { padding-top: calc(var(--topbar-height) + env(safe-area-inset-top, 0px) + var(--net-status-h, 34px)); }
+}
+@media (max-width: 768px) {
+  .net-status { left: 0; }
+}
+.dash-clock-pending { font-size: 12px; font-weight: 600; color: var(--warning); white-space: nowrap; }

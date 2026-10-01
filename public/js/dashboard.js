@@ -70,8 +70,30 @@ const DashboardView = {
     try {
       [allShifts, nextIn, clockToday] = await pf.data;
     } catch (e) {
-      el.innerHTML = `<div class="dash-error">Could not load shifts.</div>`;
+      // No data at all (no signal, nothing saved on the phone yet). Clocking in
+      // or out must still work here — it's the one thing that can't wait.
+      const queued = typeof ClockQueue !== 'undefined' ? await ClockQueue.all() : [];
+      const ct = typeof ClockQueue !== 'undefined' ? ClockQueue.applyPending(null, queued, todayStr) : {};
+      this._clockToday = ct;
+      el.innerHTML = `
+        <div class="dash-error">
+          <div>📴 Couldn't load your rota — ${esc(e.message)}.</div>
+          <div style="margin-top:6px;font-size:13px">You can still clock in and out; it'll be saved on your phone and sent when there's signal.</div>
+          <div class="dash-clock-status" style="max-width:360px;margin:16px auto 0">
+            ${ct.entry
+              ? `<span class="dash-clock-in-time">🟢 Clocked in at ${ct.entry.clocked_in}${ct.entry.pending ? ' ⏳' : ''}</span>
+                 <button class="btn btn-clock-out" onclick="DashboardView.clockOut()">Clock Out</button>`
+              : `${ct.lastEntry ? `<span class="dash-clock-done">✓ Last clocked out at ${ct.lastEntry.clocked_out}${ct.lastEntry.pending ? ' ⏳' : ''}</span>` : ''}
+                 <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>`}
+          </div>
+          <button class="dash-link" style="margin-top:14px" onclick="DashboardView.render()">Try again</button>
+        </div>`;
       return;
+    }
+    // Clock actions saved on the phone with no signal show as already done.
+    if (typeof ClockQueue !== 'undefined') {
+      const queued = await ClockQueue.all();
+      if (queued.length) clockToday = ClockQueue.applyPending(clockToday, queued, todayStr);
     }
     const shifts = allShifts.filter(s => s.date >= todayStr);
     const monthShifts = allShifts.filter(s => s.date >= monthStart && s.date <= monthEnd);
@@ -361,14 +383,15 @@ const DashboardView = {
           // shifts on a split-shift day, not just before the first one.
           const ce = clockToday?.entry || null;
           const last = clockToday?.lastEntry || null;
+          const waiting = e => e && e.pending ? ' <span class="dash-clock-pending">⏳ waiting to send</span>' : '';
           if (ce) {
             return `<div class="dash-clock-status">
-              <span class="dash-clock-in-time">🟢 Clocked in at ${ce.clocked_in}</span>
+              <span class="dash-clock-in-time">🟢 Clocked in at ${ce.clocked_in}${waiting(ce)}</span>
               <button class="btn btn-clock-out" onclick="DashboardView.clockOut()">Clock Out</button>
             </div>`;
           } else if (last && last.clocked_out) {
             return `<div class="dash-clock-status">
-              <span class="dash-clock-done">✓ Last clocked out at ${last.clocked_out}</span>
+              <span class="dash-clock-done">✓ Last clocked out at ${last.clocked_out}${waiting(last)}</span>
               <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Start Next Shift</button>
             </div>`;
           } else {
@@ -481,31 +504,48 @@ const DashboardView = {
     });
   },
 
+  // Current clock state for the reason/break prompts. A short timeout and the
+  // copy loaded with the page as fallback: with weak signal at work, waiting
+  // on this must never hold up clocking in.
+  async _clockState() {
+    return API.get('/api/clock/today', { timeout: 4000 }).catch(() => this._clockToday || null);
+  },
+
+  // Send a clock action, or save it on the phone if there's no signal.
+  async _submitClock(kind, extra) {
+    try {
+      const r = await ClockQueue.submit(kind, extra);
+      if (r.queued) {
+        showToast(`📶 No signal — clock-${kind} at ${extra.time} saved on your phone. It'll send by itself once you have signal.`, 'warning');
+        NetStatus.refreshPending();
+      }
+      return r;
+    } catch (e) {
+      showToast(`Clock ${kind} failed: ${e.message}`, 'error');
+      return null;
+    }
+  },
+
   async clockIn() {
     const now  = new Date();
     const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-    const clockData = await API.get('/api/clock/today').catch(() => null);
+    const clockData = await this._clockState();
     const schedStart = clockData?.shift?.start_time || null;
     const diff = this._timeDiffMins(hhmm, schedStart);
     let note = null;
     if (diff > this._thr('in','late') || diff < -this._thr('in','early')) note = await this._promptReason(diff);
     // Same as the dedicated Clock In/Out page: fire in parallel with the clock-in
-    // itself so a slow/refused GPS fix never delays it. This was missing here —
-    // the Dashboard's own Clock In button (likely the one actually used day to
-    // day, since it's the first thing on screen) recorded no location and no
-    // check-habit signal at all, unlike the separate Clock In/Out view.
+    // itself so a slow/refused GPS fix never delays it.
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('in') : null;
-    try {
-      await API.post('/api/clock/in', { time: hhmm, note });
-      await this.render();
-    } catch(e) { showToast('Clock in failed', 'error'); }
+    const r = await this._submitClock('in', { time: hhmm, note });
+    if (r) await this.render();
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_in', detail: hhmm }); });
   },
 
   async clockOut() {
     const now  = new Date();
     const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-    const clockData = await API.get('/api/clock/today').catch(() => null);
+    const clockData = await this._clockState();
     const schedEnd = clockData?.shift?.end_time || null;
     const diff = this._timeDiffMins(hhmm, schedEnd);
     // Prompt when clocking out early or late beyond the configured leeway window
@@ -513,10 +553,17 @@ const DashboardView = {
     if (diff < -this._thr('out','early') || diff > this._thr('out','late')) note = await this._promptReason(diff, true);
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('out') : null;
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_out', detail: hhmm }); });
-    let clockOutRes;
-    try {
-      clockOutRes = await API.post('/api/clock/out', { time: hhmm, note });
-    } catch(e) { showToast('Clock out failed', 'error'); return; }
+    const r = await this._submitClock('out', { time: hhmm, note });
+    if (!r) return;
+
+    if (r.queued) {
+      // Offline: still ask about the break now, while it's fresh, and send the
+      // answer along with the clock-out when it goes.
+      const breakResult = await this._promptBreak(clockData?.shift?.break_scheduled_minutes || 0);
+      if (breakResult) await ClockQueue.update({ ...r.item, breakResult });
+      await this.render();
+      return;
+    }
 
     // Ask about the break and mark the linked shift complete (same as the Clock In/Out page).
     // Every way this can fall through says so out loud — a shift quietly staying
@@ -525,6 +572,7 @@ const DashboardView = {
     // says which in its response. Never re-derive it from "nearest to now": on a
     // split day that can be the NEXT shift, which then got marked complete
     // before it had even started.
+    const clockOutRes = r.data;
     const shift = clockOutRes?.completed_shift || clockData?.shift;
     if (!shift?.id) {
       showToast("Clocked out ✓ — no shift on today's rota to mark complete", 'warning');

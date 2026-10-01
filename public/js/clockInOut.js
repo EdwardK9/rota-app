@@ -89,8 +89,22 @@ const ClockInOutView = {
   },
 
   async loadToday() {
+    const pad = n => String(n).padStart(2, '0');
+    const d0 = new Date();
+    const localToday = `${d0.getFullYear()}-${pad(d0.getMonth() + 1)}-${pad(d0.getDate())}`;
+    let data;
     try {
-      const data = await API.get('/api/clock/today');
+      data = await API.get('/api/clock/today');
+    } catch (e) {
+      // No signal and nothing saved: still let clocking work (it queues).
+      data = { today: localToday, entries: [], entry: null, lastEntry: null, shift: this.shift || null };
+      showToast("Couldn't load today's clock data — you can still clock in/out; it'll send when there's signal", 'warning');
+    }
+    if (typeof ClockQueue !== 'undefined') {
+      const queued = await ClockQueue.all();
+      if (queued.length) data = ClockQueue.applyPending(data, queued, data.today || localToday);
+    }
+    try {
       this.today = data.today;
       this.entries = data.entries || [];
       // `entry` is the OPEN entry (clocked in, not out) — what the Clock In/Out
@@ -101,7 +115,7 @@ const ClockInOutView = {
       this.lastEntry = data.lastEntry;
       this.shift = data.shift;
       this.renderToday();
-    } catch(e) { showToast('Failed to load clock data', 'error'); }
+    } catch(e) { showToast('Failed to show clock data: ' + e.message, 'error'); }
   },
 
   renderToday() {
@@ -122,6 +136,7 @@ const ClockInOutView = {
     const inTime  = display?.clocked_in  || null;
     const outTime = this.entry ? null : (display?.clocked_out || null);
 
+    if (display?.pending) schedEl.textContent += ' · ⏳ last clock action is saved on this phone, waiting to send';
     document.getElementById('ckInTime').textContent  = inTime  || '--:--';
     document.getElementById('ckOutTime').textContent = outTime || '--:--';
 
@@ -305,12 +320,15 @@ const ClockInOutView = {
     // clocking in. V5Tracker resolves to null and records nothing if location
     // tracking is switched off, so there is no permission prompt either.
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('in') : null;
-    try {
-      this.entry = this.lastEntry = await API.post('/api/clock/in', { time: hhmm, note });
+    const r = await DashboardView._submitClock('in', { time: hhmm, note });
+    if (r && !r.queued) {
+      this.entry = this.lastEntry = r.data;
       this.renderToday();
       showToast('Clocked in ✓', 'success');
-      await this.loadHistory();
-    } catch(e) { showToast('Failed to clock in: ' + e.message, 'error'); }
+      this.loadHistory();
+    } else if (r) {
+      await this.loadToday();
+    }
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_in', detail: hhmm }); });
   },
 
@@ -326,15 +344,20 @@ const ClockInOutView = {
     }
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('out') : null;
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_out', detail: hhmm }); });
-    try {
-      this.lastEntry = await API.post('/api/clock/out', { time: hhmm, note });
-      this.entry = null;
-      this.renderToday();
-      showToast('Clocked out ✓', 'success');
-      await this.loadHistory();
-      await this.loadAnalytics();
-
-    } catch(e) { showToast('Failed to clock out: ' + e.message, 'error'); return; }
+    const r = await DashboardView._submitClock('out', { time: hhmm, note });
+    if (!r) return;
+    if (r.queued) {
+      // Offline: ask about the break now and send it along with the clock-out.
+      const breakResult = await this._promptBreak(this.shift?.break_scheduled_minutes || 30);
+      if (breakResult) await ClockQueue.update({ ...r.item, breakResult });
+      await this.loadToday();
+      return;
+    }
+    this.lastEntry = r.data;
+    this.entry = null;
+    this.renderToday();
+    showToast('Clocked out ✓', 'success');
+    this.loadHistory().then(() => this.loadAnalytics()).catch(() => {});
 
     // The server has already marked the day's shift complete (assuming the
     // scheduled break) so it can't be left open by a dismissed dialog or a

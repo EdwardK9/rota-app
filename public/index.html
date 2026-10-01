@@ -240,6 +240,8 @@
        (no attribute = strictly sequential fetch+execute per file); execution still
        happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
   <script src="/js/api.js?v=20260821a" defer></script>
+  <script src="/js/clockQueue.js?v=1" defer></script>
+  <script src="/js/netStatus.js?v=1" defer></script>
   <script src="/js/utils.js?v=20260821b" defer></script>
   <script src="/js/shifts.js?v=20260708a" defer></script>
   <script src="/js/calendar.js?v=20260629a" defer></script>
@@ -321,13 +323,5 @@
 
   <script src="/js/navCustomise.js?v=20260902a" defer></script>
   <script src="/js/app.js?v=20260821d" defer></script>
-  <script>
-    // PWA: register the (no-cache, passthrough) service worker so the app is installable
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      });
-    }
-  </script>
 </body>
 </html>

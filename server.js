@@ -4773,15 +4773,49 @@ app.get('/api/clock/history', (req, res) => {
   res.json({ entries });
 });
 
+// Clock requests can be replayed: the app queues a clock in/out on the phone when
+// there's no signal and re-sends it later, and a request that DID arrive but whose
+// response was lost to bad signal gets sent again. Each queued request carries a
+// client_id; the first response is stored against it and simply returned again
+// for any repeat, so a retry can't clock out twice or complete a second shift.
+db.exec(`CREATE TABLE IF NOT EXISTS clock_requests (
+  client_id TEXT PRIMARY KEY,
+  response TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+db.prepare("DELETE FROM clock_requests WHERE created_at < datetime('now', '-30 days')").run();
+
+function _clockIdempotent(req, res, handler) {
+  const cid = typeof req.body.client_id === 'string' && req.body.client_id.slice(0, 64);
+  if (cid) {
+    const prior = db.prepare('SELECT response FROM clock_requests WHERE client_id = ?').get(cid);
+    if (prior) return res.json({ ...JSON.parse(prior.response), replayed: true });
+  }
+  const result = handler();
+  if (cid) db.prepare('INSERT OR IGNORE INTO clock_requests (client_id, response) VALUES (?, ?)').run(cid, JSON.stringify(result));
+  res.json(result);
+}
+
+const _isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const _isTime = v => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+function _clockDateTime(req, res) {
+  const { date, time } = req.body;
+  if (date !== undefined && date !== null && !_isDate(date)) { res.status(400).json({ error: 'date must be YYYY-MM-DD' }); return null; }
+  if (time !== undefined && time !== null && !_isTime(time)) { res.status(400).json({ error: 'time must be HH:MM' }); return null; }
+  return { date: date || localDateStr(), time: time || localTimeStr() };
+}
+
 // POST /api/clock/in — a split-shift day means "clock in" doesn't always mean
 // "there's nothing today yet": if the previous shift was already clocked out,
 // this starts a new entry rather than overwriting it. Only reuses an existing
 // row if one's already open (clocked in, not out), which just means re-recording
 // the time rather than accidentally spawning a duplicate open shift.
 app.post('/api/clock/in', (req, res) => {
-  const date = req.body.date || localDateStr();
-  const time = req.body.time || localTimeStr();
-  const note = req.body.note || null;
+  const dt = _clockDateTime(req, res);
+  if (!dt) return;
+  _clockIdempotent(req, res, () => _clockIn(dt.date, dt.time, req.body.note || null));
+});
+function _clockIn(date, time, note) {
   const openEntry = db.prepare(
     'SELECT * FROM clock_entries WHERE date = ? AND clocked_in IS NOT NULL AND clocked_out IS NULL ORDER BY id DESC LIMIT 1'
   ).get(date);
@@ -4792,8 +4826,8 @@ app.post('/api/clock/in', (req, res) => {
   } else {
     id = db.prepare('INSERT INTO clock_entries (date, clocked_in, note) VALUES (?, ?, ?)').run(date, time, note).lastInsertRowid;
   }
-  res.json(db.prepare('SELECT * FROM clock_entries WHERE id = ?').get(id));
-});
+  return db.prepare('SELECT * FROM clock_entries WHERE id = ?').get(id);
+}
 
 // Clocking out is what "I've finished that shift" means, but marking the shift
 // itself complete used to happen only in the browser, after the clock-out call
@@ -4853,9 +4887,11 @@ function _autoCompleteShiftForClockOut(date, clockOutTime, clockedInTime) {
 // a brand new out-only row if there's no entry at all yet — same defensive
 // fallbacks the old single-row version had, just no longer keyed by date alone.
 app.post('/api/clock/out', (req, res) => {
-  const date = req.body.date || localDateStr();
-  const time = req.body.time || localTimeStr();
-  const note = req.body.note || null;
+  const dt = _clockDateTime(req, res);
+  if (!dt) return;
+  _clockIdempotent(req, res, () => _clockOut(dt.date, dt.time, req.body.note || null));
+});
+function _clockOut(date, time, note) {
   const openEntry = db.prepare(
     'SELECT * FROM clock_entries WHERE date = ? AND clocked_in IS NOT NULL AND clocked_out IS NULL ORDER BY id DESC LIMIT 1'
   ).get(date);
@@ -4876,8 +4912,8 @@ app.post('/api/clock/out', (req, res) => {
   }
   webhooksRouter.fireShiftEndedWebhook({ end_time: time }).catch(() => {});
   const entry = db.prepare('SELECT * FROM clock_entries WHERE id = ?').get(id);
-  res.json({ ...entry, completed_shift: completedShift });
-});
+  return { ...entry, completed_shift: completedShift };
+}
 
 // PATCH /api/clock/:id
 app.patch('/api/clock/:id', (req, res) => {
@@ -5041,28 +5077,7 @@ function nfcTapPage(title, body, color = '#2e9e5b') {
 let _lastClockTapResult = null;
 const NFC_TAP_DEBOUNCE_MS = 6000;
 
-app.get('/clock-tap', (req, res) => {
-  // This route toggles clock state, so the response must never be served from
-  // cache — a cached "Clocked in" page from this morning would prevent the
-  // evening clock-out tap from ever reaching the server.
-  res.set('Cache-Control', 'no-store');
-
-  const tokenRow = db.prepare("SELECT value FROM settings WHERE key = 'nfc_clock_token'").get();
-  const configuredToken = tokenRow && tokenRow.value && tokenRow.value.trim();
-  if (!configuredToken) {
-    return res.send(nfcTapPage('Not set up yet', 'No NFC clock-in token is configured. Set one up in Settings → NFC Clock In/Out first.', '#e5a13c'));
-  }
-  if (!req.query.token || req.query.token !== configuredToken) {
-    return res.status(403).send(nfcTapPage('Not authorised', "This link's token doesn't match what's configured in Settings.", '#e5573c'));
-  }
-
-  const now = Date.now();
-  if (_lastClockTapResult && now - _lastClockTapResult.at < NFC_TAP_DEBOUNCE_MS) {
-    return res.send(nfcTapPage(_lastClockTapResult.title, _lastClockTapResult.body));
-  }
-
-  const today = localDateStr();
-  const time  = localTimeStr();
+function _clockTap(today, time) {
   const openEntry = db.prepare(
     'SELECT * FROM clock_entries WHERE date = ? AND clocked_in IS NOT NULL AND clocked_out IS NULL ORDER BY id DESC LIMIT 1'
   ).get(today);
@@ -5094,6 +5109,40 @@ app.get('/clock-tap', (req, res) => {
     title = '👋 Clocked out';
     body  = `Recorded at ${time}. Assumed no break was taken — open the app to correct that if you had one.`;
   }
+  return { title, body, action: openEntry ? 'out' : 'in', time };
+}
+
+// POST /api/clock/tap — the same toggle as an NFC tap, at a given date/time. The
+// service worker uses this to replay a tap that happened with no signal: it
+// can't know offline whether you were clocked in, so it records "a tap at 07:58"
+// and the server applies it against whatever state it has when the tap arrives.
+app.post('/api/clock/tap', (req, res) => {
+  const dt = _clockDateTime(req, res);
+  if (!dt) return;
+  _clockIdempotent(req, res, () => _clockTap(dt.date, dt.time));
+});
+
+app.get('/clock-tap', (req, res) => {
+  // This route toggles clock state, so the response must never be served from
+  // cache — a cached "Clocked in" page from this morning would prevent the
+  // evening clock-out tap from ever reaching the server.
+  res.set('Cache-Control', 'no-store');
+
+  const tokenRow = db.prepare("SELECT value FROM settings WHERE key = 'nfc_clock_token'").get();
+  const configuredToken = tokenRow && tokenRow.value && tokenRow.value.trim();
+  if (!configuredToken) {
+    return res.send(nfcTapPage('Not set up yet', 'No NFC clock-in token is configured. Set one up in Settings → NFC Clock In/Out first.', '#e5a13c'));
+  }
+  if (!req.query.token || req.query.token !== configuredToken) {
+    return res.status(403).send(nfcTapPage('Not authorised', "This link's token doesn't match what's configured in Settings.", '#e5573c'));
+  }
+
+  const now = Date.now();
+  if (_lastClockTapResult && now - _lastClockTapResult.at < NFC_TAP_DEBOUNCE_MS) {
+    return res.send(nfcTapPage(_lastClockTapResult.title, _lastClockTapResult.body));
+  }
+
+  const { title, body } = _clockTap(localDateStr(), localTimeStr());
   _lastClockTapResult = { at: now, title, body };
   res.send(nfcTapPage(title, body));
 });

@@ -1,13 +1,31 @@
 /* Thin wrapper around fetch for the REST API */
 
 const API = {
-  async request(method, path, body) {
+  async request(method, path, body, { timeout } = {}) {
     const opts = {
       method,
       headers: { 'Content-Type': 'application/json' },
     };
     if (body !== undefined) opts.body = JSON.stringify(body);
-    const res = await fetch(path, opts);
+    let timer = null;
+    if (timeout) {
+      const ctrl = new AbortController();
+      opts.signal = ctrl.signal;
+      timer = setTimeout(() => ctrl.abort(), timeout);
+    }
+    let res;
+    try {
+      res = await fetch(path, opts);
+    } catch (e) {
+      // Never got an answer — no signal, or the request timed out.
+      if (typeof NetStatus !== 'undefined') NetStatus.failed();
+      throw new Error(e.name === 'AbortError' ? 'Timed out — weak or no signal' : 'No connection');
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    // The service worker answers from its saved copy when the network is out,
+    // and marks it so — that drives the "showing saved data" indicator.
+    if (typeof NetStatus !== 'undefined') NetStatus.answered(res.headers.get('X-Offline-Cache'));
     if (!res.ok) {
       const err = await res.json().catch(() => null);
       let msg = err?.error;
@@ -21,7 +39,7 @@ const API = {
     return res.json();
   },
 
-  get:    (path)        => API.request('GET',    path),
+  get:    (path, opts)  => API.request('GET',    path, undefined, opts),
   post:   (path, body)  => API.request('POST',   path, body),
   put:    (path, body)  => API.request('PUT',    path, body),
   patch:  (path, body)  => API.request('PATCH',  path, body),
