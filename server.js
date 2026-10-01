@@ -85,6 +85,59 @@ const _jsBundle = (() => {
 })();
 if (_jsBundle) console.log(`[bundle] ${_jsBundle.count} scripts → ${Math.round(_jsBundle.raw.length / 1024)}KB (${Math.round(_jsBundle.gz.length / 1024)}KB gzipped)`);
 
+// Minify the bundle (roughly halves it again), off the main thread so the
+// server keeps answering while it works, and cached on disk under the source
+// hash so a restart with unchanged code is instant. Until it's ready the plain
+// bundle is served; afterwards the page links the minified one — a different
+// ?v= token, so nothing ever mixes the two. Top-level names are left alone:
+// the files share globals and the markup calls them from onclick="…".
+// MINIFY=0 turns it off.
+function _swapInMinified(code, sourceTag) {
+  const buf = Buffer.from(code, 'utf8');
+  new (require('vm').Script)(code, { filename: 'app.bundle.min.js' });   // never swap in something broken
+  Object.assign(_jsBundle, {
+    raw: buf,
+    gz: require('zlib').gzipSync(buf, { level: 9 }),
+    etag: '"' + require('crypto').createHash('sha1').update(buf).digest('hex').slice(0, 16) + '"',
+  });
+  console.log(`[bundle] minified${sourceTag} → ${Math.round(buf.length / 1024)}KB (${Math.round(_jsBundle.gz.length / 1024)}KB gzipped)`);
+}
+if (_jsBundle && process.env.MINIFY !== '0') {
+  const srcHash = _jsBundle.etag.slice(1, -1);
+  const cacheDir = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), '.cache');
+  const cacheFile = path.join(cacheDir, `bundle-${srcHash}.min.js`);
+  try {
+    if (fs.existsSync(cacheFile)) {
+      _swapInMinified(fs.readFileSync(cacheFile, 'utf8'), ' (cached)');
+    } else {
+      const { Worker } = require('worker_threads');
+      const worker = new Worker(`
+        const { parentPort, workerData } = require('worker_threads');
+        require(workerData.terser).minify(workerData.code, {
+          ecma: 2020, toplevel: false, mangle: true,
+          compress: { passes: 1 }, format: { comments: false },
+        }).then(r => parentPort.postMessage({ code: r.code }), e => parentPort.postMessage({ error: e.message }));
+      `, { eval: true, workerData: { code: _jsBundle.raw.toString('utf8'), terser: require.resolve('terser') } });
+      worker.once('message', msg => {
+        worker.terminate();
+        if (msg.error) return console.warn('[bundle] minify failed, serving unminified:', msg.error);
+        try {
+          _swapInMinified(msg.code, '');
+          fs.mkdirSync(cacheDir, { recursive: true });
+          for (const f of fs.readdirSync(cacheDir)) if (/^bundle-.*\.min\.js$/.test(f)) fs.unlinkSync(path.join(cacheDir, f));
+          fs.writeFileSync(cacheFile, msg.code);
+        } catch (e) {
+          console.warn('[bundle] minified output rejected, serving unminified:', e.message);
+        }
+      });
+      worker.once('error', e => console.warn('[bundle] minify worker failed:', e.message));
+      worker.unref();
+    }
+  } catch (e) {
+    console.warn('[bundle] minify skipped:', e.message);
+  }
+}
+
 // ?v= token for an asset URL: the app version plus a hash of the file itself, so
 // any change to a file — not just a version bump — gives it a new URL. Assets are
 // cached as immutable (and kept by the service worker), so a token that didn't

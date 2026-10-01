@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18        # same as the Dockerfile
+          cache: npm
+      - run: npm ci
+
+      - name: Syntax check (server and browser code)
+        run: |
+          for f in *.js v3/*.js v5/*.js public/sw.js public/js/*.js public/js/*/*.js; do
+            node --check "$f" || exit 1
+          done
+
+      - name: Unit tests
+        run: npm test
+
+      - name: API tests (real server, throwaway database)
+        run: npm run test:api
+
+      - name: Install Chromium for the browser test
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser smoke test (every page at phone size)
+        run: npm run test:smoke
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t rota-app-ci .
+      - name: Boot it and check it answers
+        run: |
+          docker run -d --name rota -p 3000:3000 rota-app-ci
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/api/version && exit 0
+            sleep 1
+          done
+          docker logs rota
+          exit 1
