@@ -316,6 +316,10 @@ db.exec(`
 const importBatchReviewMigrations = [
   'ALTER TABLE import_batches ADD COLUMN pending_conflicts TEXT',
   'ALTER TABLE import_batches ADD COLUMN pending_schedule_data TEXT',
+  // What the run found (unknown names, warnings, counts) and the schedule it
+  // read, so a background import can report back and be re-run later.
+  'ALTER TABLE import_batches ADD COLUMN summary TEXT',
+  'ALTER TABLE import_batches ADD COLUMN schedule_data TEXT',
 ];
 importBatchReviewMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* already exists */ }

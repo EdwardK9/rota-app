@@ -144,6 +144,7 @@ const API = {
   importColleagueJson: (data, overrides=[]) => API.post('/api/colleagues/import-json', { schedule_data: data, overrides }),
   getImportBatches: (limit = 10) => API.get('/api/colleagues/import-batches?limit=' + limit),
   undoImportBatch:  (batchId)    => API.delete(`/api/colleagues/import-batches/${batchId}`),
+  rerunImportBatch: (batchId)    => API.post(`/api/colleagues/import-batches/${batchId}/rerun`, {}),
   getBatchConflicts:     (batchId)           => API.get(`/api/colleagues/import-batches/${batchId}/conflicts`),
   resolveBatchConflicts: (batchId, overrides = []) => API.post(`/api/colleagues/import-batches/${batchId}/resolve-conflicts`, { overrides }),
   getPeople:        ()             => API.get('/api/working-with/people'),

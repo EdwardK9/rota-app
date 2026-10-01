@@ -2009,3 +2009,27 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
   .net-status { left: 0; }
 }
 .dash-clock-pending { font-size: 12px; font-weight: 600; color: var(--warning); white-space: nowrap; }
+
+/* Team Upload — names an import didn't recognise */
+.tu-unknown { margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); font-size: 12px; }
+.tu-unknown-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.tu-unknown-name { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--card-bg); color: var(--text); white-space: nowrap; }
+.tu-unknown-name .btn { min-height: 26px !important; padding: 2px 8px !important; }
+@media (max-width: 640px) {
+  /* Recent Imports: one card per import rather than a 5-column table */
+  #tuBatchList .table-wrapper { border: 0; overflow: visible; }
+  .tu-batch-table, .tu-batch-table tbody { display: block; }
+  .tu-batch-table thead { display: none; }
+  .tu-batch-table tbody tr {
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;
+    padding: 8px 4px; border-bottom: 1px solid var(--border);
+  }
+  .tu-batch-table tbody td { padding: 0 !important; white-space: normal !important; position: static !important; box-shadow: none !important; background: transparent !important; }
+  .tu-batch-table tbody td:nth-child(1) { grid-column: 1; font-weight: 600; }
+  .tu-batch-table tbody td:nth-child(2) { grid-column: 1; font-size: 12px; color: var(--text-muted); }
+  .tu-batch-table tbody td:nth-child(3) { grid-column: 1 / -1; }
+  .tu-batch-table tbody td:nth-child(4) { grid-column: 2; grid-row: 1; text-align: right; }
+  .tu-batch-table tbody td:nth-child(4)::after { content: ' shifts'; color: var(--text-muted); font-size: 12px; }
+  .tu-batch-table tbody td:nth-child(5) { grid-column: 2; grid-row: 2; }
+  .tu-batch-table tbody td[colspan] { grid-column: 1 / -1; }
+}

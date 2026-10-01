@@ -46,7 +46,7 @@ const TeamUploadView = {
         'ollama-remote': 'Ollama (remote)', lmstudio: 'LM Studio', json: 'JSON paste/AI extract', 'bulk-api': 'Bulk API' };
       el.innerHTML = `
         <div class="table-wrapper">
-          <table style="width:100%;font-size:13px;border-collapse:collapse">
+          <table class="tu-batch-table" style="width:100%;font-size:13px;border-collapse:collapse">
             <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
               <th style="padding:5px 8px;text-align:left;font-weight:500">When</th>
               <th style="padding:5px 8px;text-align:left;font-weight:500">Source</th>
@@ -57,17 +57,36 @@ const TeamUploadView = {
             <tbody>
               ${batches.map(b => `
                 <tr id="tuBatchRow-${b.id}" style="border-bottom:1px solid var(--border);${b.pending_conflict_count ? 'background:rgba(245,158,11,0.06)' : ''}">
-                  <td style="padding:5px 8px;white-space:nowrap">${esc(b.created_at)}</td>
+                  <td style="padding:5px 8px;white-space:nowrap">${esc(this._fmtWhen(b.created_at))}</td>
                   <td style="padding:5px 8px">${esc(sourceLabel[b.source] || b.source)}</td>
-                  <td style="padding:5px 8px;color:var(--text-muted)">${esc(b.note || '')}</td>
+                  <td style="padding:5px 8px;color:var(--text-muted)">
+                    ${esc(b.note || '')}${b.week ? `<div style="font-size:11.5px">Week ${esc(fmtDate(b.week[0]))} – ${esc(fmtDate(b.week[1]))}</div>` : ''}
+                    ${!b.undone_at && b.unknown_names.length ? `
+                      <div class="tu-unknown">
+                        <div style="font-weight:600;color:var(--warning)">⚠️ Didn't recognise ${b.unknown_names.length} name${b.unknown_names.length === 1 ? '' : 's'} — their shifts weren't imported:</div>
+                        <div class="tu-unknown-list">${b.unknown_names.map(n => `
+                          <span class="tu-unknown-name">${esc(n)}
+                            <button class="btn btn-sm btn-ghost" data-add-person="${esc(n)}" title="Add ${esc(n)} as a colleague">+ Add</button>
+                          </span>`).join('')}
+                        </div>
+                        <div style="font-size:11.5px">If it's someone already in your list under a different spelling, rename them in Manage People to match, then Re-run.</div>
+                      </div>` : ''}
+                    ${!b.undone_at && b.warnings.length ? `
+                      <details style="margin-top:4px;font-size:11.5px"><summary>${b.warnings.length} other issue${b.warnings.length === 1 ? '' : 's'}</summary>
+                        ${b.warnings.map(w => `<div>• ${esc(w)}</div>`).join('')}
+                      </details>` : ''}
+                  </td>
                   <td style="padding:5px 8px">${b.remaining_count}${b.remaining_count !== b.inserted_count ? ` / ${b.inserted_count}` : ''}</td>
                   <td style="padding:5px 8px;text-align:right;white-space:nowrap">
+                    ${!b.undone_at && b.can_rerun && (b.unknown_names.length || b.warnings.length)
+                      ? `<button class="btn btn-sm btn-ghost" data-rerun-batch="${b.id}" title="Run this import again — e.g. after adding the people it didn't recognise">↻ Re-run</button>`
+                      : ''}
                     ${!b.undone_at && b.pending_conflict_count
                       ? `<button class="btn btn-sm btn-primary" data-review-batch="${b.id}">⚡ Review (${b.pending_conflict_count})</button>`
                       : ''}
                     ${b.undone_at
                       ? '<span style="color:var(--text-muted)">Undone</span>'
-                      : b.remaining_count === 0 && !b.pending_conflict_count
+                      : b.remaining_count === 0 && !b.pending_conflict_count && b.inserted_count > 0
                       ? '<span style="color:var(--text-muted)">Nothing left</span>'
                       : b.remaining_count > 0
                       ? `<button class="btn btn-sm btn-ghost" style="color:var(--danger)" data-undo-batch="${b.id}">Undo</button>`
@@ -82,6 +101,12 @@ const TeamUploadView = {
       );
       el.querySelectorAll('[data-undo-batch]').forEach(btn =>
         btn.addEventListener('click', () => this._undoImportBatch(parseInt(btn.dataset.undoBatch, 10)))
+      );
+      el.querySelectorAll('[data-add-person]').forEach(btn =>
+        btn.addEventListener('click', () => this._addUnknownPerson(btn.dataset.addPerson, btn))
+      );
+      el.querySelectorAll('[data-rerun-batch]').forEach(btn =>
+        btn.addEventListener('click', () => this._rerunImportBatch(parseInt(btn.dataset.rerunBatch, 10), btn))
       );
     } catch (e) {
       el.innerHTML = `<span style="color:var(--danger)">Failed to load: ${esc(e.message)}</span>`;
@@ -214,6 +239,41 @@ const TeamUploadView = {
       if (!overrides.length) { showToast('Nothing to apply — every conflict is still set to Skip', 'info'); return; }
       onApply(overrides);
     });
+  },
+
+  // created_at is SQLite's UTC "YYYY-MM-DD HH:MM:SS" — show it in local time.
+  _fmtWhen(ts) {
+    const d = new Date(String(ts || '').replace(' ', 'T') + 'Z');
+    if (isNaN(d)) return ts || '';
+    return d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  },
+
+  // One tap to add a name the import didn't recognise as a new colleague.
+  async _addUnknownPerson(name, btn) {
+    btn.disabled = true;
+    try {
+      await API.addColleague(name);
+      btn.textContent = '✓ Added';
+      showToast(`Added ${name} — tap Re-run to import their shifts`, 'success');
+    } catch (e) {
+      btn.disabled = false;
+      showToast('Could not add: ' + e.message, 'error');
+    }
+  },
+
+  async _rerunImportBatch(batchId, btn) {
+    btn.disabled = true;
+    btn.textContent = '↻ Running…';
+    try {
+      const r = await API.rerunImportBatch(batchId);
+      const bits = [`${r.inserted} added`];
+      if (r.unknownNames.length) bits.push(`${r.unknownNames.length} still unrecognised`);
+      if (r.conflicts.length) bits.push(`${r.conflicts.length} to review`);
+      showToast('Re-run: ' + bits.join(' · '), r.inserted ? 'success' : 'warning');
+    } catch (e) {
+      showToast('Re-run failed: ' + e.message, 'error');
+    }
+    this._loadImportBatches();
   },
 
   async _undoImportBatch(batchId) {
