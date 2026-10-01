@@ -51,8 +51,10 @@ self.addEventListener('fetch', (e) => {
 });
 
 // Binary downloads, exports and anything streaming aren't worth (or safe) saving.
+// Settings and anything credential-shaped stay off the phone's disk too: the
+// settings response carries API keys and tokens.
 function isUncacheableApi(url) {
-  return /\/(files?|download|export|photos?|backup|db-backups|ics|image|thumb)/i.test(url.pathname);
+  return /\/(files?|download|export|photos?|backup|db-backups|ics|image|thumb|settings|rotageek|gcal|google|token|key)/i.test(url.pathname);
 }
 
 async function assetCacheFirst(req, url) {
