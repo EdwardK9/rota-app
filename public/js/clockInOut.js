@@ -30,11 +30,11 @@ const ClockInOutView = {
           <div class="card-body">
             <div id="ckTodaySchedule" style="font-size:13px;color:var(--text-muted);margin-bottom:16px"></div>
 
-            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-bottom:20px">
+            <div class="ck-cols" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-bottom:20px">
               <!-- Clock In -->
-              <div style="flex:1;min-width:200px;text-align:center">
+              <div class="ck-col" style="flex:1;min-width:200px;text-align:center">
                 <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Clocked In</div>
-                <div id="ckInTime" style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:2px">--:--</div>
+                <div id="ckInTime" class="ck-time" style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:2px">--:--</div>
                 <div id="ckInTarget" style="font-size:12px;color:var(--text-muted);margin-bottom:10px"></div>
                 <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
                   <button class="btn btn-primary" id="ckInBtn" style="min-width:110px">Clock In</button>
@@ -43,12 +43,12 @@ const ClockInOutView = {
                 <div id="ckInDiff" style="margin-top:8px;font-size:13px;font-weight:600"></div>
               </div>
 
-              <div style="align-self:center;font-size:24px;color:var(--border)">→</div>
+              <div class="ck-arrow" style="align-self:center;font-size:24px;color:var(--border)">→</div>
 
               <!-- Clock Out -->
-              <div style="flex:1;min-width:200px;text-align:center">
+              <div class="ck-col" style="flex:1;min-width:200px;text-align:center">
                 <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Clocked Out</div>
-                <div id="ckOutTime" style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:2px">--:--</div>
+                <div id="ckOutTime" class="ck-time" style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:2px">--:--</div>
                 <div id="ckOutTarget" style="font-size:12px;color:var(--text-muted);margin-bottom:10px"></div>
                 <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
                   <button class="btn btn-danger" id="ckOutBtn" style="min-width:110px">Clock Out</button>
