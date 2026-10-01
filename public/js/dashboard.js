@@ -113,7 +113,7 @@ const DashboardView = {
         <div class="dash-no-shift">
           <div class="dash-no-shift-icon">☀️</div>
           <div class="dash-no-shift-msg">No upcoming shifts in the next 60 days</div>
-          <button class="btn btn-ghost btn-sm" onclick="App.navigate('shifts')">View all shifts →</button>
+          <button class="dash-link" onclick="App.navigate('shifts')">View all shifts →</button>
         </div>
       `;
     } else {
@@ -173,18 +173,18 @@ const DashboardView = {
       }
 
       el.innerHTML = `
-        <div class="dash-upcoming-section" style="margin-top:0;margin-bottom:16px">
+        <div class="dash-card">
           <div class="dash-section-title">💰 Next Payday</div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0 2px">
-            <span style="font-size:20px;font-weight:700">${daysUntil <= 0 ? 'Today' : daysUntil + ' day' + (daysUntil !== 1 ? 's' : '')}</span>
-            <span style="font-size:12px;color:var(--text-muted)">${nextPayDateStr}</span>
+          <div class="dash-payday-main">
+            <span class="dash-payday-days">${daysUntil <= 0 ? 'Today' : daysUntil + ' day' + (daysUntil !== 1 ? 's' : '')}</span>
+            <span class="dash-payday-date">${nextPayDateStr}</span>
           </div>
           ${predictedGross != null ? `
-            <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px">
-              <span style="color:var(--text-muted)">Predicted gross</span>
-              <span style="font-weight:600" class="money">£${predictedGross.toFixed(2)}</span>
+            <div class="dash-kv">
+              <span>Predicted gross</span>
+              <strong class="money">£${predictedGross.toFixed(2)}</strong>
             </div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">From logged shifts so far — not a guarantee</div>
+            <div class="dash-footnote">From logged shifts so far — not a guarantee</div>
           ` : ''}
         </div>`;
     } catch (e) {
@@ -207,20 +207,24 @@ const DashboardView = {
 
     const monthName = new Date(todayStr + 'T12:00:00').toLocaleDateString('en-GB', { month: 'long' });
     const fmtH = h => (Math.round(h * 10) / 10) + 'h';
-    const fmtP = p => `<span class="money">£${p.toFixed(2)}</span>`;
+    // Whole pounds: three tiles share a narrow column, and pence don't help at a glance.
+    const fmtP = p => `<span class="money">£${Math.round(p).toLocaleString('en-GB')}</span>`;
 
-    const row = (label, value) => `
-      <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px">
-        <span style="color:var(--text-muted)">${label}</span>
-        <span style="font-weight:600">${value}</span>
+    const tile = (label, value, sub) => `
+      <div class="dash-tile">
+        <div class="dash-tile-label">${label}</div>
+        <div class="dash-tile-value">${value}</div>
+        ${sub ? `<div class="dash-tile-sub">${sub}</div>` : ''}
       </div>`;
 
     el.innerHTML = `
-      <div class="dash-upcoming-section" style="margin-top:0;margin-bottom:16px">
-        <div class="dash-section-title">This Month — ${monthName}</div>
-        ${row('Worked so far', `${fmtH(workedHours)} · ${fmtP(paySoFar)}`)}
-        ${row('Month total (est.)', `${fmtH(schedHours)} · ${fmtP(schedPay)}`)}
-        ${row('Shifts left', `${shiftsLeft}`)}
+      <div class="dash-card">
+        <div class="dash-section-title">📅 ${monthName}</div>
+        <div class="dash-tiles">
+          ${tile('Worked', fmtP(paySoFar), fmtH(workedHours))}
+          ${tile('Month est.', fmtP(schedPay), fmtH(schedHours))}
+          ${tile('Shifts left', shiftsLeft)}
+        </div>
       </div>
     `;
   },
@@ -242,19 +246,16 @@ const DashboardView = {
     const weekKey = this._currentMondayKey();
     if (localStorage.getItem('jsonReminderDismissed') === weekKey) return '';
     return `
-      <div id="dashJsonReminder" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-        background:var(--card-bg);border:1px solid var(--border);border-left:4px solid var(--primary);
-        border-radius:8px;padding:12px 14px;margin-bottom:16px">
-        <span style="font-size:20px">📸</span>
-        <div style="flex:1;min-width:200px">
-          <div style="font-weight:600;font-size:13.5px">Upload last week's team JSON</div>
-          <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px">
-            The best way to keep everyone's Team Calendar accurate — screenshot last week's
-            Rotageek team schedule and run it through Team Upload.
-          </div>
+      <div id="dashJsonReminder" class="dash-banner">
+        <span class="dash-banner-icon">📸</span>
+        <div class="dash-banner-text">
+          <div class="dash-banner-title">Upload last week's team JSON</div>
+          <div class="dash-banner-sub">Keeps everyone's Team Calendar accurate — screenshot last week's Rotageek team schedule and run it through Team Upload.</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="App.navigate('team-upload')">Upload now</button>
-        <button class="btn btn-ghost btn-sm" id="dashJsonReminderDismiss" title="Hide for this week">✕</button>
+        <div class="dash-banner-actions">
+          <button class="btn btn-primary btn-sm" onclick="App.navigate('team-upload')">Upload now</button>
+        </div>
+        <button class="dash-banner-close" id="dashJsonReminderDismiss" title="Hide for this week" aria-label="Hide for this week">✕</button>
       </div>`;
   },
 
@@ -310,13 +311,15 @@ const DashboardView = {
 
     el.innerHTML = `
       <div class="dash-hero-card${isOngoing ? ' dash-hero-live' : ''}">
-        <div class="dash-hero-header">
-          <div class="dash-hero-label">${ceLive ? 'Current Shift' : 'Next Shift'}</div>
+        <div class="dash-hero-top">
+          <div>
+            <div class="dash-hero-label">${ceLive ? 'Current Shift' : 'Next Shift'}</div>
+            <div class="dash-hero-day">${dayFull}</div>
+            <div class="dash-hero-date">${dateFormatted}</div>
+          </div>
           <span class="dash-status ${badgeClass}">${badgeText}</span>
         </div>
-
-        <div class="dash-hero-day">${dayFull}</div>
-        <div class="dash-hero-date">${dateFormatted}</div>
+        <div class="dash-hero-body">
 
         <div class="dash-hero-time">${shift.start_time} <span class="dash-arrow">→</span> ${shift.end_time}</div>
 
@@ -360,18 +363,21 @@ const DashboardView = {
           const last = clockToday?.lastEntry || null;
           if (ce) {
             return `<div class="dash-clock-status">
-              <span class="dash-clock-in-time">Clocked in ${ce.clocked_in}</span>
+              <span class="dash-clock-in-time">🟢 Clocked in at ${ce.clocked_in}</span>
               <button class="btn btn-clock-out" onclick="DashboardView.clockOut()">Clock Out</button>
             </div>`;
           } else if (last && last.clocked_out) {
             return `<div class="dash-clock-status">
-              <span class="dash-clock-done">✓ Clocked out ${last.clocked_out}</span>
+              <span class="dash-clock-done">✓ Last clocked out at ${last.clocked_out}</span>
               <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Start Next Shift</button>
             </div>`;
           } else {
-            return `<button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>`;
+            return `<div class="dash-clock-status">
+              <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>
+            </div>`;
           }
         })()}
+        </div>
       </div>
     `;
 
@@ -398,8 +404,9 @@ const DashboardView = {
       const alertsHtml = point.alerts && point.alerts.length
         ? point.alerts.map(a => ` <span class="dash-weather-alert">${a.icon} ${a.text}</span>`).join('')
         : '';
-      return `<div class="dash-weather-row">
-        <span>${icon} ${label} (${point.time}): ${Math.round(point.temp)}°C ${point.icon}</span>${alertsHtml}
+      return `<div class="dash-weather-chip" title="${label} at ${point.time}">
+        <span class="dash-weather-leg">${icon} ${label}</span>
+        <span class="dash-weather-val">${point.icon} ${Math.round(point.temp)}°C <span class="dash-weather-time">${point.time}</span></span>${alertsHtml}
       </div>`;
     };
     const rows = leg('🚗', 'Commute To', weather.commute_to)
@@ -605,22 +612,25 @@ const DashboardView = {
       const dateStr  = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       const dur = this._duration(s.start_time, s.end_time);
       return `
-        <div class="dash-upcoming-row dash-upcoming-clickable" data-shift-id="${s.id ?? i}" title="Tap to see who you're working with">
-          <div class="dash-upcoming-day">${dayShort}</div>
-          <div class="dash-upcoming-date">${dateStr}</div>
-          <div class="dash-upcoming-time">${s.start_time} – ${s.end_time}</div>
-          <div class="dash-upcoming-dur">${dur}</div>
-          <div class="dash-upcoming-who">👥</div>
-        </div>
+        <button type="button" class="dash-upcoming-row dash-upcoming-clickable" data-shift-id="${s.id ?? i}" title="Tap to see who you're working with">
+          <span class="dash-date-badge"><span class="dash-date-badge-dow">${dayShort}</span><span class="dash-date-badge-num">${d.getDate()}</span></span>
+          <span class="dash-upcoming-main">
+            <span class="dash-upcoming-time">${s.start_time} – ${s.end_time}</span>
+            <span class="dash-upcoming-date">${dateStr} · ${dur}</span>
+          </span>
+          <span class="dash-upcoming-who" aria-hidden="true">👥 ›</span>
+        </button>
       `;
     }).join('');
 
     el.innerHTML = `
-      <div class="dash-upcoming-section">
-        <div class="dash-section-title">Coming Up</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin:-6px 0 8px">Tap a shift to see who you're working with 👥</div>
-        ${rows}
-        <button class="btn btn-ghost btn-sm dash-all-btn" onclick="App.navigate('shifts')">View all shifts →</button>
+      <div class="dash-card">
+        <div class="dash-card-head">
+          <div class="dash-section-title">Coming Up</div>
+          <button class="dash-link" onclick="App.navigate('shifts')">All shifts →</button>
+        </div>
+        <div class="dash-upcoming-list">${rows}</div>
+        <div class="dash-footnote">Tap a shift to see who you're working with</div>
       </div>
     `;
 
@@ -726,20 +736,19 @@ const DashboardView = {
       const rows = shifts.length ? shifts.map(r => `
         <div class="dash-nextin-row">
           <span class="dash-nextin-name">${esc(r.name)}</span>
-          <span class="dash-nextin-date ${dateStr === anchorStr ? 'dash-nextin-today' : ''}">
+          <span class="dash-nextin-date${dateStr === anchorStr ? ' dash-nextin-today' : ''}">
             ${r.start_time} – ${r.end_time}
           </span>
         </div>`).join('')
         : `<div class="dash-nextin-row"><span class="dash-nextin-date" style="color:var(--text-muted)">No one scheduled</span></div>`;
       return `
-        <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
-          color:var(--text-muted);margin:10px 0 4px">${dayLabel(dateStr)}</div>
+        <div class="dash-nextin-day">${dayLabel(dateStr)}</div>
         ${rows}`;
     }).join('');
 
     el.innerHTML = `
-      <div class="dash-upcoming-section" style="margin-top:0">
-        <div class="dash-section-title">Next In</div>
+      <div class="dash-card">
+        <div class="dash-section-title">👥 Next In</div>
         ${daySections}
       </div>
     `;
