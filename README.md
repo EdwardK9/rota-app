@@ -852,6 +852,18 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 
 ---
 
+## Tests
+
+| Command | What it checks |
+|---|---|
+| `npm test` | Pure-logic unit tests (break policy, contract hours, delivery window, team-import parsing). No database needed. |
+| `npm run test:api` | Boots the real server on a throwaway database and exercises pages/bundle, shifts, clock in/out (incl. retries), NFC tap replay and team import. |
+| `npm run test:smoke` | Opens every page at phone size in Chromium and fails on any JS error, error card or sideways scrolling. Needs `npx playwright install chromium` once. |
+
+All three run on every push via GitHub Actions (`.github/workflows/ci.yml`), along with building the Docker image and checking it boots.
+
+---
+
 ## Troubleshooting
 
 ### App won't load in browser
