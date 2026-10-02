@@ -50,6 +50,16 @@ async function req(method, p, body) {
     const badJson = await fetch(BASE + '/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{oops' });
     check('malformed JSON → JSON 400', badJson.status === 400 && (await badJson.json()).error);
 
+    console.log('\nSecrets stay on the server:');
+    await req('POST', '/api/settings', { gemini_api_key: 'AIza-real-test-key', your_name: 'Ed Kay' });
+    const st = await req('GET', '/api/settings');
+    check('a saved API key is not sent to the page', st.body.gemini_api_key && !JSON.stringify(st.body).includes('AIza-real-test-key'), st.body.gemini_api_key);
+    check('ordinary settings still are', st.body.your_name === 'Ed Kay', st.body.your_name);
+    await req('POST', '/api/settings', { ...st.body, your_name: 'Ed K' });   // a form saving everything back
+    const stored = new (require('better-sqlite3'))(require('path').join(server.dataDir, 'rota.db'), { readonly: true })
+      .prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
+    check('saving the placeholder back keeps the real key', stored && stored.value === 'AIza-real-test-key', stored);
+
     console.log('\nShifts:');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
     const created = await req('POST', '/api/shifts', { date: today, start_time: '09:00', end_time: '17:30' });

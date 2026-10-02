@@ -689,20 +689,39 @@ app.delete('/api/pay-rates/:id', (req, res) => {
 // SETTINGS
 // ─────────────────────────────────────────
 
-app.get('/api/settings', (req, res) => {
-  const rows = db.prepare('SELECT * FROM settings').all();
+// Credentials the browser never needs to read back. They're only ever used
+// server-side (Gemini calls, Google Calendar, GitHub backup, Rotageek), so the
+// settings the page loads carry a placeholder instead — enough for "a key is
+// saved" checks — and the real value never leaves the server. The NFC and iCal
+// tokens are deliberately NOT here: the page shows the tag/feed URLs built
+// from them. (The full JSON backup still includes everything, by design.)
+const SECRET_SETTING_KEYS = new Set([
+  'gemini_api_key', 'gcal_client_secret', 'gcal_refresh_token', 'github_backup_token',
+  'rotageek_password', 'rotageek_token', 'rotageek_cookie', 'rotageek_csrf_token',
+]);
+const SECRET_PLACEHOLDER = '••••••••';
+
+function publicSettings() {
   const settings = {};
-  rows.forEach(r => { settings[r.key] = r.value; });
-  res.json(settings);
+  for (const r of db.prepare('SELECT * FROM settings').all()) {
+    settings[r.key] = SECRET_SETTING_KEYS.has(r.key) && r.value ? SECRET_PLACEHOLDER : r.value;
+  }
+  return settings;
+}
+
+app.get('/api/settings', (req, res) => {
+  res.json(publicSettings());
 });
 
 app.post('/api/settings', (req, res) => {
   const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
-  Object.entries(req.body).forEach(([key, value]) => upsert.run(key, String(value)));
-  const rows = db.prepare('SELECT * FROM settings').all();
-  const settings = {};
-  rows.forEach(r => { settings[r.key] = r.value; });
-  res.json(settings);
+  Object.entries(req.body).forEach(([key, value]) => {
+    // A form (or anything else) sending back the placeholder it was given must
+    // never overwrite the real stored secret with it.
+    if (SECRET_SETTING_KEYS.has(key) && value === SECRET_PLACEHOLDER) return;
+    upsert.run(key, String(value));
+  });
+  res.json(publicSettings());
 });
 
 // -----------------------------------------
