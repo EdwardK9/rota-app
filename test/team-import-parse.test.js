@@ -7,7 +7,7 @@
    shift under the wrong colleague.
    ───────────────────────────────────────────────────────────────────────── */
 const {
-  resolveWeekDates, resolveWeekForSchedule, resolveDayDate, parseTimeRange, fuzzyMatch, nameMatchesStrict, extractJson,
+  resolveWeekDates, resolveWeekForSchedule, resolveDayDate, coerceSchedule, parseTimeRange, fuzzyMatch, nameMatchesStrict, extractJson,
 } = require('../teamImportParse');
 
 let failures = 0;
@@ -90,6 +90,17 @@ check('plain JSON', extractJson('{"a":1}'), { a: 1 });
 check('```json fenced', extractJson('```json\n{"a":1}\n```'), { a: 1 });
 check('chatter before and after', extractJson('Here is the schedule:\n{"a":{"b":2}}\nLet me know!'), { a: { b: 2 } });
 check('not JSON', extractJson('Sorry, I cannot read this image.'), null);
+
+console.log('\nModel replies in other shapes:');
+const one = { date_range: 'Sep 28, 2026 – Oct 4, 2026', schedule: [{ date: 'Mon 28', shifts: [{ name: 'Erin Ward', time: '09:00 - 17:00' }] }] };
+check('the expected shape passes through', coerceSchedule(one).schedule.length, 1);
+check('wrapped in an array', coerceSchedule([one]).date_range, one.date_range);
+check('"days" instead of "schedule"', coerceSchedule({ date_range: 'x', days: one.schedule }).schedule[0].date, 'Mon 28');
+check('a bare array of days', coerceSchedule(one.schedule).schedule[0].shifts[0].name, 'Erin Ward');
+check('a flat list of shifts with their own dates', coerceSchedule({ date_range: 'x', shifts: [
+  { name: 'A', date: 'Mon 28', start_time: '09:00', end_time: '17:00' }, { name: 'B', date: 'Mon 28', time: '12:00-20:00' },
+  { name: 'C', date: 'Tue 29', time: '09:00-17:00' }] }).schedule.map(d => d.date + ':' + d.shifts.length), ['Mon 28:2', 'Tue 29:1']);
+check('nothing schedule-like', coerceSchedule({ error: 'cannot read image' }), null);
 
 console.log(failures ? `\n${failures} check(s) FAILED.\n` : '\nAll checks passed.\n');
 process.exit(failures ? 1 : 0);

@@ -391,7 +391,7 @@ const TeamUploadView = {
       <div class="card" id="tuQueueCard" style="max-width:760px;margin:0 auto 20px;display:none">
         <div class="card-header"><h2>\u{1F4E5} Processing Queue</h2></div>
         <div class="card-body">
-          <div id="tuQueueGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px"></div>
+          <div id="tuQueueGrid"></div>
         </div>
       </div>
 
@@ -561,45 +561,46 @@ RULES — follow exactly:
     const grid = document.getElementById('tuQueueGrid');
     if (!card || !grid) return;
     try {
-      const { pending, failed } = await API.getScreenshotQueue();
+      const q = await API.getScreenshotQueue();
+      const pending = q.pending || [], failed = q.failed || [], waiting = q.waiting || [];
       // A drop in the queue count means something just finished since the
       // last check — refresh Recent Imports so it shows up there promptly
       // rather than waiting for that list's own poll to happen to land.
-      const total = pending.length + failed.length;
+      const total = pending.length + waiting.length + failed.length;
       if (this._lastScreenshotQueueCount !== undefined && total < this._lastScreenshotQueueCount) {
         this._loadImportBatches();
       }
       this._lastScreenshotQueueCount = total;
 
-      if (!pending.length && !failed.length) { card.style.display = 'none'; return; }
+      if (!total) { card.style.display = 'none'; return; }
       card.style.display = 'block';
 
-      const thumb = id => `<img src="/api/photo-library/files/${id}/image" loading="lazy"
+      const thumb = id => `<img src="/api/photo-library/files/${id}/image" loading="lazy" alt=""
         style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block" />`;
-      const cardWrap = (inner, borderColor) => `
-        <div style="position:relative;border-radius:8px;overflow:hidden;background:var(--card-bg);
-          box-shadow:var(--card-shadow);border:2px solid ${borderColor}">${inner}</div>`;
-      const badge = (text, bg, fg) => `<div style="position:absolute;top:4px;left:4px;right:4px;
-        padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;text-align:center;
-        background:${bg};color:${fg};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${text}</div>`;
-      const caption = filename => `<div style="padding:4px 6px;font-size:10px;color:var(--text-muted);
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(filename)}">${esc(filename)}</div>`;
+      const pauseNote = q.paused_secs > 0
+        ? `Gemini is paused for ${q.paused_secs >= 90 ? Math.round(q.paused_secs / 60) + ' min' : q.paused_secs + 's'} (rate limit) — it'll carry on by itself.`
+        : '';
+      // Status + the actual reason as readable text on the card — it used to be
+      // a tooltip on the Retry button, which a phone can't show at all.
+      const qCard = ({ id, filename, kind, label, reason, action }) => `
+        <div class="tu-q-card tu-q-${kind}">
+          <div class="tu-q-thumb">${thumb(id)}<span class="tu-q-badge">${label}</span></div>
+          <div class="tu-q-body">
+            <div class="tu-q-name" title="${esc(filename)}">${esc(filename)}</div>
+            ${reason ? `<div class="tu-q-reason">${esc(reason)}</div>` : ''}
+            ${action || ''}
+          </div>
+        </div>`;
 
       let html = '';
-
-      html += pending.map(p => cardWrap(`
-        ${thumb(p.id)}
-        ${badge('⏳ Waiting…', 'rgba(0,0,0,0.55)', '#fff')}
-        ${caption(p.filename)}
-      `, 'transparent')).join('');
-
-      html += failed.map(f => cardWrap(`
-        ${thumb(f.id)}
-        ${badge('⚠️ Failed', 'var(--danger)', '#fff')}
-        ${caption(f.filename)}
-        <button class="btn btn-sm btn-ghost" data-retry-screenshot="${f.id}"
-          style="width:100%;border-radius:0;font-size:11px" title="${esc(f.process_error)}">Retry</button>
-      `, 'var(--danger)')).join('');
+      html += pending.map(p => qCard({ ...p, kind: 'pending', label: '⏳ Queued',
+        reason: pauseNote || 'Waiting its turn to be read.' })).join('');
+      html += waiting.map(w => qCard({ ...w, kind: 'waiting', label: '🔁 Will retry',
+        reason: (w.process_attempts ? `Attempt ${w.process_attempts} of ${q.max_attempts || 3} failed: ` : '') + (w.process_error || ''),
+        action: `<button class="btn btn-sm btn-ghost" data-retry-screenshot="${w.id}">Try again now</button>` })).join('');
+      html += failed.map(f => qCard({ ...f, kind: 'failed', label: '⚠️ Failed',
+        reason: `Gave up after ${f.process_attempts} tries: ${f.process_error || 'unknown error'}`,
+        action: `<button class="btn btn-sm btn-primary" data-retry-screenshot="${f.id}">Retry</button>` })).join('');
 
       grid.innerHTML = html;
 

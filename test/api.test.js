@@ -26,8 +26,37 @@ async function req(method, p, body) {
   return { status: res.status, headers: res.headers, body: type.includes('json') ? await res.json() : await res.text() };
 }
 
+// A stand-in for the Gemini API, so the screenshot queue can be tested end to
+// end without a key or network. `mode` picks how it behaves.
+const http = require('http');
+const fake = { mode: 'ok', modelsUsed: [] };
+const fakeSchedule = { date_range: 'Oct 12, 2026 – Oct 18, 2026', schedule: [
+  { date: 'Mon 12', shifts: [{ name: 'Erin Ward', time: '09:00 - 17:00' }] },
+  { date: 'Tue 13', shifts: [{ name: 'Wayne Aitken', time: '12:00 - 20:00' }] },
+] };
+const fakeGemini = http.createServer((rq, rs) => {
+  let body = '';
+  rq.on('data', d => { body += d; });
+  rq.on('end', () => {
+    const send = (code, obj) => { rs.writeHead(code, { 'Content-Type': 'application/json' }); rs.end(JSON.stringify(obj)); };
+    if (rq.method === 'GET') {   // model list
+      return send(200, { models: ['gemini-main', 'gemini-fallback'].map(n => ({ name: 'models/' + n, supportedGenerationMethods: ['generateContent'] })) });
+    }
+    const model = (rq.url.match(/models\/([^:]+):/) || [])[1];
+    fake.modelsUsed.push(model);
+    const reply = text => send(200, { candidates: [{ content: { parts: [{ text }] } }] });
+    if (fake.mode === 'array-wrapped') return reply(JSON.stringify([fakeSchedule]));
+    if (fake.mode === 'quota-then-fallback' && model === 'gemini-main') {
+      return send(429, { error: { code: 429, message: 'You exceeded your current quota. Quota exceeded for metric: generate_content_free_tier_requests, limit: 0', status: 'RESOURCE_EXHAUSTED' } });
+    }
+    if (fake.mode === 'nonsense') return reply("Sorry, I can't read this image clearly.");
+    return reply(JSON.stringify(fakeSchedule));
+  });
+});
+
 (async () => {
-  const server = await startServer({ env: { MINIFY: '0' } });
+  await new Promise(r => fakeGemini.listen(0, '127.0.0.1', r));
+  const server = await startServer({ env: { MINIFY: '0', GEMINI_API_BASE: `http://127.0.0.1:${fakeGemini.address().port}` } });
   BASE = server.base;
   try {
     console.log('\nPage and assets:');
@@ -102,11 +131,47 @@ async function req(method, p, body) {
     await req('POST', '/api/colleagues', { name: 'Priya Shah' });
     const rerun = await req('POST', `/api/colleagues/import-batches/${imp.body.batchId}/rerun`, {});
     check('re-running after adding them imports their shift', rerun.body.inserted === 1 && !rerun.body.unknownNames.length, rerun.body);
+
+    console.log('\nScreenshot queue (with a stand-in Gemini):');
+    await req('POST', '/api/settings', { gemini_api_key: 'test-key', gemini_model: 'gemini-main' });
+    // Each test screenshot's file name shows up in its batch note.
+    const queueOne = async (name) => {
+      const fd = new FormData();
+      fd.append('screenshots', new Blob([Buffer.from([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }), name + '.jpg');
+      const r = await fetch(BASE + '/api/colleagues/screenshot-queue', { method: 'POST', body: fd });
+      return (await r.json()).fileIds[0];
+    };
+    const waitFor = async (fn, ms = 15000) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end) { const v = await fn(); if (v) return v; await new Promise(r => setTimeout(r, 300)); }
+      return null;
+    };
+    const queueState = async () => (await req('GET', '/api/colleagues/screenshot-queue')).body;
+    const doneBatch = async note => (await req('GET', '/api/colleagues/import-batches?limit=20')).body.batches.find(b => (b.note || '').includes(note));
+
+    fake.mode = 'array-wrapped';
+    await queueOne('array-wrapped');
+    check('a reply wrapped in an array is still imported', await waitFor(() => doneBatch('array-wrapped')), await queueState());
+
+    fake.mode = 'quota-then-fallback';
+    fake.modelsUsed = [];
+    const fbId = await queueOne('quota-fallback');
+    const inQueue = q => [...q.pending, ...q.waiting, ...q.failed].some(x => x.id === fbId);
+    const fbDone = await waitFor(async () => !inQueue(await queueState()));
+    check('when the main model is out of quota, another model reads it', fbDone && fake.modelsUsed.includes('gemini-fallback'), { state: await queueState(), used: fake.modelsUsed });
+
+    fake.mode = 'nonsense';
+    const badId = await queueOne('nonsense');
+    const qs = await waitFor(async () => { const q = await queueState(); return [...q.waiting, ...q.failed].some(x => x.id === badId) && q; });
+    const bad = qs && [...qs.waiting, ...qs.failed].find(x => x.id === badId);
+    check('after one failed try it shows as "will retry", not "failed"', bad && qs.waiting.some(x => x.id === badId), qs);
+    check('…with the reason, including what Gemini actually said', bad && /Sorry, I can't read/.test(bad.process_error), bad);
   } catch (e) {
     failures++;
     console.log('  FAIL  ' + e.stack);
   } finally {
     server.stop();
+    fakeGemini.close();
   }
   if (failures && process.env.SHOW_SERVER_LOG) console.log(server.log());
   console.log(failures ? `\n${failures} check(s) FAILED.\n` : '\nAll checks passed.\n');
