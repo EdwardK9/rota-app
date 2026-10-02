@@ -14,7 +14,7 @@ const express  = require('express');
 const multer   = require('multer');
 const {
   resolveWeekDates, resolveWeekForSchedule, resolveWeekDatesLoose, resolveDayDate, parseTimeRange,
-  fuzzyMatch, nameMatchesStrict, extractJson,
+  fuzzyMatch, nameMatchesStrict, extractJson, coerceSchedule,
 } = require('./teamImportParse');
 const { db, effectiveHourlyRate, rolePayForDate, contractHoursForColleagueOnDate, autoBreakMinutes, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
 const router   = express.Router();
@@ -448,10 +448,13 @@ function isGeminiOverloadError(status, message) {
 // Same live-model fetch as GET /colleagues/gemini-models, reused here so the fallback
 // list never goes stale the way a hardcoded one would (see the gemini-2.5-flash
 // retirement this was already bitten by once).
+// Overridable only so the tests can stand in a fake Gemini (test/api.test.js).
+const GEMINI_API_BASE = process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com';
+
 async function fetchAvailableGeminiModels(apiKey) {
   let r;
   try {
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+    r = await fetch(`${GEMINI_API_BASE}/v1beta/models?key=${apiKey}`, {
       signal: AbortSignal.timeout(8000),
     });
   } catch (_) { return []; }
@@ -486,7 +489,7 @@ function rankGeminiModel(name) {
 // sequentially, so one hung call could stall every screenshot behind it.
 const GEMINI_VISION_TIMEOUT_MS = 45000;
 
-async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMode = true) {
+async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMode = true, timeoutMs = GEMINI_VISION_TIMEOUT_MS) {
   // JSON mode makes the model return bare JSON rather than prose around it —
   // the most common reason a screenshot came back "could not parse JSON". A
   // model that doesn't support it says so with a 400, and gets asked again
@@ -496,7 +499,7 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMod
   let geminiRes;
   try {
     geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      `${GEMINI_API_BASE}/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -504,13 +507,13 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMod
           contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageB64 } }] }],
           generationConfig,
         }),
-        signal: AbortSignal.timeout(GEMINI_VISION_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       }
     );
   } catch (fetchErr) {
     const err = new Error(
       fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError'
-        ? `${model} didn't respond within ${GEMINI_VISION_TIMEOUT_MS / 1000}s`
+        ? `${model} didn't respond within ${timeoutMs / 1000}s`
         : fetchErr.message
     );
     err.status = 504;
@@ -522,7 +525,7 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMod
     const errBody = await geminiRes.json().catch(() => ({}));
     const message  = errBody?.error?.message || `Gemini API error ${geminiRes.status}`;
     if (jsonMode && geminiRes.status === 400 && /json|mime/i.test(message)) {
-      return callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, false);
+      return callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, false, timeoutMs);
     }
     const err = new Error(message);
     err.status = geminiRes.status;
@@ -547,7 +550,15 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMod
 // other available vision models (up to 3) before giving up. Throws (with .status) for
 // a missing key or a hard non-overload error; returns parsed:null (with rawText) if
 // Gemini's response wasn't valid JSON, so callers can decide how to surface that softly.
-async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
+// A model's own quota running out (429 / RESOURCE_EXHAUSTED) is worth trying
+// another model for, same as "overloaded": on the free tier every model has a
+// separate allowance, so flash-lite or 2.0-flash can still answer when the
+// configured model is used up for the minute (or the day).
+function isGeminiQuotaError(err) {
+  return err?.status === 429 || /quota|resource[_ ]exhausted|rate.?limit|too many requests/i.test(err?.message || '');
+}
+
+async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT, { timeoutMs = GEMINI_VISION_TIMEOUT_MS } = {}) {
   const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
   const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
   const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
@@ -562,9 +573,9 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
 
   let lastErr;
   try {
-    return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, primaryModel);
+    return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, primaryModel, true, timeoutMs);
   } catch (err) {
-    if (!err.overloaded) throw err;
+    if (!err.overloaded && !isGeminiQuotaError(err)) throw err;
     lastErr = err;
   }
 
@@ -579,15 +590,15 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT) {
 
   for (const model of fallbacks) {
     try {
-      return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, model);
+      return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, true, timeoutMs);
     } catch (err) {
       lastErr = err;
-      if (!err.overloaded) throw err;
+      if (!err.overloaded && !isGeminiQuotaError(err)) throw err;
     }
   }
 
   lastErr.message = fallbacks.length
-    ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all overloaded right now — try again shortly. (${lastErr.message})`
+    ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all busy or out of quota right now — try again shortly. (${lastErr.message})`
     : lastErr.message;
   throw lastErr;
 }
@@ -615,7 +626,7 @@ async function callGeminiOnceText(prompt, apiKey, model) {
   let geminiRes;
   try {
     geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      `${GEMINI_API_BASE}/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -830,7 +841,7 @@ router.get('/colleagues/gemini-models', async (req, res) => {
   if (!apiKey) return res.status(400).json({ error: 'No Gemini API key configured yet' });
 
   try {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    const r = await fetch(`${GEMINI_API_BASE}/v1beta/models?key=${apiKey}`);
     if (!r.ok) {
       const errBody = await r.json().catch(() => ({}));
       return res.status(502).json({ error: errBody?.error?.message || `Gemini API returned ${r.status}` });
@@ -2290,6 +2301,9 @@ router.post('/colleagues/screenshot-queue', upload.array('screenshots', 10), (re
 // Finished screenshots (imported cleanly, or needing conflict review) belong
 // in Recent Imports, not here — this is a queue of in-flight work, not a
 // history log, so a completed item drops out the moment it's done.
+// Three states, not two: a screenshot with an error that will still be retried
+// automatically (rate limit, or a failed attempt with attempts left) used to be
+// shown as "Failed" — with the reason only in a tooltip a phone can't show.
 router.get('/colleagues/screenshot-queue', (req, res) => {
   const rows = db.prepare(`
     SELECT id, filename, uploaded_at, process_error, process_attempts
@@ -2297,9 +2311,13 @@ router.get('/colleagues/screenshot-queue', (req, res) => {
     WHERE queued_for_import = 1 AND processed_at IS NULL
     ORDER BY id ASC
   `).all();
+  const gaveUp = r => r.process_error && r.process_attempts >= SCREENSHOT_QUEUE_MAX_ATTEMPTS;
   res.json({
     pending: rows.filter(r => !r.process_error),
-    failed:  rows.filter(r =>  r.process_error),
+    waiting: rows.filter(r => r.process_error && !gaveUp(r)),
+    failed:  rows.filter(gaveUp),
+    max_attempts: SCREENSHOT_QUEUE_MAX_ATTEMPTS,
+    paused_secs: geminiPauseSecsLeft(),
   });
 });
 
@@ -2362,14 +2380,20 @@ function noteGeminiThrottled(err) {
 function noteGeminiOk() { geminiBackoffMs = 0; geminiPausedUntil = 0; }
 
 const SCREENSHOT_QUEUE_MAX_ATTEMPTS = 3;
+const QUEUE_GEMINI_TIMEOUT_MS = 120000;
 const SCREENSHOT_QUEUE_BATCH_SIZE   = 3; // per tick — enough to keep multi-file uploads moving without hammering Gemini
 
 async function processOneQueuedScreenshot(row) {
   if (!fs.existsSync(row.file_path)) throw new Error('File missing on disk');
   const buffer = fs.readFileSync(row.file_path);
-  const { parsed } = await callGeminiVision(buffer, row.mime_type || 'image/jpeg');
-  if (!parsed) throw new Error('Gemini returned unexpected output — could not parse JSON');
-  if (!Array.isArray(parsed.schedule)) throw new Error('Gemini response is missing a "schedule" array');
+  // Background job, nobody waiting on it: give a slow ("thinking") model time
+  // to read a long rota rather than timing out at the interactive 45s.
+  const { parsed: raw, rawText, modelUsed } = await callGeminiVision(buffer, row.mime_type || 'image/jpeg', OLLAMA_PROMPT,
+    { timeoutMs: QUEUE_GEMINI_TIMEOUT_MS });
+  const excerpt = String(rawText || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  if (!raw) throw new Error(`${modelUsed || 'Gemini'} didn't reply with readable JSON` + (excerpt ? ` — it said: "${excerpt}${excerpt.length >= 160 ? '…' : ''}"` : ' (empty reply)'));
+  const parsed = coerceSchedule(raw);
+  if (!parsed) throw new Error(`${modelUsed || 'Gemini'} replied, but with no schedule in it — it said: "${excerpt}${excerpt.length >= 160 ? '…' : ''}"`);
 
   // Rename to the detected week, same as the manual "AI rename" action, so
   // queued screenshots end up named consistently in the Photo Library.

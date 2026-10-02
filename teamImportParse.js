@@ -269,7 +269,48 @@ function extractJson(text) {
   try { return JSON.parse(s.slice(first, last + 1)); } catch (_) { return null; }
 }
 
+/** Bring a model reply into the { date_range, schedule: [{ date, shifts }] }
+ *  shape the import expects. In JSON mode Gemini sometimes wraps the object
+ *  in an array, names the list "days"/"week", or returns a flat list of
+ *  shifts each carrying its own date — all the same information, and all
+ *  previously rejected as "missing a schedule array". Returns null if there's
+ *  genuinely no schedule in it. */
+function coerceSchedule(parsed) {
+  if (!parsed) return null;
+  if (Array.isArray(parsed)) {
+    const withSchedule = parsed.find(x => x && Array.isArray(x.schedule));
+    if (withSchedule) return coerceSchedule(withSchedule);
+    if (parsed.length && parsed.every(x => x && typeof x === 'object' && Array.isArray(x.shifts))) {
+      return { date_range: '', schedule: parsed };
+    }
+    if (parsed.length && parsed.every(x => x && typeof x === 'object' && x.name && x.date)) {
+      return coerceSchedule({ shifts: parsed });
+    }
+    return null;
+  }
+  if (typeof parsed !== 'object') return null;
+  const date_range = parsed.date_range || parsed.dateRange || parsed.week || parsed.header || '';
+  for (const key of ['schedule', 'days', 'week_schedule', 'weekSchedule', 'rota']) {
+    if (Array.isArray(parsed[key])) {
+      return { ...parsed, date_range: typeof date_range === 'string' ? date_range : '', schedule: parsed[key] };
+    }
+  }
+  // Flat list of shifts, each with its own day label → group by that label.
+  if (Array.isArray(parsed.shifts) && parsed.shifts.some(x => x && x.date)) {
+    const byDay = new Map();
+    for (const sh of parsed.shifts) {
+      if (!sh || !sh.date) continue;
+      if (!byDay.has(sh.date)) byDay.set(sh.date, []);
+      const time = sh.time || (sh.start_time && sh.end_time ? `${sh.start_time} - ${sh.end_time}` : undefined);
+      byDay.get(sh.date).push({ ...sh, time });
+    }
+    return { date_range: typeof date_range === 'string' ? date_range : '', schedule: [...byDay].map(([date, shifts]) => ({ date, shifts })) };
+  }
+  return null;
+}
+
 module.exports = {
+  coerceSchedule,
   SHORT_MONTHS, weekContaining, resolveWeekDates, resolveWeekDatesStrict, resolveWeekDatesLoose, resolveWeekForSchedule,
   resolveDayDate, parseTimeRange, levenshtein, normName, nameMatchesStrict, fuzzyMatch, extractJson,
 };

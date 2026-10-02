@@ -2033,3 +2033,17 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
   .tu-batch-table tbody td:nth-child(5) { grid-column: 2; grid-row: 2; }
   .tu-batch-table tbody td[colspan] { grid-column: 1 / -1; }
 }
+
+/* Team Upload — processing queue cards (status + reason as real text) */
+#tuQueueGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.tu-q-card { display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; background: var(--card-bg); border: 2px solid var(--border); box-shadow: var(--card-shadow); min-width: 0; }
+.tu-q-waiting { border-color: var(--warning); }
+.tu-q-failed  { border-color: var(--danger); }
+.tu-q-thumb { position: relative; max-height: 150px; overflow: hidden; }
+.tu-q-badge { position: absolute; top: 6px; left: 6px; right: 6px; padding: 3px 6px; border-radius: 6px; font-size: 11px; font-weight: 700; text-align: center; background: rgba(0,0,0,0.6); color: #fff; }
+.tu-q-waiting .tu-q-badge { background: var(--warning); color: #1A1A2E; }
+.tu-q-failed  .tu-q-badge { background: var(--danger); }
+.tu-q-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.tu-q-name { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tu-q-reason { font-size: 12px; line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+.tu-q-body .btn { width: 100%; justify-content: center; margin-top: auto; }
