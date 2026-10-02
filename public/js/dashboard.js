@@ -31,33 +31,72 @@ const DashboardView = {
     return _fmtDateDash(tomorrow);
   },
 
-  async render() {
-    const el = document.getElementById('view-dashboard');
-    el.innerHTML = `<div class="dash-loading">Loading…</div>`;
-
-    // Fetch upcoming shifts (today → 60 days ahead)
+  // Kick off the dashboard's data requests. App.start() calls this before it
+  // has finished loading settings, so on a cold open the two run in parallel
+  // instead of back to back; render() picks the in-flight promise up if it's
+  // still fresh.
+  prefetch() {
     const today = new Date();
     const todayStr = _fmtDateDash(today);
     const future = new Date(today); future.setDate(future.getDate() + 60);
-    const futureStr = _fmtDateDash(future);
     const nextInAnchor = this._nextInAnchorDate(today);
-
-    // Whole current month (for the month summary card)
+    // One shifts request covering both the month summary (from the 1st) and
+    // the 60-day upcoming list, split client-side.
     const monthStart = `${todayStr.slice(0, 7)}-01`;
     const monthEnd = _fmtDateDash(new Date(today.getFullYear(), today.getMonth() + 1, 0));
-
-    let shifts = [], nextIn = null, clockToday = null, monthShifts = [];
-    try {
-      [shifts, nextIn, clockToday, monthShifts] = await Promise.all([
-        API.get(`/api/shifts?from=${todayStr}&to=${futureStr}`),
-        API.get(`/api/colleagues/next-shifts?from=${nextInAnchor}&days=2`).catch(() => null),
+    const rangeEnd = _fmtDateDash(future) > monthEnd ? _fmtDateDash(future) : monthEnd;
+    this._prefetched = {
+      at: Date.now(), todayStr, nextInAnchor, monthStart, monthEnd,
+      data: Promise.all([
+        API.get(`/api/shifts?from=${monthStart}&to=${rangeEnd}`),
+        API.get(`/api/colleagues/next-shifts?from=${nextInAnchor}&days=2&lite=1`).catch(() => null),
         API.get('/api/clock/today').catch(() => null),
-        API.get(`/api/shifts?from=${monthStart}&to=${monthEnd}`).catch(() => []),
-      ]);
+      ]),
+    };
+    this._prefetched.data.catch(() => {});   // handled when render() awaits it
+    return this._prefetched;
+  },
+
+  async render() {
+    const el = document.getElementById('view-dashboard');
+    if (!el.querySelector('.dash-wrap')) el.innerHTML = `<div class="dash-loading">Loading…</div>`;
+
+    let pf = this._prefetched;
+    if (!pf || Date.now() - pf.at > 5000 || pf.todayStr !== _fmtDateDash(new Date())) pf = this.prefetch();
+    this._prefetched = null;   // one use only — later renders (after clocking in, etc.) fetch fresh
+    const { todayStr, nextInAnchor, monthStart, monthEnd } = pf;
+
+    let allShifts = [], nextIn = null, clockToday = null;
+    try {
+      [allShifts, nextIn, clockToday] = await pf.data;
     } catch (e) {
-      el.innerHTML = `<div class="dash-error">Could not load shifts.</div>`;
+      // No data at all (no signal, nothing saved on the phone yet). Clocking in
+      // or out must still work here — it's the one thing that can't wait.
+      const queued = typeof ClockQueue !== 'undefined' ? await ClockQueue.all() : [];
+      const ct = typeof ClockQueue !== 'undefined' ? ClockQueue.applyPending(null, queued, todayStr) : {};
+      this._clockToday = ct;
+      el.innerHTML = `
+        <div class="dash-error">
+          <div>📴 Couldn't load your rota — ${esc(e.message)}.</div>
+          <div style="margin-top:6px;font-size:13px">You can still clock in and out; it'll be saved on your phone and sent when there's signal.</div>
+          <div class="dash-clock-status" style="max-width:360px;margin:16px auto 0">
+            ${ct.entry
+              ? `<span class="dash-clock-in-time">🟢 Clocked in at ${ct.entry.clocked_in}${ct.entry.pending ? ' ⏳' : ''}</span>
+                 <button class="btn btn-clock-out" onclick="DashboardView.clockOut()">Clock Out</button>`
+              : `${ct.lastEntry ? `<span class="dash-clock-done">✓ Last clocked out at ${ct.lastEntry.clocked_out}${ct.lastEntry.pending ? ' ⏳' : ''}</span>` : ''}
+                 <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>`}
+          </div>
+          <button class="dash-link" style="margin-top:14px" onclick="DashboardView.render()">Try again</button>
+        </div>`;
       return;
     }
+    // Clock actions saved on the phone with no signal show as already done.
+    if (typeof ClockQueue !== 'undefined') {
+      const queued = await ClockQueue.all();
+      if (queued.length) clockToday = ClockQueue.applyPending(clockToday, queued, todayStr);
+    }
+    const shifts = allShifts.filter(s => s.date >= todayStr);
+    const monthShifts = allShifts.filter(s => s.date >= monthStart && s.date <= monthEnd);
     this._clockToday = clockToday;
 
     const now = new Date();
@@ -96,7 +135,7 @@ const DashboardView = {
         <div class="dash-no-shift">
           <div class="dash-no-shift-icon">☀️</div>
           <div class="dash-no-shift-msg">No upcoming shifts in the next 60 days</div>
-          <button class="btn btn-ghost btn-sm" onclick="App.navigate('shifts')">View all shifts →</button>
+          <button class="dash-link" onclick="App.navigate('shifts')">View all shifts →</button>
         </div>
       `;
     } else {
@@ -156,18 +195,18 @@ const DashboardView = {
       }
 
       el.innerHTML = `
-        <div class="dash-upcoming-section" style="margin-top:0;margin-bottom:16px">
+        <div class="dash-card">
           <div class="dash-section-title">💰 Next Payday</div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0 2px">
-            <span style="font-size:20px;font-weight:700">${daysUntil <= 0 ? 'Today' : daysUntil + ' day' + (daysUntil !== 1 ? 's' : '')}</span>
-            <span style="font-size:12px;color:var(--text-muted)">${nextPayDateStr}</span>
+          <div class="dash-payday-main">
+            <span class="dash-payday-days">${daysUntil <= 0 ? 'Today' : daysUntil + ' day' + (daysUntil !== 1 ? 's' : '')}</span>
+            <span class="dash-payday-date">${nextPayDateStr}</span>
           </div>
           ${predictedGross != null ? `
-            <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px">
-              <span style="color:var(--text-muted)">Predicted gross</span>
-              <span style="font-weight:600" class="money">£${predictedGross.toFixed(2)}</span>
+            <div class="dash-kv">
+              <span>Predicted gross</span>
+              <strong class="money">£${predictedGross.toFixed(2)}</strong>
             </div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">From logged shifts so far — not a guarantee</div>
+            <div class="dash-footnote">From logged shifts so far — not a guarantee</div>
           ` : ''}
         </div>`;
     } catch (e) {
@@ -190,20 +229,24 @@ const DashboardView = {
 
     const monthName = new Date(todayStr + 'T12:00:00').toLocaleDateString('en-GB', { month: 'long' });
     const fmtH = h => (Math.round(h * 10) / 10) + 'h';
-    const fmtP = p => `<span class="money">£${p.toFixed(2)}</span>`;
+    // Whole pounds: three tiles share a narrow column, and pence don't help at a glance.
+    const fmtP = p => `<span class="money">£${Math.round(p).toLocaleString('en-GB')}</span>`;
 
-    const row = (label, value) => `
-      <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13.5px">
-        <span style="color:var(--text-muted)">${label}</span>
-        <span style="font-weight:600">${value}</span>
+    const tile = (label, value, sub) => `
+      <div class="dash-tile">
+        <div class="dash-tile-label">${label}</div>
+        <div class="dash-tile-value">${value}</div>
+        ${sub ? `<div class="dash-tile-sub">${sub}</div>` : ''}
       </div>`;
 
     el.innerHTML = `
-      <div class="dash-upcoming-section" style="margin-top:0;margin-bottom:16px">
-        <div class="dash-section-title">This Month — ${monthName}</div>
-        ${row('Worked so far', `${fmtH(workedHours)} · ${fmtP(paySoFar)}`)}
-        ${row('Month total (est.)', `${fmtH(schedHours)} · ${fmtP(schedPay)}`)}
-        ${row('Shifts left', `${shiftsLeft}`)}
+      <div class="dash-card">
+        <div class="dash-section-title">📅 ${monthName}</div>
+        <div class="dash-tiles">
+          ${tile('Worked', fmtP(paySoFar), fmtH(workedHours))}
+          ${tile('Month est.', fmtP(schedPay), fmtH(schedHours))}
+          ${tile('Shifts left', shiftsLeft)}
+        </div>
       </div>
     `;
   },
@@ -225,19 +268,16 @@ const DashboardView = {
     const weekKey = this._currentMondayKey();
     if (localStorage.getItem('jsonReminderDismissed') === weekKey) return '';
     return `
-      <div id="dashJsonReminder" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-        background:var(--card-bg);border:1px solid var(--border);border-left:4px solid var(--primary);
-        border-radius:8px;padding:12px 14px;margin-bottom:16px">
-        <span style="font-size:20px">📸</span>
-        <div style="flex:1;min-width:200px">
-          <div style="font-weight:600;font-size:13.5px">Upload last week's team JSON</div>
-          <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px">
-            The best way to keep everyone's Team Calendar accurate — screenshot last week's
-            Rotageek team schedule and run it through Team Upload.
-          </div>
+      <div id="dashJsonReminder" class="dash-banner">
+        <span class="dash-banner-icon">📸</span>
+        <div class="dash-banner-text">
+          <div class="dash-banner-title">Upload last week's team JSON</div>
+          <div class="dash-banner-sub">Keeps everyone's Team Calendar accurate — screenshot last week's Rotageek team schedule and run it through Team Upload.</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="App.navigate('team-upload')">Upload now</button>
-        <button class="btn btn-ghost btn-sm" id="dashJsonReminderDismiss" title="Hide for this week">✕</button>
+        <div class="dash-banner-actions">
+          <button class="btn btn-primary btn-sm" onclick="App.navigate('team-upload')">Upload now</button>
+        </div>
+        <button class="dash-banner-close" id="dashJsonReminderDismiss" title="Hide for this week" aria-label="Hide for this week">✕</button>
       </div>`;
   },
 
@@ -256,7 +296,9 @@ const DashboardView = {
     // It's now fetched in the background after the hero paints and dropped
     // into its own slot once (if) it resolves.
     if (clockToday === undefined) clockToday = this._clockToday || null;
-    const colleagues = await API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []);
+    // Colleagues are filled in the same way once their request lands, so the
+    // hero paints on the first round trip rather than the second.
+    const colleaguesP = API.get(`/api/working-with/${shift.date}?start_time=${shift.start_time}&end_time=${shift.end_time}`).catch(() => []);
 
     const el = document.getElementById('dash-hero');
     const isToday  = shift.date === _fmtDateDash(new Date());
@@ -282,26 +324,24 @@ const DashboardView = {
         : `IN ${diffDays} DAYS`;
     }
 
-    const colleagueHtml = colleagues.length > 0
-      ? `<div class="dash-colleagues dash-colleagues-clickable" title="Tap to see who you're working with">
-           <div class="dash-colleagues-label">👥 Working with</div>
-           <div class="dash-colleagues-list">
-             ${colleagues.map(c => `<span class="dash-colleague-chip${c.relation === 'crossover' ? ' dash-colleague-chip-crossover' : ''}"${c.note ? ` title="${c.note.replace(/"/g,'&quot;')}"` : ''}>${c.relation === 'crossover' ? '🔄 ' : ''}${c.name}</span>`).join('')}
-           </div>
+    const colleagueHtml = colleagues => colleagues.length > 0
+      ? `<div class="dash-colleagues-label">👥 Working with</div>
+         <div class="dash-colleagues-list">
+           ${colleagues.map(c => `<span class="dash-colleague-chip${c.relation === 'crossover' ? ' dash-colleague-chip-crossover' : ''}"${c.note ? ` title="${esc(c.note)}"` : ''}>${c.relation === 'crossover' ? '🔄 ' : ''}${esc(c.name)}</span>`).join('')}
          </div>`
-      : `<div class="dash-colleagues dash-colleagues-clickable" title="Tap to see who you're working with">
-           <div class="dash-colleagues-label dash-colleagues-none">👤 No colleagues recorded for this shift</div>
-         </div>`;
+      : `<div class="dash-colleagues-label dash-colleagues-none">👤 No colleagues recorded for this shift</div>`;
 
     el.innerHTML = `
       <div class="dash-hero-card${isOngoing ? ' dash-hero-live' : ''}">
-        <div class="dash-hero-header">
-          <div class="dash-hero-label">${ceLive ? 'Current Shift' : 'Next Shift'}</div>
+        <div class="dash-hero-top">
+          <div>
+            <div class="dash-hero-label">${ceLive ? 'Current Shift' : 'Next Shift'}</div>
+            <div class="dash-hero-day">${dayFull}</div>
+            <div class="dash-hero-date">${dateFormatted}</div>
+          </div>
           <span class="dash-status ${badgeClass}">${badgeText}</span>
         </div>
-
-        <div class="dash-hero-day">${dayFull}</div>
-        <div class="dash-hero-date">${dateFormatted}</div>
+        <div class="dash-hero-body">
 
         <div class="dash-hero-time">${shift.start_time} <span class="dash-arrow">→</span> ${shift.end_time}</div>
 
@@ -331,34 +371,42 @@ const DashboardView = {
           </div>${payHtml}`;
         })()}
 
-        ${colleagueHtml}
+        <div class="dash-colleagues dash-colleagues-clickable" id="dashColleagues" title="Tap to see who you're working with">
+          <div class="dash-colleagues-label">👥 Working with</div>
+          <div class="dash-colleagues-list"><span class="dash-colleague-chip dash-chip-loading">…</span></div>
+        </div>
 
-        ${shift.notes ? `<div class="dash-notes"><span class="dash-notes-icon">📝</span>${shift.notes}</div>` : ''}
+        ${shift.notes ? `<div class="dash-notes"><span class="dash-notes-icon">📝</span>${esc(shift.notes)}</div>` : ''}
 
         ${(() => {
           // `entry` is the OPEN clock entry (clocked in, not out) — null between
           // shifts on a split-shift day, not just before the first one.
           const ce = clockToday?.entry || null;
           const last = clockToday?.lastEntry || null;
+          const waiting = e => e && e.pending ? ' <span class="dash-clock-pending">⏳ waiting to send</span>' : '';
           if (ce) {
             return `<div class="dash-clock-status">
-              <span class="dash-clock-in-time">Clocked in ${ce.clocked_in}</span>
+              <span class="dash-clock-in-time">🟢 Clocked in at ${ce.clocked_in}${waiting(ce)}</span>
               <button class="btn btn-clock-out" onclick="DashboardView.clockOut()">Clock Out</button>
             </div>`;
           } else if (last && last.clocked_out) {
             return `<div class="dash-clock-status">
-              <span class="dash-clock-done">✓ Clocked out ${last.clocked_out}</span>
+              <span class="dash-clock-done">✓ Last clocked out at ${last.clocked_out}${waiting(last)}</span>
               <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Start Next Shift</button>
             </div>`;
           } else {
-            return `<button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>`;
+            return `<div class="dash-clock-status">
+              <button class="btn btn-clock-in" onclick="DashboardView.clockIn()">Clock In</button>
+            </div>`;
           }
         })()}
+        </div>
       </div>
     `;
 
-    const colleaguesEl = el.querySelector('.dash-colleagues-clickable');
-    if (colleaguesEl) colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+    const colleaguesEl = el.querySelector('#dashColleagues');
+    colleaguesEl.addEventListener('click', () => this.showWorkingWithModal(shift));
+    colleaguesP.then(colleagues => { if (colleaguesEl.isConnected) colleaguesEl.innerHTML = colleagueHtml(colleagues); });
 
     // Background-fill the weather slot — see the comment above on why this
     // isn't awaited before the hero renders. If the user's already navigated
@@ -379,8 +427,9 @@ const DashboardView = {
       const alertsHtml = point.alerts && point.alerts.length
         ? point.alerts.map(a => ` <span class="dash-weather-alert">${a.icon} ${a.text}</span>`).join('')
         : '';
-      return `<div class="dash-weather-row">
-        <span>${icon} ${label} (${point.time}): ${Math.round(point.temp)}°C ${point.icon}</span>${alertsHtml}
+      return `<div class="dash-weather-chip" title="${label} at ${point.time}">
+        <span class="dash-weather-leg">${icon} ${label}</span>
+        <span class="dash-weather-val">${point.icon} ${Math.round(point.temp)}°C <span class="dash-weather-time">${point.time}</span></span>${alertsHtml}
       </div>`;
     };
     const rows = leg('🚗', 'Commute To', weather.commute_to)
@@ -455,31 +504,48 @@ const DashboardView = {
     });
   },
 
+  // Current clock state for the reason/break prompts. A short timeout and the
+  // copy loaded with the page as fallback: with weak signal at work, waiting
+  // on this must never hold up clocking in.
+  async _clockState() {
+    return API.get('/api/clock/today', { timeout: 4000 }).catch(() => this._clockToday || null);
+  },
+
+  // Send a clock action, or save it on the phone if there's no signal.
+  async _submitClock(kind, extra) {
+    try {
+      const r = await ClockQueue.submit(kind, extra);
+      if (r.queued) {
+        showToast(`📶 No signal — clock-${kind} at ${extra.time} saved on your phone. It'll send by itself once you have signal.`, 'warning');
+        NetStatus.refreshPending();
+      }
+      return r;
+    } catch (e) {
+      showToast(`Clock ${kind} failed: ${e.message}`, 'error');
+      return null;
+    }
+  },
+
   async clockIn() {
     const now  = new Date();
     const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-    const clockData = await API.get('/api/clock/today').catch(() => null);
+    const clockData = await this._clockState();
     const schedStart = clockData?.shift?.start_time || null;
     const diff = this._timeDiffMins(hhmm, schedStart);
     let note = null;
     if (diff > this._thr('in','late') || diff < -this._thr('in','early')) note = await this._promptReason(diff);
     // Same as the dedicated Clock In/Out page: fire in parallel with the clock-in
-    // itself so a slow/refused GPS fix never delays it. This was missing here —
-    // the Dashboard's own Clock In button (likely the one actually used day to
-    // day, since it's the first thing on screen) recorded no location and no
-    // check-habit signal at all, unlike the separate Clock In/Out view.
+    // itself so a slow/refused GPS fix never delays it.
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('in') : null;
-    try {
-      await API.post('/api/clock/in', { time: hhmm, note });
-      await this.render();
-    } catch(e) { showToast('Clock in failed', 'error'); }
+    const r = await this._submitClock('in', { time: hhmm, note });
+    if (r) await this.render();
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_in', detail: hhmm }); });
   },
 
   async clockOut() {
     const now  = new Date();
     const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-    const clockData = await API.get('/api/clock/today').catch(() => null);
+    const clockData = await this._clockState();
     const schedEnd = clockData?.shift?.end_time || null;
     const diff = this._timeDiffMins(hhmm, schedEnd);
     // Prompt when clocking out early or late beyond the configured leeway window
@@ -487,10 +553,17 @@ const DashboardView = {
     if (diff < -this._thr('out','early') || diff > this._thr('out','late')) note = await this._promptReason(diff, true);
     const fix = typeof V5Tracker !== 'undefined' ? V5Tracker.clockLocation('out') : null;
     fix?.then(pos => { if (pos) V5Tracker.event({ type: 'clock_out', detail: hhmm }); });
-    let clockOutRes;
-    try {
-      clockOutRes = await API.post('/api/clock/out', { time: hhmm, note });
-    } catch(e) { showToast('Clock out failed', 'error'); return; }
+    const r = await this._submitClock('out', { time: hhmm, note });
+    if (!r) return;
+
+    if (r.queued) {
+      // Offline: still ask about the break now, while it's fresh, and send the
+      // answer along with the clock-out when it goes.
+      const breakResult = await this._promptBreak(clockData?.shift?.break_scheduled_minutes || 0);
+      if (breakResult) await ClockQueue.update({ ...r.item, breakResult });
+      await this.render();
+      return;
+    }
 
     // Ask about the break and mark the linked shift complete (same as the Clock In/Out page).
     // Every way this can fall through says so out loud — a shift quietly staying
@@ -499,6 +572,7 @@ const DashboardView = {
     // says which in its response. Never re-derive it from "nearest to now": on a
     // split day that can be the NEXT shift, which then got marked complete
     // before it had even started.
+    const clockOutRes = r.data;
     const shift = clockOutRes?.completed_shift || clockData?.shift;
     if (!shift?.id) {
       showToast("Clocked out ✓ — no shift on today's rota to mark complete", 'warning');
@@ -586,22 +660,25 @@ const DashboardView = {
       const dateStr  = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       const dur = this._duration(s.start_time, s.end_time);
       return `
-        <div class="dash-upcoming-row dash-upcoming-clickable" data-shift-id="${s.id ?? i}" title="Tap to see who you're working with">
-          <div class="dash-upcoming-day">${dayShort}</div>
-          <div class="dash-upcoming-date">${dateStr}</div>
-          <div class="dash-upcoming-time">${s.start_time} – ${s.end_time}</div>
-          <div class="dash-upcoming-dur">${dur}</div>
-          <div class="dash-upcoming-who">👥</div>
-        </div>
+        <button type="button" class="dash-upcoming-row dash-upcoming-clickable" data-shift-id="${s.id ?? i}" title="Tap to see who you're working with">
+          <span class="dash-date-badge"><span class="dash-date-badge-dow">${dayShort}</span><span class="dash-date-badge-num">${d.getDate()}</span></span>
+          <span class="dash-upcoming-main">
+            <span class="dash-upcoming-time">${s.start_time} – ${s.end_time}</span>
+            <span class="dash-upcoming-date">${dateStr} · ${dur}</span>
+          </span>
+          <span class="dash-upcoming-who" aria-hidden="true">👥 ›</span>
+        </button>
       `;
     }).join('');
 
     el.innerHTML = `
-      <div class="dash-upcoming-section">
-        <div class="dash-section-title">Coming Up</div>
-        <div style="font-size:11.5px;color:var(--text-muted);margin:-6px 0 8px">Tap a shift to see who you're working with 👥</div>
-        ${rows}
-        <button class="btn btn-ghost btn-sm dash-all-btn" onclick="App.navigate('shifts')">View all shifts →</button>
+      <div class="dash-card">
+        <div class="dash-card-head">
+          <div class="dash-section-title">Coming Up</div>
+          <button class="dash-link" onclick="App.navigate('shifts')">All shifts →</button>
+        </div>
+        <div class="dash-upcoming-list">${rows}</div>
+        <div class="dash-footnote">Tap a shift to see who you're working with</div>
       </div>
     `;
 
@@ -707,20 +784,19 @@ const DashboardView = {
       const rows = shifts.length ? shifts.map(r => `
         <div class="dash-nextin-row">
           <span class="dash-nextin-name">${esc(r.name)}</span>
-          <span class="dash-nextin-date ${dateStr === anchorStr ? 'dash-nextin-today' : ''}">
+          <span class="dash-nextin-date${dateStr === anchorStr ? ' dash-nextin-today' : ''}">
             ${r.start_time} – ${r.end_time}
           </span>
         </div>`).join('')
         : `<div class="dash-nextin-row"><span class="dash-nextin-date" style="color:var(--text-muted)">No one scheduled</span></div>`;
       return `
-        <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
-          color:var(--text-muted);margin:10px 0 4px">${dayLabel(dateStr)}</div>
+        <div class="dash-nextin-day">${dayLabel(dateStr)}</div>
         ${rows}`;
     }).join('');
 
     el.innerHTML = `
-      <div class="dash-upcoming-section" style="margin-top:0">
-        <div class="dash-section-title">Next In</div>
+      <div class="dash-card">
+        <div class="dash-section-title">👥 Next In</div>
         ${daySections}
       </div>
     `;

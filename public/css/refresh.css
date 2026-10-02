@@ -1,0 +1,366 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   UI refresh — loaded after every other stylesheet so it can restyle without
+   touching the originals. Global changes are deliberately light (tokens, type,
+   cards, buttons, topbar); the Dashboard gets the full redesign.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --navy: #1B2A4A;
+  --navy-2: #24375f;
+  --bg: #F2F4F8;
+  --surface: var(--card-bg);
+  --surface-2: #F7F8FB;
+  --text-secondary: #3F4859;
+  --border: #E3E7EE;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgba(16,24,40,0.05);
+  --shadow-md: 0 1px 2px rgba(16,24,40,0.04), 0 6px 18px rgba(16,24,40,0.07);
+  --card-shadow: var(--shadow-sm);
+  --focus-ring: 0 0 0 3px rgba(255,214,0,0.55);
+  --gutter: 16px;
+}
+[data-theme="dark"] {
+  --bg: #0E1016;
+  --card-bg: #171A23;
+  --surface: var(--card-bg);
+  --surface-2: #1D212C;
+  --text-secondary: #C3C8D4;
+  --border: #272B38;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 1px 2px rgba(0,0,0,0.35), 0 8px 22px rgba(0,0,0,0.35);
+}
+
+/* ── Base type ──────────────────────────────────────────────────────────── */
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ── Topbar ─────────────────────────────────────────────────────────────── */
+.topbar {
+  background: color-mix(in srgb, var(--card-bg) 88%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  backdrop-filter: saturate(160%) blur(10px);
+  box-shadow: none;
+}
+.topbar-title { letter-spacing: -0.01em; }
+.topbar-menu-btn {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: none; align-items: center; justify-content: center;
+}
+@media (max-width: 768px) {
+  .topbar-menu-btn { display: inline-flex; }
+}
+.topbar-menu-btn:active { background: var(--bg); }
+
+/* ── Cards & buttons ────────────────────────────────────────────────────── */
+.card {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.btn { border-radius: 10px; font-weight: 600; }
+.btn-sm { border-radius: 8px; }
+.btn:active { transform: translateY(1px); }
+.btn-primary { box-shadow: inset 0 -1px 0 rgba(0,0,0,0.08); }
+.modal { border-radius: var(--radius-lg); }
+@media (max-width: 480px) {
+  .modal { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .view { padding: 12px; }
+}
+
+/* Hover styles only where there is a real pointer — on phones they stick after a tap. */
+@media (hover: none) {
+  tbody tr:hover { background: inherit; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Dashboard
+   ───────────────────────────────────────────────────────────────────────────── */
+.dash-wrap {
+  max-width: 1040px;
+  gap: 20px;
+  padding: 8px 0 40px;
+}
+.dash-left-col  { display: flex; flex-direction: column; gap: 16px; }
+.dash-right-col { display: flex; flex-direction: column; gap: 16px; flex: 0 0 300px; }
+.dash-left-col > :empty, .dash-right-col > :empty { display: none; }
+@media (max-width: 940px) {
+  .dash-wrap { gap: 16px; }
+  .dash-right-col { flex: none; }
+}
+
+/* Generic dashboard card */
+.dash-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.dash-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px;
+}
+.dash-card-head .dash-section-title { margin-bottom: 0; }
+.dash-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.dash-link {
+  background: none; border: 0; padding: 6px 4px; margin: -6px -4px;
+  font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--info); cursor: pointer; border-radius: 6px;
+}
+[data-theme="dark"] .dash-link { color: #93c5fd; }
+.dash-footnote { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.dash-kv {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  font-size: 14px; color: var(--text-muted); padding: 4px 0;
+}
+.dash-kv strong { color: var(--text); font-weight: 700; }
+
+/* ── Reminder banner ── */
+.dash-banner {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px 14px;
+  max-width: 1040px;
+  margin: 8px auto 8px;
+  padding: 14px 44px 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.dash-banner::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--primary);
+}
+.dash-banner-icon {
+  width: 40px; height: 40px; border-radius: 12px;
+  display: grid; place-items: center; font-size: 20px;
+  background: rgba(255,214,0,0.18);
+}
+.dash-banner-title { font-weight: 700; font-size: 14.5px; color: var(--text); }
+.dash-banner-sub   { font-size: 13px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+.dash-banner-actions .btn { width: auto; }
+.dash-banner-close {
+  position: absolute; top: 8px; right: 8px;
+  width: 32px; height: 32px; border-radius: 8px;
+  border: 0; background: transparent; color: var(--text-muted);
+  font-size: 14px; cursor: pointer;
+}
+.dash-banner-close:hover { background: var(--bg); color: var(--text); }
+@media (max-width: 600px) {
+  .dash-banner { grid-template-columns: auto 1fr; padding-right: 16px; }
+  .dash-banner-text { padding-right: 24px; }
+  .dash-banner-icon { align-self: start; }
+  .dash-banner-actions { grid-column: 1 / -1; }
+  .dash-banner-actions .btn { width: 100%; justify-content: center; margin-top: 8px; }
+}
+
+/* ── Hero card ── */
+.dash-hero-card {
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+}
+.dash-hero-top {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding: 18px 20px 20px;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(255,214,0,0.16), transparent 55%),
+    linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+  color: #fff;
+}
+.dash-hero-label {
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 6px;
+}
+.dash-hero-day  { font-size: 28px; font-weight: 800; line-height: 1.05; color: #fff; letter-spacing: -0.02em; margin: 0; }
+.dash-hero-date { font-size: 14.5px; color: rgba(255,255,255,0.72); margin: 4px 0 0; }
+.dash-hero-body { padding: 18px 20px 20px; }
+
+.dash-status {
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  padding: 5px 10px; border-radius: 999px;
+}
+.dash-hero-top .dash-status-future   { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.18); }
+.dash-hero-top .dash-status-tomorrow,
+.dash-hero-top .dash-status-today    { background: var(--primary); color: var(--primary-text); }
+.dash-hero-top .dash-status-live     { background: var(--success); color: #fff; }
+
+.dash-hero-time {
+  font-size: 44px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 14px;
+}
+.dash-arrow { font-size: 30px; opacity: 0.35; font-weight: 400; margin: 0 2px; }
+@media (max-width: 480px) {
+  .dash-hero-time { font-size: 38px; }
+  .dash-hero-day  { font-size: 26px; }
+}
+
+.dash-hero-meta { gap: 8px; margin-bottom: 16px; }
+.dash-meta-pill {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px; font-weight: 500;
+  padding: 5px 11px;
+}
+
+.dash-countdown {
+  font-size: 16px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.dash-hero-live .dash-countdown { border-color: rgba(16,185,129,0.3); }
+.dash-countdown.dash-countdown-over { border-color: transparent; }
+.dash-pay-counter { margin: -6px 0 14px; border-radius: 12px; }
+
+/* Weather — compact chips instead of a sentence per leg */
+.dash-weather-box {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  padding: 0;
+  background: none;
+  margin-bottom: 14px;
+}
+.dash-weather-chip {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  min-width: 0;
+}
+.dash-weather-leg  { font-size: 12px; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.dash-weather-val  { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.dash-weather-time { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.dash-weather-chip .dash-weather-alert { align-self: flex-start; margin-top: 4px; }
+
+/* Colleagues */
+.dash-colleagues {
+  margin: 0 -8px;
+  padding: 12px 8px;
+  border-top: 0;
+  border-radius: 12px;
+}
+.dash-colleagues-clickable { border-radius: 12px; }
+.dash-colleague-chip { font-size: 14px; font-weight: 600; padding: 6px 12px; }
+.dash-chip-loading { opacity: 0.5; }
+.dash-notes { margin-top: 10px; border-radius: 12px; background: var(--surface-2); }
+
+/* Clock action — status line above a full-width button, never squeezed side by side */
+.dash-clock-status {
+  display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  margin-top: 12px; padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.dash-clock-in-time, .dash-clock-done { font-size: 13.5px; text-align: center; color: var(--text-muted); }
+.btn-clock-in, .btn-clock-out {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 52px; margin: 0;
+  border-radius: 14px;
+  font-size: 16.5px; font-weight: 700; letter-spacing: 0.01em;
+}
+.btn-clock-in  { background: #16a34a; box-shadow: 0 6px 16px rgba(22,163,74,0.28); }
+.btn-clock-out { background: #dc2626; box-shadow: 0 6px 16px rgba(220,38,38,0.25); padding: 13px; }
+
+.dash-no-shift {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 44px 20px;
+}
+
+/* ── Coming Up ── */
+.dash-upcoming-list { display: flex; flex-direction: column; }
+.dash-upcoming-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 6px;
+  margin: 0 -6px;
+  width: calc(100% + 12px);
+  background: none; border: 0; border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  font: inherit; color: inherit; text-align: left;
+  cursor: pointer;
+}
+.dash-upcoming-row:last-child { border-bottom: 0; }
+.dash-upcoming-clickable:hover { background: var(--surface-2); border-radius: 10px; }
+.dash-date-badge {
+  flex: 0 0 auto;
+  width: 46px; height: 48px; border-radius: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--border);
+  line-height: 1;
+}
+.dash-date-badge-dow { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.dash-date-badge-num { font-size: 19px; font-weight: 800; margin-top: 3px; color: var(--text); }
+.dash-upcoming-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dash-upcoming-time { font-size: 15.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.dash-upcoming-date { font-size: 12.5px; color: var(--text-muted); }
+.dash-upcoming-who  { font-size: 13px; opacity: 0.5; white-space: nowrap; }
+
+/* ── This month tiles ── */
+.dash-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.dash-tile {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 10px 10px 9px; min-width: 0;
+}
+.dash-tile-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.dash-tile-value { font-size: 15.5px; font-weight: 800; margin-top: 4px; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dash-tile-sub   { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
+/* ── Next payday ── */
+.dash-payday-main { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.dash-payday-days { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+.dash-payday-date { font-size: 13px; color: var(--text-muted); }
+
+/* ── Next In ── */
+.dash-nextin-day {
+  font-size: 12px; font-weight: 700; color: var(--text);
+  margin: 12px 0 4px;
+}
+.dash-section-title + .dash-nextin-day { margin-top: 2px; }
+.dash-nextin-row { padding: 7px 0; font-size: 14px; }
+.dash-nextin-date { font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* ── View error (replaces the raw red stack trace) ── */
+.view-error {
+  max-width: 460px; margin: 40px auto; padding: 28px 22px; text-align: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+}
+.view-error-icon  { font-size: 34px; margin-bottom: 6px; }
+.view-error-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.view-error-msg   { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; overflow-wrap: anywhere; }
+.view-error-details { margin-top: 16px; text-align: left; font-size: 12px; color: var(--text-muted); }
+.view-error-details pre { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }

@@ -12,6 +12,10 @@
 
 const express  = require('express');
 const multer   = require('multer');
+const {
+  resolveWeekDates, resolveWeekForSchedule, resolveWeekDatesLoose, resolveDayDate, parseTimeRange,
+  fuzzyMatch, nameMatchesStrict, extractJson,
+} = require('./teamImportParse');
 const { db, effectiveHourlyRate, rolePayForDate, contractHoursForColleagueOnDate, autoBreakMinutes, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
 const router   = express.Router();
 
@@ -33,46 +37,8 @@ function localDateStr(d = new Date()) {
     String(d.getDate()).padStart(2, '0');
 }
 
-/** Levenshtein distance between two strings */
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]
-                : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-  return dp[m][n];
-}
-
-/** Fuzzy-match a raw OCR name against the known colleagues list.
- *  Returns the best-matching colleague row, or null if nothing is close enough. */
-function fuzzyMatch(raw, colleagues) {
-  const norm = s => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
-  const normRaw = norm(raw);
-  if (!normRaw) return null;
-
-  // Tier 1: Exact or first-name/full-name match (e.g. "Nikki Houghton" matches "Nikki" but not "Ed" matching "Edward")
-  for (const c of colleagues) {
-    const normName = norm(c.name);
-    if (normRaw === normName) return c;
-    // "Nikki Houghton" starts with "Nikki " — safe prefix match
-    if (normRaw.startsWith(normName + ' ') || normName.startsWith(normRaw + ' ')) return c;
-  }
-
-  // Tier 2: Levenshtein distance fallback for genuine typos
-  let best = null, bestDist = Infinity;
-  for (const c of colleagues) {
-    const normName = norm(c.name);
-    const d = levenshtein(normRaw, normName);
-    // Slightly relaxed threshold (40%) to handle minor OCR noise
-    const maxAllowedDist = Math.max(3, Math.floor(Math.max(normRaw.length, normName.length) * 0.4));
-    if (d < bestDist && d <= maxAllowedDist) {
-      best = c; bestDist = d;
-    }
-  }
-  return best;
-}
+// Name matching, week/day/time parsing and model-reply parsing live in
+// teamImportParse.js (pure, unit-tested).
 
 /** Calculate overlap minutes between two [start,end] time strings (HH:MM) */
 function overlapMinutes(s1, e1, s2, e2) {
@@ -520,7 +486,13 @@ function rankGeminiModel(name) {
 // sequentially, so one hung call could stall every screenshot behind it.
 const GEMINI_VISION_TIMEOUT_MS = 45000;
 
-async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model) {
+async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMode = true) {
+  // JSON mode makes the model return bare JSON rather than prose around it —
+  // the most common reason a screenshot came back "could not parse JSON". A
+  // model that doesn't support it says so with a 400, and gets asked again
+  // without it (below).
+  const generationConfig = { temperature: 0 };
+  if (jsonMode) generationConfig.responseMimeType = 'application/json';
   let geminiRes;
   try {
     geminiRes = await fetch(
@@ -530,7 +502,7 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageB64 } }] }],
-          generationConfig: { temperature: 0 }
+          generationConfig,
         }),
         signal: AbortSignal.timeout(GEMINI_VISION_TIMEOUT_MS),
       }
@@ -549,6 +521,9 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model) {
   if (!geminiRes.ok) {
     const errBody = await geminiRes.json().catch(() => ({}));
     const message  = errBody?.error?.message || `Gemini API error ${geminiRes.status}`;
+    if (jsonMode && geminiRes.status === 400 && /json|mime/i.test(message)) {
+      return callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, false);
+    }
     const err = new Error(message);
     err.status = geminiRes.status;
     err.overloaded = isGeminiOverloadError(geminiRes.status, message);
@@ -556,13 +531,13 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model) {
   }
 
   const geminiData = await geminiRes.json();
-  const rawText    = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  // The reply can come back split over several parts (and thinking models can
+  // include their reasoning as parts flagged `thought`) — join the real text.
+  const parts   = geminiData?.candidates?.[0]?.content?.parts || [];
+  const rawText = parts.filter(p => p && typeof p.text === 'string' && !p.thought).map(p => p.text).join('');
 
-  // Strip markdown code fences if Gemini wrapped the JSON
-  const jsonStr = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-
-  let parsed = null;
-  try { parsed = JSON.parse(jsonStr); } catch (_) { /* leave parsed null — caller handles */ }
+  // Tolerates ```json fences and any chatter around the JSON object.
+  const parsed = extractJson(rawText);
   return { parsed, rawText, modelUsed: model };
 }
 
@@ -1360,22 +1335,54 @@ router.put('/colleague-shifts/:id', (req, res) => {
 router.get('/colleagues/import-batches', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
   const batches = db.prepare(`
-    SELECT id, source, note, inserted_count, undone_at, created_at, pending_conflicts,
+    SELECT id, source, note, inserted_count, undone_at, created_at, pending_conflicts, summary,
+      schedule_data IS NOT NULL AS can_rerun,
       (SELECT COUNT(*) FROM colleague_shifts WHERE import_batch_id = import_batches.id) AS remaining_count
     FROM import_batches
     WHERE inserted_count > 0 OR pending_conflicts IS NOT NULL
+       OR json_array_length(json_extract(summary, '$.unknownNames')) > 0
+       OR json_array_length(json_extract(summary, '$.warnings')) > 0
     ORDER BY id DESC
     LIMIT ?
   `).all(limit).map(b => {
     // A batch entirely made of conflicts (nothing auto-inserted) still needs to
     // surface here — that's exactly the "phone uploaded, PC needs to review"
     // case. pending_conflicts itself is left out of the list payload (the detail
-    // endpoint returns the full list); only the count is useful here.
+    // endpoint returns the full list); only the count is useful here. Same for
+    // a background import that matched nobody: it used to vanish from this list
+    // entirely, so the unknown names it found were never shown anywhere.
     const pendingCount = b.pending_conflicts ? JSON.parse(b.pending_conflicts).length : 0;
-    const { pending_conflicts, ...rest } = b;
-    return { ...rest, pending_conflict_count: pendingCount };
+    let summary = null;
+    try { summary = b.summary ? JSON.parse(b.summary) : null; } catch (_) {}
+    const { pending_conflicts, summary: _s, ...rest } = b;
+    return {
+      ...rest,
+      can_rerun: !!b.can_rerun,
+      pending_conflict_count: pendingCount,
+      unknown_names: summary?.unknownNames || [],
+      warnings: summary?.warnings || [],
+      week: summary?.week || null,
+    };
   });
   res.json({ batches });
+});
+
+// POST /colleagues/import-batches/:id/rerun — run a past import again from the
+// schedule it read, against the SAME batch (so Undo still covers everything it
+// added). For after adding the people it didn't recognise: their shifts go in,
+// everything already imported is an exact duplicate and skipped.
+router.post('/colleagues/import-batches/:id/rerun', (req, res) => {
+  const batchId = parseInt(req.params.id, 10);
+  const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batchId);
+  if (!batch) return res.status(404).json({ error: 'Import batch not found' });
+  if (batch.undone_at) return res.status(409).json({ error: 'This import was undone — upload it again instead' });
+  if (!batch.schedule_data) return res.status(409).json({ error: "This import is too old to re-run (the schedule it read wasn't kept)" });
+  let schedule;
+  try { schedule = JSON.parse(batch.schedule_data); } catch (_) { return res.status(500).json({ error: 'Stored schedule is unreadable' }); }
+  const result = runJsonScheduleImport(schedule, [], batchId);
+  if (result.error) return res.status(400).json({ error: result.error });
+  savePendingConflicts(batchId, schedule, result.conflicts);
+  res.json(result);
 });
 
 router.delete('/colleagues/import-batches/:id', (req, res) => {
@@ -1463,38 +1470,6 @@ router.delete('/colleague-shifts/:id', (req, res) => {
 //   • If a day can't be resolved to a date within the range → warn + skip all its shifts
 // ─────────────────────────────────────────
 
-/** Parse date_range string → array of 7 ISO date strings (Mon … Sun).
- *  Handles both formats:
- *   "01 - Dec 7, 2025"           → end date = Dec 7
- *   "Apr 27, 2026 – May 3, 2026" → end date = May 3
- *  The $ anchor ensures we always pick the LAST date (the week end), not the start. */
-function resolveWeekDates(dateRange) {
-  if (!dateRange) return null;
-  const SHORT_MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-  // Match the LAST "Month Day[,] Year" in the string
-  const m = dateRange.match(/([A-Za-z]+)\s+(\d{1,2}),?\s*(\d{4})\s*$/);
-  if (!m) return null;
-  const monIdx = SHORT_MONTHS.indexOf(m[1].toLowerCase().substring(0, 3));
-  if (monIdx === -1) return null;
-  const endDate = new Date(parseInt(m[3]), monIdx, parseInt(m[2]));
-  const dates = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(endDate);
-    d.setDate(endDate.getDate() - i);
-    dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-  }
-  return dates;  // [Monday … Sunday]
-}
-
-/** Resolve a day string like "Mon 23" or "Sun 01" to an ISO date within weekDates */
-function resolveDayDate(dayStr, weekDates) {
-  if (!weekDates || !dayStr) return null;
-  const m = dayStr.match(/(\d{1,2})\s*$/);
-  if (!m) return null;
-  const dayNum = parseInt(m[1], 10);
-  return weekDates.find(d => parseInt(d.slice(8), 10) === dayNum) || null;
-}
-
 /**
  * Normalise AI output to flat { shifts: [...] } with YYYY-MM-DD dates.
  * Accepts both:
@@ -1507,7 +1482,7 @@ function normaliseAIOutput(parsed) {
 
   if (!Array.isArray(parsed?.schedule)) return { shifts: [] };
 
-  const weekDates = resolveWeekDates(parsed.date_range);
+  const weekDates = resolveWeekForSchedule(parsed.date_range, parsed.schedule.map(d => d && d.date));
   const shifts = [];
 
   for (const day of parsed.schedule) {
@@ -1529,14 +1504,14 @@ function normaliseAIOutput(parsed) {
         continue;
       }
 
-      const tm = (s.time || '').match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
-      if (!tm) continue;
+      const tr = parseTimeRange(s.time);
+      if (!tr) continue;
 
       shifts.push({
         name:       s.name,
         date:       isoDate,
-        start_time: tm[1].padStart(5, '0'),
-        end_time:   tm[2].padStart(5, '0'),
+        start_time: tr.start,
+        end_time:   tr.end,
         store,
       });
     }
@@ -1568,10 +1543,11 @@ function savePendingConflicts(batchId, scheduleData, conflicts) {
 // original import for Undo purposes). Returns the same shape either way;
 // callers own creating/finalizing the batch and persisting review state.
 function runJsonScheduleImport(schedule_data, overrides, batchId) {
-  // Parse week dates — supports both "01 - Dec 7, 2025" and "Apr 27, 2026 – May 3, 2026"
-  const weekDates = resolveWeekDates(schedule_data.date_range);
+  // Week from the header, cross-checked against the day labels (see
+  // resolveWeekForSchedule) so a misread header can't shift the import a week.
+  const weekDates = resolveWeekForSchedule(schedule_data.date_range, schedule_data.schedule.map(d => d && d.date));
   if (!weekDates)
-    return { error: 'Cannot parse date_range: ' + (schedule_data.date_range || '(missing)') };
+    return { error: "Couldn't work out which week this is from the header: " + (schedule_data.date_range || '(missing)') };
 
   const yourName = (
     db.prepare("SELECT value FROM settings WHERE key='your_name'").get()?.value || ''
@@ -1632,14 +1608,14 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
         skipped += count;
         continue;
       }
-      resolvedDates.add(dayDate);
+      if ((day.shifts || []).length) resolvedDates.add(dayDate);
 
       for (const shift of (day.shifts || [])) {
         const rawName = (shift.name || '').trim();
         if (!rawName) { skipped++; continue; }
 
-        // Skip own shifts
-        if (yourName && rawName.toLowerCase() === yourName) { skipped++; continue; }
+        // Skip own shifts — "Ed" / "Ed K" / "ED KAY" all count, not just an exact match
+        if (yourName && nameMatchesStrict(rawName, yourName)) { skipped++; continue; }
 
         // Classify shift type — any unrecognised type is treated as a regular shift
         const typeStr  = (shift.type || '').trim();
@@ -1656,11 +1632,14 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
           end_time   = '00:00';
         } else {
           // Regular shift — any type label (CHANGEOVER, Late, etc.) is accepted; must have times
-          const tm = (shift.time || '').match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
-          if (!tm) { skipped++; continue; }
+          const tr = parseTimeRange(shift.time);
+          if (!tr) {
+            warnings.push(`Couldn't read the time "${shift.time || ''}" for ${rawName} on ${dayDate} — skipped`);
+            skipped++; continue;
+          }
           shift_type = 'shift';
-          start_time = tm[1].padStart(5, '0');
-          end_time   = tm[2].padStart(5, '0');
+          start_time = tr.start;
+          end_time   = tr.end;
         }
 
         // A different-store shift is signalled by a "store" field on the incoming
@@ -1736,8 +1715,16 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
       `SELECT id, colleague_id FROM colleague_shifts
        WHERE date = ? AND (store IS NULL OR store = '') AND import_batch_id IS NOT NULL`
     );
+    // Only days this screenshot shows IN FULL. A day with no shifts in the reply
+    // isn't evidence of anything (the model is told to list all 7 days, so a
+    // screenshot of Mon–Wed comes back with Thu–Sun empty), and the first and
+    // last days visible may be cut off at the top or bottom of the screen —
+    // the rest of that day is often in the next screenshot. Clearing those
+    // used to delete real shifts imported from the other half of the week.
+    const shownDays = weekDates.filter(d => resolvedDates.has(d));
+    const fullyShown = new Set(shownDays.slice(1, -1));
     for (const d of weekDates) {
-      if (!resolvedDates.has(d)) continue;
+      if (!fullyShown.has(d)) continue;
       for (const row of staleHomeRowsStmt.all(d)) {
         if (!incomingHomePresence.has(`${row.colleague_id}|${d}`)) {
           deleteShiftById.run(row.id);
@@ -1752,6 +1739,13 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
   // earlier pass's.
   const priorInserted = db.prepare('SELECT inserted_count FROM import_batches WHERE id = ?').get(batchId)?.inserted_count || 0;
   finalizeImportBatch(batchId, priorInserted + inserted);
+  // Kept on the batch so an import that ran in the background (queued
+  // screenshot) can still tell you who it didn't recognise — and so it can be
+  // re-run once they've been added.
+  db.prepare('UPDATE import_batches SET summary = ?, schedule_data = ? WHERE id = ?').run(
+    JSON.stringify({ inserted, updated, skipped, reconciled, warnings, unknownNames: [...unknownNames],
+      week: [weekDates[0], weekDates[6]] }),
+    JSON.stringify(schedule_data), batchId);
   return { inserted, updated, skipped, reconciled, conflicts, warnings, unknownNames: [...unknownNames] };
 }
 
@@ -2077,73 +2071,6 @@ function labelForWeekDates(weekDates) {
     return `${d}.${m}.${y}`;
   };
   return { weekStart: weekDates[0], label: `${toDDMMYYYY(weekDates[0])} - ${toDDMMYYYY(weekDates[6])}` };
-}
-
-// resolveWeekDates only understands "Month DD, YYYY" at the very end of the
-// string — which is what the Rotageek header happens to look like, and nothing
-// else. Every other way a week can be written ("25 Aug – 31 Aug 2026",
-// "25/08/2026 - 31/08/2026", "Aug 25 – 31, 2026", or a header with no year at
-// all) parsed to null, and null is the 422 that failed a whole rename queue
-// without ever being a problem with the photo. This is the wider net: find the
-// last date anywhere in the string, filling in month/year from earlier in it
-// when the end date doesn't carry its own.
-const SHORT_MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-
-function resolveWeekDatesLoose(dateRange) {
-  if (!dateRange) return null;
-  const s = String(dateRange).trim();
-  const monIdx = name => SHORT_MONTHS.indexOf(String(name).toLowerCase().slice(0, 3));
-
-  const found = [];   // { y, m, d } in source order, m/y possibly null
-  const push = (d, m, y) => found.push({ d, m, y });
-
-  // ISO / numeric, either separator order: 2026-08-31, 31/08/2026, 31.08.2026
-  for (const m of s.matchAll(/(\d{4})-(\d{1,2})-(\d{1,2})/g)) push(+m[3], +m[2] - 1, +m[1]);
-  for (const m of s.matchAll(/(\d{1,2})[./](\d{1,2})[./](\d{4})/g)) push(+m[1], +m[2] - 1, +m[3]);
-  // "Aug 31[,] [2026]" and "31 Aug[,] [2026]"
-  for (const m of s.matchAll(/([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/g)) {
-    const mi = monIdx(m[1]);
-    if (mi >= 0) push(+m[2], mi, m[3] ? +m[3] : null);
-  }
-  for (const m of s.matchAll(/(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,})\.?,?\s*(\d{4})?/g)) {
-    const mi = monIdx(m[2]);
-    if (mi >= 0) push(+m[1], mi, m[3] ? +m[3] : null);
-  }
-  // A bare trailing day with no month of its own — "Aug 25 – 31, 2026"
-  if (!found.length) return null;
-  const bare = s.match(/[-–—to]\s*(\d{1,2})(?:st|nd|rd|th)?\s*,?\s*(\d{4})?\s*$/i);
-  if (bare) push(+bare[1], null, bare[2] ? +bare[2] : null);
-
-  // Everything the string does state, to fill in what the end date doesn't.
-  const anyMonth = found.find(f => f.m !== null)?.m ?? null;
-  const anyYear  = found.find(f => f.y !== null)?.y ?? null;
-
-  const end = found[found.length - 1];
-  const day   = end.d;
-  const month = end.m ?? anyMonth;
-  // No year anywhere is normal on a phone screenshot. The photo is a rota, so
-  // the week is near today — pick the candidate year whose date is closest to
-  // now rather than assuming the current one and being 6 months out each New Year.
-  let year = end.y ?? anyYear;
-  if (month === null || !Number.isFinite(day)) return null;
-  if (year == null) {
-    const now = new Date();
-    year = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
-      .reduce((best, y) => {
-        const dist = cy => Math.abs(new Date(cy, month, day) - now);
-        return dist(y) < dist(best) ? y : best;
-      });
-  }
-
-  const endDate = new Date(year, month, day);
-  if (isNaN(endDate)) return null;
-  const dates = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(endDate);
-    d.setDate(endDate.getDate() - i);
-    dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-  }
-  return dates;
 }
 
 // The rename queue only ever needed the week off the top of the screenshot, but

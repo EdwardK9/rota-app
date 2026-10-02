@@ -12,11 +12,19 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rota" />
+  <script>
+    // Applied before first paint so dark mode doesn't flash white while the app loads.
+    try { if (localStorage.getItem('darkMode') === 'true') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+  </script>
   <link rel="stylesheet" href="/css/style.css?v=20260821a" />
   <!-- V3.0 feature styles — separate file so the whole feature set stays liftable -->
   <link rel="stylesheet" href="/css/v3.css?v=20260821d" />
   <!-- V5.0 usage-analytics styles — same reasoning, kept as its own file -->
   <link rel="stylesheet" href="/css/v5.css?v=20260903a" />
+  <!-- UI refresh — loaded last so it restyles on top of the three above -->
+  <link rel="stylesheet" href="/css/refresh.css?v=1" />
+  <!-- Phone layout pass (tables → cards, stat strips, timelines) -->
+  <link rel="stylesheet" href="/css/mobile.css?v=1" />
 </head>
 <body>
   <!-- Sidebar -->
@@ -234,6 +242,8 @@
        (no attribute = strictly sequential fetch+execute per file); execution still
        happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
   <script src="/js/api.js?v=20260821a" defer></script>
+  <script src="/js/clockQueue.js?v=1" defer></script>
+  <script src="/js/netStatus.js?v=1" defer></script>
   <script src="/js/utils.js?v=20260821b" defer></script>
   <script src="/js/shifts.js?v=20260708a" defer></script>
   <script src="/js/calendar.js?v=20260629a" defer></script>
@@ -315,13 +325,5 @@
 
   <script src="/js/navCustomise.js?v=20260902a" defer></script>
   <script src="/js/app.js?v=20260821d" defer></script>
-  <script>
-    // PWA: register the (no-cache, passthrough) service worker so the app is installable
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      });
-    }
-  </script>
 </body>
 </html>

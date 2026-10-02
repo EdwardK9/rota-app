@@ -268,10 +268,19 @@ function v2BackButton() {
 
 // Escape HTML
 function esc(str) {
-  if (!str) return '';
+  if (str == null) return '';   // not `!str` — 0 is a real value and must still print
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// A value as a JS string literal for an inline onclick="…" handler. JSON gives a
+// valid literal whatever quotes the value contains (O'Brien broke the old '…'
+// splicing); esc() then makes it safe inside the double-quoted attribute, which
+// the browser decodes back before the handler runs.
+function jsArg(v) {
+  return esc(JSON.stringify(v == null ? '' : String(v)));
 }

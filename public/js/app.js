@@ -6,10 +6,15 @@ const App = {
   V2_VIEWS: ['synergy', 'team-metrics', 'fatigue-audit', 'shift-heatmap', 'weather', 'what-if', 'streaks', 'wrapped'],
 
   async start() {
-    // Dark mode — restore saved preference
-    if (localStorage.getItem('darkMode') === 'true') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
+    // Start the opening view's data loading alongside settings rather than
+    // after them — on a phone that's a whole round trip off the first paint.
+    const initialView = window.location.hash.replace('#', '') || 'dashboard';
+    const settingsP = API.getSettings();
+    settingsP.catch(() => {});   // handled where it's awaited below
+    if (initialView === 'dashboard') DashboardView.prefetch();
+
+    // Dark mode — the saved preference is applied by an inline script in
+    // <head> before first paint; this just wires the toggle.
     document.getElementById('darkModeToggle').addEventListener('click', () => {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
       document.documentElement.setAttribute('data-theme', isDark ? '' : 'dark');
@@ -54,7 +59,7 @@ const App = {
 
     // Load settings first (needed by other views)
     try {
-      this.settings = await API.getSettings();
+      this.settings = await settingsP;
     } catch(e) {
       console.warn('Could not load settings:', e.message);
     }
@@ -287,7 +292,14 @@ const App = {
     } catch(navErr) {
       console.error('[navigate] error in view "' + view + '":', navErr);
       const errEl = document.getElementById('view-' + view);
-      if (errEl) errEl.innerHTML = '<div style="padding:40px;color:red;font-family:monospace">View error: ' + navErr.message + '<br><pre>' + navErr.stack + '</pre></div>';
+      if (errEl) errEl.innerHTML = `
+        <div class="view-error">
+          <div class="view-error-icon">⚠️</div>
+          <div class="view-error-title">This page couldn't load</div>
+          <div class="view-error-msg">${esc(navErr.message)}</div>
+          <button class="btn btn-primary" onclick="App.navigate(${jsArg(view)})">Try again</button>
+          <details class="view-error-details"><summary>Technical details</summary><pre>${esc(navErr.stack)}</pre></details>
+        </div>`;
     }
   },
 

@@ -269,7 +269,7 @@ const NotificationsView = {
     if (s.lastRun)    parts.push(`Last run: ${new Date(s.lastRun).toLocaleString('en-GB',{dateStyle:'short',timeStyle:'short'})}`);
     if (s.lastResult) {
       const r = s.lastResult;
-      if (r.error) parts.push(`<span style="color:var(--danger)">Last error: ${r.error}</span>`);
+      if (r.error) parts.push(`<span style="color:var(--danger)">Last error: ${esc(r.error)}</span>`);
       else         parts.push(`Last result: ${r.imported} new, ${r.changed} changed${r.removed ? `, ${r.removed} removed` : ''}`);
     }
     el.innerHTML = parts.join(' &nbsp;·&nbsp; ') || 'Not run yet.';
@@ -386,7 +386,7 @@ const NotificationsView = {
       const r = await fetch('/api/rotageek/autosync', { method: 'POST' }).then(r => r.json());
       if (r.error) {
         showToast('Sync error: ' + r.error, 'error');
-        statusEl.innerHTML = `<span style="color:var(--danger)">${r.error}</span>`;
+        statusEl.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span>`;
       } else {
         showToast(`Sync complete — ${r.imported} new, ${r.changed} changed${r.removed ? `, ${r.removed} removed` : ''}`, 'success');
         await this.loadSettings();

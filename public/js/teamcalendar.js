@@ -268,7 +268,7 @@ const TeamCalendarView = {
     const sel = document.getElementById('tcAddColleague');
     const cols = this._cachedColleagues || [];
     sel.innerHTML = cols.map(c =>
-      `<option value="${c.id}" ${String(c.id)===String(prefillColleagueId)?'selected':''}>${c.name}</option>`
+      `<option value="${c.id}" ${String(c.id)===String(prefillColleagueId)?'selected':''}>${esc(c.name)}</option>`
     ).join('');
     if (prefillDate) document.getElementById('tcAddDate').value = prefillDate;
     document.getElementById('tcAddType').value = 'shift';
@@ -640,7 +640,7 @@ const TeamCalendarView = {
       this._lastWeekData = data;
       this._renderWeekGrid(data);
     } catch (e) {
-      document.getElementById('tcWeekGrid').innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      document.getElementById('tcWeekGrid').innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
     }
   },
 
@@ -795,17 +795,17 @@ const TeamCalendarView = {
             font-weight:${row.isMe?700:500};font-size:13px;
             white-space:nowrap;border:1px solid var(--border);
             position:sticky;left:0;z-index:2">
-            ${row.label}
+            ${esc(row.label)}
             ${!row.isMe ? `<div style="display:flex;gap:3px;margin-top:4px;flex-wrap:wrap">
               <button onclick="TeamCalendarView._clearColleagueWeek(${row.id},'${this._currentWeek}')"
                 style="background:none;border:1px solid var(--border);border-radius:4px;
                 color:var(--text-muted);font-size:10px;padding:1px 5px;cursor:pointer;white-space:nowrap"
                 title="Delete all shifts for this person this week">clear week</button>
-              <button onclick="TeamCalendarView._deleteColleagueMonth(${row.id},'${row.label}','${this._currentWeek.slice(0,7)}')"
+              <button onclick="TeamCalendarView._deleteColleagueMonth(${row.id},${jsArg(row.label)},'${this._currentWeek.slice(0,7)}')"
                 style="background:none;border:1px solid var(--border);border-radius:4px;
                 color:var(--text-muted);font-size:10px;padding:1px 5px;cursor:pointer;white-space:nowrap"
                 title="Delete all shifts for this person this month">del month</button>
-              <button onclick="TeamCalendarView._deleteAllForColleague(${row.id},'${row.label}')"
+              <button onclick="TeamCalendarView._deleteAllForColleague(${row.id},${jsArg(row.label)})"
                 style="background:none;border:1px solid var(--border);border-radius:4px;
                 color:var(--text-muted);font-size:10px;padding:1px 5px;cursor:pointer;white-space:nowrap"
                 title="Delete ALL shifts ever for this person">delete all</button>
@@ -917,7 +917,7 @@ const TeamCalendarView = {
              </span>`;
           return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border);${s.store ? 'opacity:0.75' : ''}">
                     <span style="width:10px;height:10px;border-radius:50%;background:${row.colour};flex-shrink:0"></span>
-                    <span style="font-weight:${row.isMe?700:500};font-size:13px">${row.label.replace(' ★','')}${row.isMe?' ★':''}</span>
+                    <span style="font-weight:${row.isMe?700:500};font-size:13px">${esc(row.label.replace(' ★',''))}${row.isMe?' ★':''}</span>
                     <span style="font-size:13px">${label}</span>
                     ${storeBadge}
                     ${editDel}
@@ -1011,8 +1011,8 @@ const TeamCalendarView = {
         const active = colleagues.filter(c => !c.left_date);
         const past   = colleagues.filter(c =>  c.left_date);
         sel.innerHTML = '<option value="">— Select a person —</option>' +
-          active.map(c => `<option value="${c.id}" ${String(c.id)===String(cur)?'selected':''}>${c.name}</option>`).join('') +
-          (past.length ? `<optgroup label="Past employees">${past.map(c => `<option value="${c.id}" ${String(c.id)===String(cur)?'selected':''}>${c.name} (left)</option>`).join('')}</optgroup>` : '');
+          active.map(c => `<option value="${c.id}" ${String(c.id)===String(cur)?'selected':''}>${esc(c.name)}</option>`).join('') +
+          (past.length ? `<optgroup label="Past employees">${past.map(c => `<option value="${c.id}" ${String(c.id)===String(cur)?'selected':''}>${esc(c.name)} (left)</option>`).join('')}</optgroup>` : '');
       }
 
       const weekly = document.getElementById('tcWeeklyWrap');
@@ -1031,7 +1031,7 @@ const TeamCalendarView = {
       if (list) this._renderShiftList(shifts, list);
     } catch (e) {
       const list = document.getElementById('tcShiftListWrap');
-      if (list) list.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      if (list) list.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
     }
   },
 

@@ -190,7 +190,7 @@ const WhosInView = {
       if (todayBtn) todayBtn.style.display = this._viewDate ? '' : 'none';
     } catch (e) {
       const b = document.getElementById('wiLeftBody');
-      if (b) b.innerHTML = `<div class="wi-empty" style="color:var(--danger)">Error: ${e.message}</div>`;
+      if (b) b.innerHTML = `<div class="wi-empty" style="color:var(--danger)">Error: ${esc(e.message)}</div>`;
     }
   },
 
@@ -228,9 +228,9 @@ const WhosInView = {
     const toMins = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
     const card = ({ name, start, end, isMe, badgeClass, badgeText }) => `
       <div class="wi-card${isMe ? ' wi-me' : ''}">
-        <div class="wi-avatar">${name.charAt(0).toUpperCase()}</div>
+        <div class="wi-avatar">${esc(name.charAt(0).toUpperCase())}</div>
         <div class="wi-card-info">
-          <div class="wi-card-name">${name}</div>
+          <div class="wi-card-name">${esc(name)}</div>
           <div class="wi-card-times">${start} – ${end}</div>
         </div>
         <div class="wi-badge ${badgeClass}">${badgeText}</div>
@@ -370,14 +370,14 @@ const WhosInView = {
                          : isActive    ? 'wi-bar wi-bar-active'
                          : isPast      ? 'wi-bar wi-bar-past'
                          :               'wi-bar wi-bar-upcoming';
-        return `<div class="${barClass}" style="left:${barLeft};width:${barWidth}" title="${e.name}: ${sp.start}–${sp.end}">
+        return `<div class="${barClass}" style="left:${barLeft};width:${barWidth}" title="${esc(e.name)}: ${sp.start}–${sp.end}">
               <span>${sp.start}–${sp.end}</span>
             </div>`;
       }).join('');
 
       return `
         <div class="wi-tl-row">
-          <div class="wi-tl-name${e.isMe ? ' me' : ''}" title="${e.name}">${e.name}</div>
+          <div class="wi-tl-name${e.isMe ? ' me' : ''}" title="${esc(e.name)}">${esc(e.name)}</div>
           <div class="wi-tl-track">
             ${gridLines}
             ${nowLine}

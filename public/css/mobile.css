@@ -1,0 +1,136 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Phone layout pass — loaded last. Fixes pages that were laid out for a desk
+   and only squeezed onto a phone: wide tables, walls of stat boxes, timelines.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Shifts table → one compact card per shift ─────────────────────────────
+   The table has 11 columns: 1 select · 2 done · 3 date · 4 start · 5 end ·
+   6 break · 7 used · 8 paid hrs · 9 pay · 10 notes · 11 edit/delete.
+   (The older phone rules in style.css still assumed 13 columns, so they hid the
+   Edit/Delete buttons and left a cut-off Notes column.) */
+@media (max-width: 640px) {
+  #view-shifts .table-wrapper { overflow: visible; border: 0; background: transparent; }
+  #shiftsTable, #shiftsTable tbody { display: block; background: transparent; }
+  #shiftsTable thead { display: none; }
+
+  #shiftsTable tbody tr[data-id] {
+    display: grid;
+    grid-template-columns: 40px auto 1fr auto auto;
+    grid-template-areas:
+      "done date  date pay  act"
+      "done start end  paid act";
+    align-items: center;
+    column-gap: 6px;
+    row-gap: 2px;
+    padding: 6px 8px 6px 8px;
+    margin-bottom: 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  #shiftsTable tbody tr.completed-row { background: color-mix(in srgb, var(--success) 6%, var(--card-bg)); }
+  #shiftsTable tbody tr[data-id] > td { display: block !important; padding: 0; border: 0; white-space: nowrap; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(1),
+  #shiftsTable tbody tr[data-id] > td:nth-child(6),
+  #shiftsTable tbody tr[data-id] > td:nth-child(7),
+  #shiftsTable tbody tr[data-id] > td:nth-child(10) { display: none !important; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(2)  { grid-area: done; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(3)  { grid-area: date; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(4)  { grid-area: start; font-size: 14px; font-weight: 600; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(4)::after { content: ' –'; color: var(--text-muted); font-weight: 400; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(5)  { grid-area: end; font-size: 14px; font-weight: 600; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(8)  { grid-area: paid; text-align: right; font-size: 12px; color: var(--text-muted); }
+  #shiftsTable tbody tr[data-id] > td:nth-child(9)  { grid-area: pay; text-align: right; font-weight: 700; }
+  #shiftsTable tbody tr[data-id] > td:nth-child(11) { grid-area: act; display: flex !important; flex-direction: column; gap: 2px; }
+  #shiftsTable tbody tr[data-id] .shift-date { display: inline; font-weight: 700; }
+  #shiftsTable tbody tr[data-id] .shift-day  { display: inline; margin-left: 6px; }
+  #shiftsTable .complete-btn { width: 30px; height: 30px; }
+  #shiftsTable .btn-icon { min-width: 36px; min-height: 30px; padding: 3px; }
+
+  /* Leave days: icon · date / detail */
+  #shiftsTable tbody tr.leave-row {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    grid-template-areas: "icon date" "icon detail";
+    padding: 10px 8px; margin-bottom: 8px;
+    border-radius: 12px; border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+  }
+  #shiftsTable tbody tr.leave-row > td { display: block !important; padding: 0; border: 0; }
+  #shiftsTable tbody tr.leave-row > td:nth-child(1),
+  #shiftsTable tbody tr.leave-row > td:last-child { display: none !important; }
+  #shiftsTable tbody tr.leave-row > td:nth-child(2) { grid-area: icon; }
+  #shiftsTable tbody tr.leave-row > td:nth-child(3) { grid-area: date; }
+  #shiftsTable tbody tr.leave-row > td:nth-child(4) { grid-area: detail; white-space: normal; }
+  #shiftsTable tbody tr.leave-row .shift-day { display: inline; margin-left: 6px; }
+  #shiftsTable tbody tr.leave-row .shift-date { display: inline; font-weight: 700; }
+
+  /* Week headings sit between the cards */
+  #shiftsTable tbody tr.week-group-row { display: block; background: transparent !important; }
+  #shiftsTable tbody tr.week-group-row > td {
+    display: block; border: 0 !important; padding: 14px 2px 6px !important;
+    white-space: normal; line-height: 1.5;
+  }
+  #shiftsTable tbody tr.week-group-row > td > span:last-child { display: block; margin-left: 0 !important; }
+  #shiftsTable tbody tr:hover { background: inherit; }
+}
+
+/* ── Stat boxes: a swipeable two-row strip on phones ───────────────────────
+   Pages like Shifts have 12 of them, which filled the whole first screen
+   before you got to what you opened the page for. */
+@media (max-width: 480px) {
+  .stats-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-template-columns: none !important;
+    grid-auto-columns: calc((100% - 20px) / 2.6);
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .stats-grid::-webkit-scrollbar { display: none; }
+  .stats-grid > * { scroll-snap-align: start; min-width: 0; }
+  /* Four or fewer fit on screen as they are — no strip needed. */
+  .stats-grid:not(:has(> :nth-child(5))) {
+    grid-auto-flow: row;
+    grid-template-rows: none;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)) !important;
+    overflow: visible;
+  }
+}
+
+/* ── Other wide tables: keep the first column in view while scrolling ───── */
+@media (max-width: 768px) {
+  .table-wrapper { -webkit-overflow-scrolling: touch; }
+  .table-wrapper table:not(#shiftsTable) th:first-child,
+  .table-wrapper table:not(#shiftsTable) td:first-child {
+    position: sticky; left: 0; z-index: 1;
+    background: var(--card-bg);
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .table-wrapper table:not(#shiftsTable) thead th:first-child { background: inherit; z-index: 2; }
+}
+
+/* ── Who's In timeline: fit the screen instead of scrolling sideways ────── */
+@media (max-width: 600px) {
+  .wi-timeline { min-width: 0 !important; }
+  .wi-tl-name  { width: 64px !important; font-size: 11px !important; }
+  .wi-tl-axis span, .wi-tl-axis div { font-size: 10px; }
+}
+
+/* ── Clock In/Out page: in and out side by side ─────────────────────────── */
+@media (max-width: 600px) {
+  .ck-cols { gap: 8px !important; flex-wrap: nowrap !important; }
+  .ck-col  { min-width: 0 !important; }
+  .ck-col .ck-time { font-size: 30px !important; }
+  .ck-arrow { font-size: 18px !important; }
+}
+
+/* ── Tab rows (Reports, Import, …): one swipeable line, not two ragged rows */
+@media (max-width: 768px) {
+  .import-tabs { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; }
+  .import-tabs::-webkit-scrollbar { display: none; }
+  .import-tabs > * { flex-shrink: 0; }
+}
