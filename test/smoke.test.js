@@ -55,6 +55,28 @@ const { startServer } = require('./helpers/server');
       if (problems.length) failures++;
       console.log(`  ${problems.length ? 'FAIL' : 'PASS'}  ${view}${problems.length ? '\n        ' + problems.join('\n        ') : ''}`);
     }
+    // Opening a page other than the dashboard directly (a bookmark, a link, or
+    // the back button after a reload): its code is in the second bundle, which
+    // has to be fetched before the page can draw.
+    console.log('\nOpening pages directly, on a fresh load:\n');
+    for (const view of ['shifts', 'clock', 'money-clock', 'v5-hub']) {
+      const fresh = await (await browser.newContext({ ...devices['Pixel 7'], timezoneId: 'Europe/London' })).newPage();
+      const errs = [];
+      fresh.on('pageerror', e => errs.push(e.message));
+      await fresh.goto(`${server.base}/#${view}`, { waitUntil: 'networkidle' });
+      await fresh.waitForTimeout(400);
+      const state = await fresh.evaluate(v => {
+        const el = document.getElementById('view-' + v);
+        return { visible: !!el && !el.classList.contains('hidden'), filled: !!el && el.innerText.trim().length > 20,
+                 broken: !!(el && el.querySelector('.view-error')) };
+      }, view);
+      const problems = [...errs];
+      if (!state.visible || !state.filled) problems.push('page did not draw');
+      if (state.broken) problems.push('showed its "couldn\'t load" card');
+      if (problems.length) failures++;
+      console.log(`  ${problems.length ? 'FAIL' : 'PASS'}  #${view}${problems.length ? '\n        ' + problems.join('\n        ') : ''}`);
+      await fresh.context().close();
+    }
   } catch (e) {
     failures++;
     console.log('  FAIL  ' + e.stack);

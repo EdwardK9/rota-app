@@ -62,12 +62,14 @@ const fakeGemini = http.createServer((rq, rs) => {
     console.log('\nPage and assets:');
     const page = await req('GET', '/');
     check('index.html is served', page.status === 200 && page.body.includes('<title>'));
-    const bundleSrc = (page.body.match(/src="(\/js\/app\.bundle\.js\?v=[^"]+)"/) || [])[1];
-    check('scripts are served as one bundle', !!bundleSrc, page.body.match(/<script src="[^"]+"/g));
-    if (bundleSrc) {
-      const b = await req('GET', bundleSrc);
-      check('bundle loads', b.status === 200 && b.body.includes('const App'));
-      check('bundle is cached as immutable', /immutable/.test(b.headers.get('cache-control') || ''));
+    const coreSrc = (page.body.match(/src="(\/js\/app\.core\.js\?v=[^"]+)"/) || [])[1];
+    const restSrc = (page.body.match(/name="app-rest-bundle" content="(\/js\/app\.rest\.js\?v=[^"]+)"/) || [])[1];
+    check('scripts are served as a core bundle plus a rest bundle', !!coreSrc && !!restSrc && (page.body.match(/<script src=/g) || []).length === 1, page.body.match(/<script src="[^"]+"/g));
+    for (const [label, src, marker] of [['core', coreSrc, 'const App'], ['rest', restSrc, 'const ShiftsView']]) {
+      if (!src) continue;
+      const b = await req('GET', src);
+      check(`${label} bundle loads`, b.status === 200 && b.body.includes(marker));
+      check(`${label} bundle is cached as immutable`, /immutable/.test(b.headers.get('cache-control') || ''));
     }
     const css = (page.body.match(/href="(\/css\/style\.css\?v=[^"]+)"/) || [])[1];
     check('css carries a content-hash token', !!css && /\?v=[\w.]+-[0-9a-f]{8}$/.test(css), css);

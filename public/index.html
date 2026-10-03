@@ -241,10 +241,14 @@
   <!-- defer lets the browser fetch all of these in parallel instead of one at a time
        (no attribute = strictly sequential fetch+execute per file); execution still
        happens in this same order, before DOMContentLoaded, so behaviour is unchanged. -->
-  <script src="/js/api.js?v=20260821a" defer></script>
-  <script src="/js/clockQueue.js?v=1" defer></script>
-  <script src="/js/netStatus.js?v=1" defer></script>
-  <script src="/js/utils.js?v=20260821b" defer></script>
+  <!-- data-core: part of the small first bundle (app shell, dashboard, clocking,
+       offline). Everything else is bundled separately and loaded as soon as the
+       dashboard is up (see assets.js and App.loadRest). Raw/unbundled mode just
+       loads every tag in order, as before. -->
+  <script src="/js/api.js?v=20260821a" defer data-core></script>
+  <script src="/js/clockQueue.js?v=1" defer data-core></script>
+  <script src="/js/netStatus.js?v=1" defer data-core></script>
+  <script src="/js/utils.js?v=20260821b" defer data-core></script>
   <script src="/js/shifts.js?v=20260708a" defer></script>
   <script src="/js/calendar.js?v=20260629a" defer></script>
   <script src="/js/payslips.js?v=20260817a" defer></script>
@@ -275,13 +279,13 @@
   <script src="/js/audit.js?v=20260710a" defer></script>
   <script src="/js/notifications.js?v=20260817b" defer></script>
   <script src="/js/clockInOut.js?v=20260711a" defer></script>
-  <script src="/js/dashboard.js?v=20260821a" defer></script>
+  <script src="/js/dashboard.js?v=20260821a" defer data-core></script>
   <script src="/js/key.js?v=20260711a" defer></script>
 
   <!-- V3.0 Features. v3core.js must come first — it defines the V3 namespace and
        the register() each view calls at load time. app.js stays last: it reads
        V3.views/V3.titles when routing, so everything must already be registered. -->
-  <script src="/js/v3/v3core.js?v=20260821f" defer></script>
+  <script src="/js/v3/v3core.js?v=20260821f" defer data-core></script>
   <script src="/js/v3/hub.js?v=20260821c" defer></script>
   <script src="/js/v3/moneyClock.js?v=20260821d" defer></script>
   <script src="/js/v3/countdowns.js?v=20260821d" defer></script>
@@ -314,16 +318,16 @@
        v3core.js. tracker.js is the one file here that runs on every page load
        rather than only when a V5 view is open; it wraps App.navigate, so it is
        started from a DOMContentLoaded handler after app.js has routed. -->
-  <script src="/js/v5/v5core.js?v=20260903a" defer></script>
+  <script src="/js/v5/v5core.js?v=20260903a" defer data-core></script>
   <script src="/js/v5/hub.js?v=20260903a" defer></script>
   <script src="/js/v5/usage.js?v=20260903a" defer></script>
   <script src="/js/v5/screens.js?v=20260903a" defer></script>
   <script src="/js/v5/habits.js?v=20260903a" defer></script>
   <script src="/js/v5/locations.js?v=20260903a" defer></script>
   <script src="/js/v5/privacy.js?v=20260903a" defer></script>
-  <script src="/js/v5/tracker.js?v=20260903a" defer></script>
+  <script src="/js/v5/tracker.js?v=20260903a" defer data-core></script>
 
-  <script src="/js/navCustomise.js?v=20260902a" defer></script>
-  <script src="/js/app.js?v=20260821d" defer></script>
+  <script src="/js/navCustomise.js?v=20260902a" defer data-core></script>
+  <script src="/js/app.js?v=20260821d" defer data-core></script>
 </body>
 </html>
