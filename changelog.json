@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-03T07:10:44.376Z",
-  "commit": "27f368d",
+  "generated_at": "2026-10-03T08:09:43.496Z",
+  "commit": "1632fe0",
   "entries": [
+    {
+      "version": "6.3.0",
+      "date": "2026-10-03",
+      "summary": "Who's In Store redesigned",
+      "details": "Who's In Store\n- One clear column that fits a PC screen or a phone, with no sideways\n  scroll bar.\n- At a glance: who's in now, who's next in and when, who's gone home,\n  last out and the busiest time of day.\n- \"In store now\" cards show how long each person has left.\n- The day chart runs from the first start to the last finish, with a\n  headcount row underneath. Other days show who opens and who closes.\n\nTeam Calendar\n- The gap/low badge sits under the date, so the week grid no longer\n  scrolls sideways by a few pixels.\n\nChecks\n- The browser test now fails if anything on Who's In, Team Calendar or\n  the dashboard scrolls sideways on a wide screen.\n\n\nClaude-Session: https://claude.ai/code/session_017sUWqzvoJV9iKZ2c9bGJkk"
+    },
     {
       "version": "6.2.0",
       "date": "2026-10-03",
