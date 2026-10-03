@@ -4,6 +4,32 @@ const App = {
   currentView: 'dashboard',
   settings: {},
   V2_VIEWS: ['synergy', 'team-metrics', 'fatigue-audit', 'shift-heatmap', 'weather', 'what-if', 'streaks', 'wrapped'],
+  // Views whose code is in the small first bundle; every other view's code
+  // comes in the "rest" bundle (see loadRest).
+  CORE_VIEWS: ['dashboard'],
+
+  // Load the rest of the app's code (every view but the dashboard). The page
+  // ships it as a second bundle so a first visit can show the dashboard without
+  // downloading and parsing everything else first; it's fetched as soon as the
+  // first view is up, or straight away if you open another page first. With no
+  // bundle (raw/unbundled mode) everything is already loaded.
+  _restReady: null,
+  loadRest() {
+    if (this._restReady) return this._restReady;
+    const url = document.querySelector('meta[name="app-rest-bundle"]')?.content;
+    if (!url) return (this._restReady = Promise.resolve());
+    this._restReady = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = url;
+      s.onload = () => resolve();
+      s.onerror = () => {
+        this._restReady = null;   // let the next navigation try again
+        reject(new Error("Couldn't load this page — check your connection and try again"));
+      };
+      document.head.appendChild(s);
+    });
+    return this._restReady;
+  },
 
   async start() {
     // Start the opening view's data loading alongside settings rather than
@@ -162,19 +188,35 @@ const App = {
       if (view !== this.currentView) this.navigate(view);
     });
 
-    // Navigate to default view
+    // Navigate to default view, then fetch the rest of the app's code once
+    // it's on screen (navigate() fetches it first if the view needs it).
     const hash = window.location.hash.replace('#', '') || 'dashboard';
-    this.navigate(hash);
+    this.navigate(hash).finally(() => this.loadRest().catch(() => {}));
   },
 
   async navigate(view) {
+    if (!this.CORE_VIEWS.includes(view)) {
+      try {
+        await this.loadRest();
+      } catch (e) {
+        showToast(e.message, 'error');
+        return;
+      }
+    }
+
     // Stop the outgoing view's timers/polls before switching — without this they
     // keep running in the background for the rest of the session (accumulating one
     // more set of intervals every time that view is revisited).
     // V3 views register themselves, so the router looks them up rather than
     // naming each one — a new V3 feature needs no change here.
-    const outgoingView = { dashboard: DashboardView, 'whos-in': WhosInView, clock: ClockInOutView,
-      'team-upload': TeamUploadView, 'photo-library': PhotoLibrary }[this.currentView]
+    // typeof guards: until the rest bundle has loaded, only DashboardView exists.
+    const outgoingView = {
+      dashboard: DashboardView,
+      'whos-in': typeof WhosInView !== 'undefined' ? WhosInView : null,
+      clock: typeof ClockInOutView !== 'undefined' ? ClockInOutView : null,
+      'team-upload': typeof TeamUploadView !== 'undefined' ? TeamUploadView : null,
+      'photo-library': typeof PhotoLibrary !== 'undefined' ? PhotoLibrary : null,
+    }[this.currentView]
       || (typeof V3 !== 'undefined' ? V3.views[this.currentView] : null)
       || (typeof V5 !== 'undefined' ? V5.views[this.currentView] : null);
     outgoingView?.destroy?.();

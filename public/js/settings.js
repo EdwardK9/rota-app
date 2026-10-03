@@ -778,7 +778,17 @@ const SettingsView = {
   },
 
   initCollapsibleSections() {
-    const collapsed = this._collapsedSet();
+    let collapsed = this._collapsedSet();
+    // First visit on a phone: start with every section but the first folded —
+    // fully expanded, this page is ~25,000px of scrolling. Saved like any other
+    // choice, so it's only the starting point; search still opens matches.
+    let hasSaved = false;
+    try { hasSaved = localStorage.getItem(this.COLLAPSE_KEY) !== null; } catch {}
+    if (!hasSaved && window.matchMedia('(max-width: 768px)').matches) {
+      const sections = [...document.querySelectorAll('#settingsGrid .settings-section')];
+      collapsed = new Set(sections.slice(1).map(s => this._sectionTitle(s)).filter(Boolean));
+      this._saveCollapsedSet(collapsed);
+    }
 
     document.querySelectorAll('#settingsGrid .settings-section').forEach(section => {
       const header = section.querySelector('.card-header');

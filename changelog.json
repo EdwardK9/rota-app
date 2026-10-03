@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-02T09:55:05.422Z",
-  "commit": "dcca3b2",
+  "generated_at": "2026-10-03T07:10:44.376Z",
+  "commit": "27f368d",
   "entries": [
+    {
+      "version": "6.2.0",
+      "date": "2026-10-03",
+      "summary": "Security updates, faster first load, tidier pages",
+      "details": "Security\n- Updated the upload library (high-severity advisory), Express and the\n  Google Calendar library: no known vulnerabilities in the app's\n  dependencies. Docker image moved from Node 18 (no security fixes since\n  April 2025) to Node 22; Node 18 setups still work.\n\nSpeed\n- The dashboard's code loads first and everything else straight after.\n  On a slow phone connection the first open after an update shows the\n  dashboard in about 1.1s (was 2.5s in v6.1.0, 3.9s before that).\n\nLook and feel\n- Settings starts folded on phones (search still opens what you need).\n- Four stat boxes show as 2 × 2 on phones; table headers fixed in dark\n  mode; feature search full width on phones; pages centred on big screens.\n\nTidy-up\n- Removed two old Gemini import routes and unused helpers that nothing\n  in the app used any more.\n\n\nClaude-Session: https://claude.ai/code/session_017sUWqzvoJV9iKZ2c9bGJkk"
+    },
     {
       "version": "6.1.0",
       "date": "2026-10-02",

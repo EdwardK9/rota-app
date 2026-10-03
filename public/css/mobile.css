@@ -92,12 +92,16 @@
   }
   .stats-grid::-webkit-scrollbar { display: none; }
   .stats-grid > * { scroll-snap-align: start; min-width: 0; }
-  /* Four or fewer fit on screen as they are — no strip needed. */
+  /* Four or fewer fit on screen as they are — no strip needed: exactly four
+     as a 2 × 2 block (not 3 + 1), three or fewer in one row. */
   .stats-grid:not(:has(> :nth-child(5))) {
     grid-auto-flow: row;
     grid-template-rows: none;
-    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)) !important;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)) !important;
     overflow: visible;
+  }
+  .stats-grid:has(> :nth-child(4)):not(:has(> :nth-child(5))) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
@@ -110,7 +114,9 @@
     background: var(--card-bg);
     box-shadow: 1px 0 0 var(--border);
   }
-  .table-wrapper table:not(#shiftsTable) thead th:first-child { background: inherit; z-index: 2; }
+  /* Same fill as the rest of the header row (style.css thead th), not the body's. */
+  .table-wrapper table:not(#shiftsTable) thead th:first-child { background: #F8F9FA; z-index: 2; }
+  [data-theme="dark"] .table-wrapper table:not(#shiftsTable) thead th:first-child { background: #1E2130; }
 }
 
 /* ── Who's In timeline: fit the screen instead of scrolling sideways ────── */
@@ -133,4 +139,9 @@
   .import-tabs { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; }
   .import-tabs::-webkit-scrollbar { display: none; }
   .import-tabs > * { flex-shrink: 0; }
+}
+
+/* ── Feature-hub search box: full width on phones (it's capped at 280px) ── */
+@media (max-width: 600px) {
+  #hubSearch { max-width: none !important; width: 100%; }
 }
