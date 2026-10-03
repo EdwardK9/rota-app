@@ -697,9 +697,9 @@ const TeamCalendarView = {
       const hasEmpty = gaps.some(g => g.minCount === 0);
       const hasLow   = gaps.length > 0 && !hasEmpty;
       const badge = hasEmpty
-        ? `<div title="Nobody scheduled during part of trading hours" style="display:inline-block;background:#EF4444;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;margin-top:3px">🚫 gap</div>`
+        ? `<div title="Nobody scheduled during part of trading hours" style="display:block;width:fit-content;max-width:100%;margin:3px auto 0;background:#EF4444;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">🚫 gap</div>`
         : hasLow
-        ? `<div title="Only 1 person scheduled during part of trading hours" style="display:inline-block;background:#F59E0B;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;margin-top:3px">⚠ low</div>`
+        ? `<div title="Only 1 person scheduled during part of trading hours" style="display:block;width:fit-content;max-width:100%;margin:3px auto 0;background:#F59E0B;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">⚠ low</div>`
         : '';
       return `<th style="
         padding:8px 6px;text-align:center;font-size:12px;font-weight:600;

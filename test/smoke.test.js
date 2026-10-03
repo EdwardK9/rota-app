@@ -77,6 +77,29 @@ const { startServer } = require('./helpers/server');
       console.log(`  ${problems.length ? 'FAIL' : 'PASS'}  #${view}${problems.length ? '\n        ' + problems.join('\n        ') : ''}`);
       await fresh.context().close();
     }
+    // Wide-screen check for pages with their own charts: nothing inside them
+    // may scroll sideways (Who's In used to show a sliver of horizontal scroll).
+    console.log('\nNo sideways scrolling inside pages on a wide screen:\n');
+    // A realistic day of team shifts first, so there's a chart to check.
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+    const day = [['Holly Woonton', '06:45', '12:15'], ['Janice Dennett', '10:15', '18:15'],
+                 ['Lucas Topliss', '10:45', '15:15'], ['Erin Ward', '15:15', '18:15']];
+    const post = (path, body) => fetch(server.base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    for (const [name] of day) await post('/api/colleagues', { name });
+    await post('/api/team-shifts/import', { shifts: day.map(([name, start_time, end_time]) => ({ name, date: today, start_time, end_time })) });
+    const wide = await (await browser.newContext({ viewport: { width: 1880, height: 906 }, timezoneId: 'Europe/London' })).newPage();
+    await wide.goto(server.base + '/', { waitUntil: 'networkidle' });
+    for (const view of ['whos-in', 'team-calendar', 'dashboard']) {
+      await wide.evaluate(v => App.navigate(v), view);
+      await wide.waitForTimeout(400);
+      const scrollers = await wide.evaluate(v => [...document.querySelectorAll(`#view-${v} *`)]
+        .filter(e => e.scrollWidth > e.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(e).overflowX)
+          && !e.closest('.table-wrapper'))   // wide data tables scroll on purpose
+        .map(e => e.className || e.tagName).slice(0, 3), view);
+      if (scrollers.length) failures++;
+      console.log(`  ${scrollers.length ? 'FAIL' : 'PASS'}  ${view}${scrollers.length ? '\n        scrolls sideways: ' + scrollers.join(', ') : ''}`);
+    }
+    await wide.context().close();
   } catch (e) {
     failures++;
     console.log('  FAIL  ' + e.stack);
