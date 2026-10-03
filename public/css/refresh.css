@@ -364,3 +364,9 @@ body {
 .view-error-msg   { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; overflow-wrap: anywhere; }
 .view-error-details { margin-top: 16px; text-align: left; font-size: 12px; color: var(--text-muted); }
 .view-error-details pre { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }
+
+/* ── Wide screens: centre the page column like the dashboard, rather than
+   stretching tables and paragraphs edge to edge on a big monitor. ── */
+@media (min-width: 1500px) {
+  .view { width: 100%; max-width: 1320px; margin-left: auto; margin-right: auto; }
+}
