@@ -24,7 +24,9 @@ const WhosInView = {
     this._viewDate = null;
     this._render();
     await this._load();
-    this._refreshInterval = setInterval(() => this._load(true), 60_000);
+    // Shifts rarely change mid-day, so ask the server every 5 minutes; in
+    // between, the clock moves "now" along every minute (_advance).
+    this._refreshInterval = setInterval(() => this._load(true), 5 * 60_000);
   },
 
   destroy() {
@@ -79,22 +81,20 @@ const WhosInView = {
       const el = document.getElementById('wiClock');
       if (!el) return;
       el.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      this._advance();
     };
     tick();
     this._clockInterval = setInterval(tick, 15_000);
   },
 
-  /** quiet: the once-a-minute refresh. If that fails (bad signal), keep what's
+  /** quiet: the background refresh. If that fails (bad signal), keep what's
    *  on screen rather than replacing it with an error. */
   async _load(quiet = false) {
     try {
       const data = await API.getWhosIn(this._viewDate);
       this._lastData = data;
-      const people = this._people(data);
-      this._renderHead(data);
-      this._renderSummary(data, people);
-      this._renderNow(data, people);
-      this._renderTimeline(data, people);
+      this._loadedAt = Date.now();
+      this._draw(data);
       const todayBtn = document.getElementById('wiTodayBtn');
       if (todayBtn) todayBtn.hidden = !this._viewDate || data.date === data.today;
     } catch (e) {
@@ -102,6 +102,27 @@ const WhosInView = {
       const el = document.getElementById('wiNow');
       if (el) el.innerHTML = `<div class="wi-empty" style="color:var(--danger)">Couldn't load: ${esc(e.message)}</div>`;
     }
+  },
+
+  _draw(data) {
+    const people = this._people(data);
+    this._renderHead(data);
+    this._renderSummary(data, people);
+    this._renderNow(data, people);
+    this._renderTimeline(data, people);
+    this._shownTime = data.currentTime;
+  },
+
+  /** Between fetches: move "now" on from the server's time at the last fetch,
+   *  so the now line, who's in and the time left stay right. Past midnight it
+   *  waits for the next fetch to say what day it is. */
+  _advance() {
+    const d = this._lastData;
+    if (!d || !d.isToday || !this._loadedAt) return;
+    const mins = this._mins(d.currentTime) + Math.floor((Date.now() - this._loadedAt) / 60_000);
+    if (mins >= 1440) return;
+    const t = this._hhmm(mins);
+    if (t !== this._shownTime) this._draw({ ...d, currentTime: t });
   },
 
   // ── Data ─────────────────────────────────────────────────────────────────
@@ -128,12 +149,27 @@ const WhosInView = {
       if (end <= start) end += 1440;   // past midnight
       return { start, end, startStr: s.start, endStr: s.end };
     };
-    if (myShifts.length) list.push({ name: data.myName || 'Me', isMe: true, spans: myShifts.map(span) });
     const byName = new Map();
+    // You can be in the imported team rota as well as in your own shifts —
+    // matched on your name from Settings, that's one "you" row, not two.
+    const keyOf = n => String(n || '').trim().toLowerCase();
+    const myKey = data.myName && data.myName !== 'Me' ? keyOf(data.myName) : null;
+    if (myShifts.length) {
+      const me = { name: data.myName || 'Me', isMe: true, spans: myShifts.map(span) };
+      list.push(me);
+      if (myKey) byName.set(myKey, me);
+    }
     for (const s of data.teamShifts || []) {
-      let p = byName.get(s.name);
-      if (!p) { p = { name: s.name, isMe: false, spans: [] }; byName.set(s.name, p); list.push(p); }
-      p.spans.push(span(s));
+      const key = keyOf(s.name);
+      let p = byName.get(key);
+      if (!p) {
+        p = key === myKey ? { name: data.myName, isMe: true, spans: [] } : { name: s.name, isMe: false, spans: [] };
+        byName.set(key, p);
+        list.push(p);
+      }
+      const sp = span(s);
+      // Overlapping a shift already listed (your own, which is the more exact) → skip
+      if (!p.spans.some(x => x.start < sp.end && sp.start < x.end)) p.spans.push(sp);
     }
     for (const p of list) {
       p.spans.sort((a, b) => a.start - b.start);
