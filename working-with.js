@@ -358,31 +358,6 @@ function finalizeImportBatch(batchId, insertedCount) {
   db.prepare('UPDATE import_batches SET inserted_count = ? WHERE id = ?').run(insertedCount, batchId);
 }
 
-/** Split a list of parsed shift rows into toInsert / conflicts / duplicates.
- *  A conflict = same colleague + date exists but with different times.
- *  A duplicate = exact match already in DB (silently skip). */
-function detectConflicts(parsedShifts) {
-  const toInsert = [], conflicts = [], duplicates = [];
-  for (const s of parsedShifts) {
-    const existing = db.prepare(
-      'SELECT * FROM colleague_shifts WHERE colleague_id = ? AND date = ?'
-    ).all(s.colleague_id, s.date);
-    if (!existing.length) { toInsert.push(s); continue; }
-    const exactMatch = existing.find(e =>
-      e.start_time === s.start_time && e.end_time === s.end_time && e.shift_type === (s.shift_type || 'shift')
-    );
-    if (exactMatch) { duplicates.push(s); continue; }
-    const incomingIsVague = s.shift_type === 'all_day' || s.shift_type === 'leave';
-    const existingHasRealShift = existing.some(e => e.shift_type === 'shift' && e.start_time !== '00:00');
-    // If incoming is all_day/leave but existing is a real timed shift — skip (date mis-attribution)
-    if (incomingIsVague && existingHasRealShift) { duplicates.push(s); continue; }
-    // If both incoming and existing are all_day/leave — not a real conflict, auto-skip
-    const existingIsAllVague = existing.every(e => e.shift_type === 'all_day' || e.shift_type === 'leave');
-    if (incomingIsVague && existingIsAllVague) { duplicates.push(s); continue; }
-    conflicts.push({ incoming: s, existing });
-  }
-  return { toInsert, conflicts, duplicates };
-}
 
 // ─────────────────────────────────────────
 // Shared Ollama prompt
@@ -736,100 +711,6 @@ async function callGeminiText(prompt) {
     : lastErr.message;
   throw lastErr;
 }
-
-// Read a screenshot with Gemini and return the raw { date_range, schedule } JSON —
-// no DB writes. Lets the Team Upload UI run an AI-read screenshot through the exact
-// same preview/conflict-resolution flow as a manually pasted JSON.
-router.post('/colleagues/gemini-extract', upload.single('screenshot'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  try {
-    const { parsed, rawText, modelUsed } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
-    if (!parsed) {
-      return res.status(502).json({ error: 'Gemini returned unexpected output — could not parse JSON', rawText: rawText.slice(0, 3000) });
-    }
-
-    // Best-effort: keep a copy of the screenshot in the Photo Library, named with the
-    // week it covers so past rotas stay browsable/downloadable. Never let a save
-    // failure break the actual import.
-    let savedAs = null;
-    try {
-      const folderId = getOrCreatePhotoFolder('Team Rota Screenshots');
-      const range = weekRangeForFilename(parsed.date_range);
-      const baseName = range ? range.label : req.file.originalname.replace(/\.[^.]+$/, '');
-      savePhotoToFolder(folderId, req.file.buffer, req.file.mimetype || 'image/jpeg', baseName, range?.weekStart);
-      savedAs = range ? range.label : baseName;
-    } catch (saveErr) {
-      console.error('Photo Library auto-save failed (non-fatal):', saveErr.message);
-    }
-
-    res.json({ data: parsed, model_used: modelUsed, saved_as: savedAs });
-  } catch (err) {
-    console.error('Gemini extract error:', err);
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-router.post('/colleagues/import-screenshot-gemini', upload.single('screenshot'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-  // Include ALL colleagues in match pool — left_date is checked per-shift below
-  const today = localDateStr();
-  const colleagues = db.prepare('SELECT * FROM colleagues ORDER BY name ASC').all()
-    .filter(c => !c.start_date || c.start_date <= today);
-  if (colleagues.length === 0) return res.status(400).json({ error: 'Add colleagues first before importing' });
-
-  try {
-    const { parsed, rawText, modelUsed } = await callGeminiVision(req.file.buffer, req.file.mimetype || 'image/png');
-    if (!parsed) {
-      return res.json({ inserted: 0, skipped: 0,
-        message: 'Gemini returned unexpected output — could not parse JSON',
-        rawJson: rawText.slice(0, 3000) });
-    }
-
-    // Normalise grouped { date_range, schedule } → flat { shifts } with YYYY-MM-DD dates
-    const normParsed = normaliseAIOutput(parsed);
-    const shifts = normParsed.shifts || [];
-    if (!shifts.length) {
-      return res.json({ inserted: 0, skipped: 0,
-        message: 'No shifts found in Gemini response', rawJson: JSON.stringify(normParsed).slice(0, 3000) });
-    }
-
-    // Fuzzy-match names against colleagues, build normalised rows
-    const parsedRows = [];
-    for (const s of shifts) {
-      const matched   = fuzzyMatch(s.name || '', colleagues);
-      if (!matched) continue;
-      // Skip if colleague had left before this shift date
-      if (matched.left_date && matched.left_date < s.date) continue;
-      const shiftType = s.type || 'shift';
-      const startTime = shiftType === 'shift' ? (s.start_time || '00:00') : '00:00';
-      const endTime   = shiftType === 'shift' ? (s.end_time   || '00:00') : '00:00';
-      parsedRows.push({ colleague_id: matched.id, name: matched.name, date: s.date, start_time: startTime, end_time: endTime, shift_type: shiftType, store: s.store || null });
-    }
-
-    // Detect conflicts vs new inserts
-    const { toInsert, conflicts, duplicates } = detectConflicts(parsedRows);
-    const batchId = createImportBatch('gemini', `Gemini screenshot — ${toInsert.length} shift(s)`);
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO colleague_shifts (colleague_id, date, start_time, end_time, shift_type, store, import_batch_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    let inserted = 0;
-    const doInsert = db.transaction(() => {
-      for (const s of toInsert) {
-        insert.run(s.colleague_id, s.date, s.start_time, s.end_time, s.shift_type, s.store || null, batchId);
-        inserted++;
-      }
-    });
-    doInsert();
-    finalizeImportBatch(batchId, inserted);
-
-    res.json({ inserted, skipped: duplicates.length, conflicts, total: shifts.length, shifts: toInsert, rawJson: JSON.stringify(normParsed).slice(0, 3000), batchId, model_used: modelUsed });
-  } catch(err) {
-    console.error('Gemini import error:', err);
-    res.status(err.status || 500).json({ error: err.status ? err.message : ('Gemini import failed: ' + err.message) });
-  }
-});
 
 // Live model list from Google, rather than a hardcoded dropdown that inevitably goes
 // stale whenever Google retires/renames a model (as gemini-2.5-flash was). Filtered to
@@ -1481,55 +1362,6 @@ router.delete('/colleague-shifts/:id', (req, res) => {
 //   • If a day can't be resolved to a date within the range → warn + skip all its shifts
 // ─────────────────────────────────────────
 
-/**
- * Normalise AI output to flat { shifts: [...] } with YYYY-MM-DD dates.
- * Accepts both:
- *   New grouped: { date_range, schedule: [{ date:"Mon 23", shifts:[{name,time,type}] }] }
- *   Old flat:    { shifts: [{ name, date:"YYYY-MM-DD", start_time, end_time, type }] }
- */
-function normaliseAIOutput(parsed) {
-  // Already flat — pass through unchanged
-  if (Array.isArray(parsed?.shifts) && !parsed.schedule) return parsed;
-
-  if (!Array.isArray(parsed?.schedule)) return { shifts: [] };
-
-  const weekDates = resolveWeekForSchedule(parsed.date_range, parsed.schedule.map(d => d && d.date));
-  const shifts = [];
-
-  for (const day of parsed.schedule) {
-    const isoDate = resolveDayDate(day.date, weekDates);
-    if (!isoDate) continue;
-
-    for (const s of (day.shifts || [])) {
-      if (!s.name) continue;
-      const typeLower = (s.type || '').toLowerCase();
-
-      const store = (s.store || '').trim() || null;
-
-      if (typeLower === 'leave') {
-        shifts.push({ name: s.name, date: isoDate, type: 'leave', store });
-        continue;
-      }
-      if (typeLower === 'all_day') {
-        shifts.push({ name: s.name, date: isoDate, type: 'all_day', store });
-        continue;
-      }
-
-      const tr = parseTimeRange(s.time);
-      if (!tr) continue;
-
-      shifts.push({
-        name:       s.name,
-        date:       isoDate,
-        start_time: tr.start,
-        end_time:   tr.end,
-        store,
-      });
-    }
-  }
-
-  return { shifts };
-}
 
 // Persist (or clear) the review state on an import batch. Called after any pass
 // over a schedule import — initial or a conflict-resolution follow-up — so a
@@ -1694,8 +1526,9 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
           if (r.changes > 0) { inserted++; updated++; } else skipped++;
         } else {
           // Colleague already has at least one different shift that day and no
-          // decision has been made yet — mirror detectConflicts()'s vague-vs-real
-          // handling, then flag a real conflict for the user to resolve.
+          // decision has been made yet. A vague incoming entry (leave / all day)
+          // never overrides a real shift; anything else is flagged as a real
+          // conflict for the user to resolve.
           const incomingIsVague     = shift_type === 'all_day' || shift_type === 'leave';
           const existingHasRealShift = existingForDay.some(e => e.shift_type === 'shift' && e.start_time !== '00:00');
           const existingIsAllVague   = existingForDay.every(e => e.shift_type === 'all_day' || e.shift_type === 'leave');

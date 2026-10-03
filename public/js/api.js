@@ -152,22 +152,7 @@ const API = {
   getTeamCalendar:  (params={})    => API.get('/api/working-with/team-calendar?' + new URLSearchParams(params)),
   getTeamWeek:      (week, source) => API.get('/api/working-with/team-week?' + new URLSearchParams({ ...(week ? { week } : {}), ...(source && source !== 'all' ? { importSource: source } : {}) })),
 
-  // Working-with — Gemini AI screenshot import (multipart, not JSON)
-  importScreenshotGemini: (file) => {
-    const fd = new FormData();
-    fd.append('screenshot', file);
-    return fetch('/api/colleagues/import-screenshot-gemini', { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
 
-  // Working-with — Gemini AI screenshot read-only extract (returns { date_range, schedule }
-  // JSON, same shape as pasting AI output manually — no DB writes)
-  extractScreenshotGemini: (file) => {
-    const fd = new FormData();
-    fd.append('screenshot', file);
-    return fetch('/api/colleagues/gemini-extract', { method: 'POST', body: fd })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error))));
-  },
 
   // Working-with — fast screenshot upload for the background import queue. Just
   // saves the raw file (no Gemini call in this request), so it stays reliable
@@ -217,8 +202,6 @@ const API = {
     API.get('/api/working-with/' + date + '?' + new URLSearchParams({ start_time, end_time })),
 
   // Rotageek API proxy
-  rotageekAuth:        (data)         => API.post('/api/rotageek/auth', data),
-  rotageekSaveToken:   (data)         => API.post('/api/rotageek/save-token', data),
   rotageekSaveSession: (data)         => API.post('/api/rotageek/save-session', data),
   rotageekStatus:      ()             => API.get('/api/rotageek/status'),
   rotageekFetch:       (path, params) => API.post('/api/rotageek/fetch', { path, params }),
@@ -232,12 +215,6 @@ const API = {
   breakAuditApply:     (ids)          => API.post('/api/shifts/break-audit/apply', { ids }),
 
   // Photo Library
-  getPhotoFolders:      ()              => API.get('/api/photo-library/folders'),
-  createPhotoFolder:    (name)          => API.post('/api/photo-library/folders', { name }),
-  renamePhotoFolder:    (id, name)      => API.patch(`/api/photo-library/folders/${id}`, { name }),
-  deletePhotoFolder:    (id)            => API.delete(`/api/photo-library/folders/${id}`),
-  getPhotoFiles:        (folderId)      => API.get(`/api/photo-library/folders/${folderId}/files`),
-  deletePhotoFile:      (id)            => API.delete(`/api/photo-library/files/${id}`),
   aiRenamePhotoFile:    (id)            => API.post(`/api/photo-library/files/${id}/ai-rename`, {}),
   uploadPhotoFiles: (folderId, files, autoRename) => {
     const fd = new FormData();
