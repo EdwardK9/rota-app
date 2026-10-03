@@ -57,7 +57,7 @@ The Rota App is a personal tool built for Ed Kay (Screwfix) to:
 | Backend | Node.js 18 / Express |
 | Database | SQLite via `better-sqlite3` |
 | Frontend | Vanilla HTML/CSS/JS (single page app) |
-| Container | Docker (image: `node:18`) |
+| Container | Docker (image: `node:22-alpine`, see `Dockerfile`) |
 | Host | TrueNAS — container name `screwfix-rota` |
 | OCR | Tesseract.js (for screenshot imports) |
 
@@ -654,7 +654,7 @@ version: '3.8'
 
 services:
   rota-app:
-    image: node:18
+    image: node:22        # node:18 still works, but no longer gets security fixes
     container_name: screwfix-rota
     working_dir: /app
     command: sh -c "npm install --production && node server.js"

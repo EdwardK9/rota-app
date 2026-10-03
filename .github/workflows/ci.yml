@@ -7,11 +7,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 22 is what the Dockerfile uses; 18 is kept working for setups that
+        # run the stock node image with the files mounted (see README).
+        node: [22, 18]
+    name: test (Node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 18        # same as the Dockerfile
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
 
