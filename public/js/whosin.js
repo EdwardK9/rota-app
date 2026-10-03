@@ -1,4 +1,17 @@
-/* ─── Who's In Store View ───────────────────────────────────────────────────── */
+/* ─── Who's In Store View ───────────────────────────────────────────────────
+   One column that reads top to bottom on any screen:
+     1. the day, with ‹ › to move between days
+     2. a summary line (in now · working today · next in · last out)
+     3. right now: who's in (with how far through their shift they are), who's
+        still due in today, who's gone home — or, on any other day, who opens
+        and who closes
+     4. the day at a glance: one row per person, bars coloured by status, a
+        "now" line, and an "in store" row showing how many people are in at
+        each point of the day.
+   Everything is sized to the screen — no fixed-height panels and no minimum
+   width, so nothing scrolls sideways (the old timeline was forced to 500px
+   and spilled a sliver of horizontal scroll at the bottom of a tall panel).
+   ───────────────────────────────────────────────────────────────────────── */
 
 const WhosInView = {
   _refreshInterval: null,
@@ -23,136 +36,28 @@ const WhosInView = {
 
   _render() {
     document.getElementById('view-whos-in').innerHTML = `
-      <style>
-        .wi-wrap        { display:flex; flex-direction:column; height:calc(100vh - var(--topbar-height) - 32px); gap:0; }
-        .wi-topbar      { display:flex; align-items:center; gap:8px; padding:12px 16px 8px;
-                          border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
-        .wi-nav-btn     { background:none; border:1px solid var(--border); border-radius:6px;
-                          padding:4px 9px; cursor:pointer; font-size:13px; color:var(--text); line-height:1; }
-        .wi-nav-btn:hover { background:var(--border); }
-        .wi-day-label   { font-weight:700; font-size:15px; }
-        .wi-spacer      { flex:1; }
-        .wi-today-btn   { background:none; border:1px solid var(--primary); color:var(--primary);
-                          border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px; font-weight:600; }
-        .wi-today-btn:hover { background:var(--primary); color:var(--primary-text); }
-        .wi-clock       { font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
-        .wi-refresh-btn { background:none; border:1px solid var(--border); border-radius:6px;
-                          padding:4px 10px; cursor:pointer; font-size:12px; color:var(--text-muted); }
-        .wi-refresh-btn:hover { background:var(--border); }
-
-        .wi-columns     { display:flex; flex:1; min-height:0; overflow:hidden; }
-
-        /* ── Left panel ── */
-        .wi-left        { width:260px; flex-shrink:0; display:flex; flex-direction:column;
-                          border-right:1px solid var(--border); overflow-y:auto; }
-        .wi-left-head   { padding:12px 16px 8px; border-bottom:1px solid var(--border); flex-shrink:0; }
-        .wi-left-title  { font-weight:700; font-size:13px; text-transform:uppercase;
-                          letter-spacing:.05em; color:var(--text-muted); }
-        .wi-left-body   { padding:10px; display:flex; flex-direction:column; gap:8px; }
-
-        .wi-card        { display:flex; align-items:center; gap:10px; padding:10px 12px;
-                          background:var(--card-bg); border-radius:10px;
-                          box-shadow:var(--card-shadow); border:1px solid var(--border); }
-        .wi-card.wi-me  { border-color:var(--primary); background:color-mix(in srgb, var(--primary) 8%, var(--card-bg)); }
-        .wi-avatar      { width:36px; height:36px; border-radius:50%; background:var(--sidebar-bg);
-                          color:#fff; display:flex; align-items:center; justify-content:center;
-                          font-weight:700; font-size:14px; flex-shrink:0; }
-        .wi-card.wi-me .wi-avatar { background:var(--primary); color:var(--primary-text); }
-        .wi-card-info   { flex:1; min-width:0; }
-        .wi-card-name   { font-weight:600; font-size:13px; white-space:nowrap;
-                          overflow:hidden; text-overflow:ellipsis; }
-        .wi-card-times  { font-size:11px; color:var(--text-muted); margin-top:1px; }
-        .wi-badge       { font-size:10px; font-weight:700; padding:3px 7px; border-radius:20px;
-                          white-space:nowrap; flex-shrink:0; }
-        .wi-badge-in    { background:#D1FAE5; color:#065F46; }
-        .wi-badge-soon  { background:#DBEAFE; color:#1E40AF; }
-        .wi-badge-opener{ background:#FEF3C7; color:#92400E; }
-        [data-theme="dark"] .wi-badge-in     { background:#064E3B; color:#A7F3D0; }
-        [data-theme="dark"] .wi-badge-soon   { background:#1E3A5F; color:#93C5FD; }
-        [data-theme="dark"] .wi-badge-opener { background:#78350F; color:#FDE68A; }
-
-        .wi-empty       { padding:20px 16px; font-size:13px; color:var(--text-muted);
-                          text-align:center; line-height:1.5; }
-
-        /* ── Right panel ── */
-        .wi-right       { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
-        .wi-right-head  { padding:12px 16px 8px; border-bottom:1px solid var(--border); flex-shrink:0; }
-        .wi-right-title { font-weight:700; font-size:13px; text-transform:uppercase;
-                          letter-spacing:.05em; color:var(--text-muted); }
-        .wi-tl-wrap     { flex:1; overflow:auto; padding:12px 16px; }
-
-        /* Timeline */
-        .wi-timeline    { display:flex; flex-direction:column; gap:0; min-width:500px; }
-        .wi-tl-axis     { display:flex; align-items:flex-end; margin-bottom:4px; }
-        .wi-name-col    { width:90px; flex-shrink:0; }
-        .wi-hours-strip { flex:1; position:relative; height:20px; }
-        .wi-hour-tick   { position:absolute; top:0; bottom:0; display:flex; flex-direction:column;
-                          align-items:center; gap:0; }
-        .wi-hour-tick span { font-size:10px; color:var(--text-muted); white-space:nowrap; }
-        .wi-hour-tick::after { content:''; display:block; flex:1; width:1px;
-                               background:var(--border); margin-top:2px; }
-
-        .wi-tl-row      { display:flex; align-items:center; margin-bottom:6px; }
-        .wi-tl-name     { width:90px; flex-shrink:0; font-size:12px; font-weight:600;
-                          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-                          padding-right:8px; color:var(--text); }
-        .wi-tl-name.me  { color:var(--primary-dark); }
-        .wi-tl-track    { flex:1; position:relative; height:28px; background:var(--bg);
-                          border-radius:4px; overflow:visible; }
-        .wi-bar         { position:absolute; top:4px; height:20px; border-radius:4px;
-                          display:flex; align-items:center; justify-content:center;
-                          font-size:10px; font-weight:600; overflow:hidden;
-                          white-space:nowrap; cursor:default; transition:opacity .15s; }
-        .wi-bar:hover   { opacity:.85; }
-        .wi-bar-me      { background:var(--primary); color:var(--primary-text); }
-        .wi-bar-active  { background:#10B981; color:#fff; }
-        .wi-bar-upcoming{ background:#3B82F6; color:#fff; }
-        .wi-bar-past    { background:#9CA3AF; color:#fff; opacity:.6; }
-        .wi-bar-future  { background:#3B82F6; color:#fff; }  /* non-today day */
-        .wi-bar span    { padding:0 5px; pointer-events:none; }
-
-        .wi-now-line    { position:absolute; top:-4px; bottom:-4px; width:2px;
-                          background:var(--danger); border-radius:1px; z-index:5; }
-        .wi-now-label   { display:none; }
-        .wi-grid-line   { position:absolute; top:0; bottom:0; width:1px;
-                          background:var(--border); opacity:.5; }
-
-        @media (max-width: 640px) {
-          .wi-columns  { flex-direction: column; overflow-y:auto; }
-          .wi-left     { width:100%; border-right:none; border-bottom:1px solid var(--border); }
-          .wi-right    { min-height:320px; }
-          .wi-tl-wrap  { overflow-x:auto; }
-        }
-      </style>
-
-      <div class="wi-wrap">
-        <div class="wi-topbar">
-          <button class="wi-nav-btn" id="wiPrevBtn" title="Previous day">←</button>
-          <div id="wiDayLabel" class="wi-day-label">Loading…</div>
-          <button class="wi-nav-btn" id="wiNextBtn" title="Next day">→</button>
-          <button class="wi-today-btn" id="wiTodayBtn" style="display:none">Today</button>
+      <div class="wi">
+        <div class="wi-head">
+          <button class="wi-nav" id="wiPrevBtn" title="Previous day" aria-label="Previous day">‹</button>
+          <div class="wi-date">
+            <div class="wi-date-rel" id="wiDayRel">Loading…</div>
+            <div class="wi-date-full" id="wiDayFull"></div>
+          </div>
+          <button class="wi-nav" id="wiNextBtn" title="Next day" aria-label="Next day">›</button>
+          <button class="wi-today" id="wiTodayBtn" hidden>Back to today</button>
           <div class="wi-spacer"></div>
-          <div id="wiClock"    class="wi-clock"></div>
-          <button class="wi-refresh-btn" id="wiRefreshBtn">↻ Refresh</button>
+          <div class="wi-clock" id="wiClock"></div>
+          <button class="wi-nav" id="wiRefreshBtn" title="Refresh" aria-label="Refresh">↻</button>
         </div>
-        <div class="wi-columns">
-          <div class="wi-left">
-            <div class="wi-left-head">
-              <div class="wi-left-title" id="wiLeftTitle">Currently In</div>
-            </div>
-            <div class="wi-left-body" id="wiLeftBody">
-              <div class="wi-empty">Loading…</div>
-            </div>
+        <div class="wi-summary" id="wiSummary"></div>
+        <div id="wiNow"></div>
+        <section class="wi-box">
+          <div class="wi-box-head">
+            <h3 class="wi-box-title">Day at a glance</h3>
+            <div class="wi-legend" id="wiLegend"></div>
           </div>
-          <div class="wi-right">
-            <div class="wi-right-head">
-              <div class="wi-right-title" id="wiRightTitle">Today's Schedule</div>
-            </div>
-            <div class="wi-tl-wrap" id="wiTlWrap">
-              <div class="wi-empty">Loading…</div>
-            </div>
-          </div>
-        </div>
+          <div id="wiTimeline"><div class="wi-empty">Loading…</div></div>
+        </section>
       </div>
     `;
 
@@ -173,26 +78,92 @@ const WhosInView = {
     const tick = () => {
       const el = document.getElementById('wiClock');
       if (!el) return;
-      el.textContent = new Date().toLocaleTimeString('en-GB',
-        { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      el.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     };
     tick();
-    this._clockInterval = setInterval(tick, 1000);
+    this._clockInterval = setInterval(tick, 15_000);
   },
 
   async _load() {
     try {
       const data = await API.getWhosIn(this._viewDate);
       this._lastData = data;
-      this._renderLeft(data);
-      this._renderTimeline(data);
+      const people = this._people(data);
+      this._renderHead(data);
+      this._renderSummary(data, people);
+      this._renderNow(data, people);
+      this._renderTimeline(data, people);
       const todayBtn = document.getElementById('wiTodayBtn');
-      if (todayBtn) todayBtn.style.display = this._viewDate ? '' : 'none';
+      if (todayBtn) todayBtn.hidden = !this._viewDate || data.date === data.today;
     } catch (e) {
-      const b = document.getElementById('wiLeftBody');
-      if (b) b.innerHTML = `<div class="wi-empty" style="color:var(--danger)">Error: ${esc(e.message)}</div>`;
+      const el = document.getElementById('wiNow');
+      if (el) el.innerHTML = `<div class="wi-empty" style="color:var(--danger)">Couldn't load: ${esc(e.message)}</div>`;
     }
   },
+
+  // ── Data ─────────────────────────────────────────────────────────────────
+
+  _mins(t) {
+    const [h, m] = (t || '00:00').split(':').map(Number);
+    return h * 60 + m;
+  },
+
+  _fmtDur(mins) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return h ? `${h}h${m ? ' ' + m + 'm' : ''}` : `${m}m`;
+  },
+
+  /** One entry per person (me included) with all their shifts that day, and —
+   *  when viewing today — where they are: 'in', 'later' or 'done'. */
+  _people(data) {
+    const myShifts = data.myShifts || (data.myShift ? [data.myShift] : []);
+    const now = data.isToday ? this._mins(data.currentTime) : null;
+    const list = [];
+    const span = s => {
+      const start = this._mins(s.start);
+      let end = this._mins(s.end);
+      if (end <= start) end += 1440;   // past midnight
+      return { start, end, startStr: s.start, endStr: s.end };
+    };
+    if (myShifts.length) list.push({ name: data.myName || 'Me', isMe: true, spans: myShifts.map(span) });
+    const byName = new Map();
+    for (const s of data.teamShifts || []) {
+      let p = byName.get(s.name);
+      if (!p) { p = { name: s.name, isMe: false, spans: [] }; byName.set(s.name, p); list.push(p); }
+      p.spans.push(span(s));
+    }
+    for (const p of list) {
+      p.spans.sort((a, b) => a.start - b.start);
+      p.first = p.spans[0].start;
+      p.last = Math.max(...p.spans.map(s => s.end));
+      if (now !== null) {
+        p.current = p.spans.find(s => s.start <= now && s.end > now) || null;
+        p.next = p.spans.find(s => s.start > now) || null;
+        p.status = p.current ? 'in' : p.next ? 'later' : 'done';
+      }
+    }
+    // You first, then in order of arrival
+    list.sort((a, b) => (b.isMe - a.isMe) || (a.first - b.first) || a.name.localeCompare(b.name));
+    return list;
+  },
+
+  /** How many people are in at each slot of the axis. */
+  _coverage(people, from, to, step) {
+    const slots = [];
+    for (let t = from; t < to; t += step) {
+      const mid = t + step / 2;
+      const names = people.filter(p => p.spans.some(s => s.start <= mid && s.end > mid)).map(p => p.name);
+      slots.push({ start: t, end: t + step, count: names.length, names });
+    }
+    return slots;
+  },
+
+  _hhmm(mins) {
+    const m = ((mins % 1440) + 1440) % 1440;
+    return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  },
+
+  // ── Header & summary ───────────────────────────────────────────────────────
 
   _dayLabelFor(dateStr, todayStr) {
     if (dateStr === todayStr) return 'Today';
@@ -200,199 +171,250 @@ const WhosInView = {
     const diffDays = Math.round((d - new Date(todayStr + 'T12:00:00')) / 86400000);
     if (diffDays === 1) return 'Tomorrow';
     if (diffDays === -1) return 'Yesterday';
-    return diffDays > 0 && diffDays < 7
-      ? d.toLocaleDateString('en-GB', { weekday: 'long' })
-      : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    return d.toLocaleDateString('en-GB', { weekday: 'long' });
   },
 
-  _renderLeft(data) {
-    const { isToday, myName, myStatus, teamShifts, date, today } = data;
-    const myShifts = data.myShifts || (data.myShift ? [data.myShift] : []);
+  _renderHead(data) {
+    const rel = document.getElementById('wiDayRel');
+    const full = document.getElementById('wiDayFull');
+    if (!rel || !full) return;
+    rel.textContent = this._dayLabelFor(data.date, data.today);
+    full.textContent = new Date(data.date + 'T12:00:00')
+      .toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    document.getElementById('wiClock').style.visibility = data.isToday ? '' : 'hidden';
+  },
 
-    const titleEl = document.getElementById('wiLeftTitle');
-    const bodyEl  = document.getElementById('wiLeftBody');
-    const dayEl   = document.getElementById('wiDayLabel');
-    if (!titleEl || !bodyEl) return;
-
-    // Day label
-    if (dayEl) {
-      const d = new Date(date + 'T00:00:00');
-      const longLabel = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-      dayEl.textContent = `${this._dayLabelFor(date, today)} — ${longLabel}`;
-    }
-
-    // Right panel title
-    const rtEl = document.getElementById('wiRightTitle');
-    if (rtEl) rtEl.textContent = `${this._dayLabelFor(date, today)}'s Schedule`;
-
-    const toMins = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
-    const card = ({ name, start, end, isMe, badgeClass, badgeText }) => `
-      <div class="wi-card${isMe ? ' wi-me' : ''}">
-        <div class="wi-avatar">${esc(name.charAt(0).toUpperCase())}</div>
-        <div class="wi-card-info">
-          <div class="wi-card-name">${esc(name)}</div>
-          <div class="wi-card-times">${start} – ${end}</div>
-        </div>
-        <div class="wi-badge ${badgeClass}">${badgeText}</div>
-      </div>`;
-
-    if (isToday) {
-      // ── Viewing real today: who's currently in ───────────────────────────
-      titleEl.textContent = 'Currently In';
-
-      const myCards = [];
-      if (myStatus && (myStatus.status === 'in' || myStatus.status === 'soon')) {
-        const [h, s] = myStatus.status === 'in'
-          ? ['wi-badge-in', 'On shift']
-          : ['wi-badge-soon', 'Starting soon'];
-        myCards.push(card({ name: myName, start: myStatus.start, end: myStatus.end,
-                            isMe: true, badgeClass: h, badgeText: s }));
+  _renderSummary(data, people) {
+    const el = document.getElementById('wiSummary');
+    if (!el) return;
+    if (!people.length) { el.innerHTML = ''; return; }
+    const chip = (icon, text, tone = '') => `<span class="wi-chip ${tone}"><span aria-hidden="true">${icon}</span> ${text}</span>`;
+    const first = Math.min(...people.map(p => p.first));
+    const last = Math.max(...people.map(p => p.last));
+    const chips = [];
+    if (data.isToday) {
+      const inNow = people.filter(p => p.status === 'in').length;
+      chips.push(chip('🟢', `<strong>${inNow}</strong> in now`, inNow ? 'wi-chip-in' : ''));
+      chips.push(chip('👥', `<strong>${people.length}</strong> working today`));
+      const now = this._mins(data.currentTime);
+      const upcoming = people.filter(p => p.next).sort((a, b) => a.next.start - b.next.start);
+      if (upcoming.length) {
+        const n = upcoming[0];
+        chips.push(chip('⏭️', `Next in: <strong>${esc(n.isMe ? 'You' : n.name)}</strong> at ${n.next.startStr} <span class="wi-muted">(in ${this._fmtDur(n.next.start - now)})</span>`));
       }
-
-      const nowMins = toMins(data.currentTime);
-      const colleagueCards = data.inNow.map(p => {
-        const minsLeft = toMins(p.end) - nowMins;
-        const h = Math.floor(minsLeft / 60), m = minsLeft % 60;
-        const label = h > 0 ? `${h}h${m > 0 ? ' ' + m + 'm' : ''}` : `${m}m`;
-        return card({ name: p.name, start: p.start, end: p.end,
-                      isMe: false, badgeClass: 'wi-badge-in', badgeText: label + ' left' });
-      });
-
-      const soonCards = data.inSoon.map(p =>
-        card({ name: p.name, start: p.start, end: p.end,
-               isMe: false, badgeClass: 'wi-badge-soon', badgeText: 'In ' + (() => {
-                 const diff = toMins(p.start) - nowMins;
-                 const h = Math.floor(diff / 60), m = diff % 60;
-                 return h > 0 ? `${h}h${m > 0 ? ' ' + m + 'm' : ''}` : `${m}m`;
-               })() })
-      );
-
-      let html = [...myCards, ...colleagueCards].join('');
-      if (soonCards.length) {
-        html += `<div style="font-size:11px;font-weight:700;text-transform:uppercase;
-                   letter-spacing:.05em;color:var(--text-muted);padding:8px 2px 4px">
-                   ⏰ Arriving Soon</div>` + soonCards.join('');
-      }
-      if (!html) html = `<div class="wi-empty">Nobody on shift right now</div>`;
-      bodyEl.innerHTML = html;
-
+      chips.push(chip('🔒', `Last out ${this._hhmm(last)}`));
     } else {
-      // ── Any other day (past, tomorrow, or navigated-to): static schedule ──
-      titleEl.textContent = 'Opening';
-
-      const all = [];
-      myShifts.forEach(s => all.push({ name: myName, ...s, isMe: true }));
-      teamShifts.forEach(s => all.push({ ...s, isMe: false }));
-
-      if (!all.length) {
-        bodyEl.innerHTML = `<div class="wi-empty">No team shifts found for this day.<br><small>Import the team rota to see openers.</small></div>`;
-        return;
-      }
-
-      const minStart = Math.min(...all.map(s => toMins(s.start)));
-      const openers  = all
-        .filter(s => toMins(s.start) <= minStart + 30)
-        .sort((a, b) => toMins(a.start) - toMins(b.start));
-
-      bodyEl.innerHTML = openers.map(p =>
-        card({ name: p.name, start: p.start, end: p.end,
-               isMe: p.isMe, badgeClass: 'wi-badge-opener', badgeText: 'Opener' })
-      ).join('');
+      chips.push(chip('👥', `<strong>${people.length}</strong> working`));
+      chips.push(chip('🔓', `First in ${this._hhmm(first)}`));
+      chips.push(chip('🔒', `Last out ${this._hhmm(last)}`));
     }
+    // Busiest stretch — the most people in at once
+    const slots = this._coverage(people, Math.floor(first / 30) * 30, Math.ceil(last / 30) * 30, 30);
+    const peak = Math.max(...slots.map(s => s.count));
+    if (peak > 1) {
+      const i = slots.findIndex(s => s.count === peak);
+      let j = i;
+      while (j + 1 < slots.length && slots[j + 1].count === peak) j++;
+      chips.push(chip('📈', `Busiest ${this._hhmm(slots[i].start)}–${this._hhmm(slots[j].end)} <span class="wi-muted">(${peak} in)</span>`));
+    }
+    el.innerHTML = chips.join('');
   },
 
-  _renderTimeline(data) {
-    const { isToday, myName, currentTime, teamShifts } = data;
-    const myShifts = data.myShifts || (data.myShift ? [data.myShift] : []);
+  // ── Right now (today) / openers & closers (other days) ─────────────────────
 
-    const wrap = document.getElementById('wiTlWrap');
-    if (!wrap) return;
+  _avatar(p) {
+    return `<span class="wi-avatar${p.isMe ? ' wi-avatar-me' : ''}" aria-hidden="true">${esc((p.name || '?').charAt(0).toUpperCase())}</span>`;
+  },
 
-    // One row per PERSON, with a bar for each of their shifts — someone on a split
-    // day used to get two identical-looking rows (or, for me, just the first shift).
-    const entries = [];
-    if (myShifts.length) entries.push({ name: myName, isMe: true, spans: myShifts.map(s => ({ start: s.start, end: s.end })) });
-    const byName = new Map();
-    teamShifts.forEach(s => {
-      let e = byName.get(s.name);
-      if (!e) { e = { name: s.name, isMe: false, spans: [] }; byName.set(s.name, e); entries.push(e); }
-      e.spans.push({ start: s.start, end: s.end });
-    });
-    entries.forEach(e => { e.spans.sort((a, b) => a.start.localeCompare(b.start)); e.start = e.spans[0].start; });
-    entries.sort((a, b) => {
-      if (a.isMe && !b.isMe) return -1;
-      if (!a.isMe && b.isMe) return 1;
-      return a.start.localeCompare(b.start);
-    });
+  _renderNow(data, people) {
+    const el = document.getElementById('wiNow');
+    if (!el) return;
+    if (!people.length) {
+      el.innerHTML = `
+        <section class="wi-box"><div class="wi-empty">
+          No team shifts for this day yet.<br>
+          <button class="dash-link" onclick="App.navigate('team-upload')">Import the team rota →</button>
+        </div></section>`;
+      return;
+    }
+    const spanText = sp => `${sp.startStr}–${sp.endStr}`;
+    const allSpans = p => p.spans.map(spanText).join(', ');
+    const nameOf = p => p.isMe ? `${esc(p.name)} <span class="wi-you">you</span>` : esc(p.name);
 
-    if (!entries.length) {
-      wrap.innerHTML = `<div class="wi-empty">No shift data for this day.<br><small>Import the team rota from the Import page to see the full schedule.</small></div>`;
+    if (data.isToday) {
+      const now = this._mins(data.currentTime);
+      const inNow = people.filter(p => p.status === 'in');
+      const later = people.filter(p => p.status === 'later').sort((a, b) => a.next.start - b.next.start);
+      const done = people.filter(p => p.status === 'done');
+
+      const inCards = inNow.map(p => {
+        const s = p.current;
+        const pct = Math.round(Math.min(100, Math.max(0, (now - s.start) / (s.end - s.start) * 100)));
+        return `
+          <div class="wi-person${p.isMe ? ' wi-person-me' : ''}">
+            ${this._avatar(p)}
+            <div class="wi-person-main">
+              <div class="wi-person-top">
+                <span class="wi-person-name">${nameOf(p)}</span>
+                <span class="wi-person-left">${this._fmtDur(s.end - now)} left</span>
+              </div>
+              <div class="wi-progress" role="img" aria-label="${pct}% through their shift"><span style="width:${pct}%"></span></div>
+              <div class="wi-person-sub">${spanText(s)}${p.spans.length > 1 ? ` <span class="wi-muted">· also ${p.spans.filter(x => x !== s).map(spanText).join(', ')}</span>` : ''}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+      const laterRows = later.map(p => `
+        <li class="wi-line${p.isMe ? ' wi-line-me' : ''}">
+          <span class="wi-line-time">${p.next.startStr}</span>
+          <span class="wi-line-name">${nameOf(p)}</span>
+          <span class="wi-line-sub">until ${p.next.endStr} · in ${this._fmtDur(p.next.start - now)}</span>
+        </li>`).join('');
+
+      const doneChips = done.map(p => `<span class="wi-done" title="${esc(p.name)}: ${allSpans(p)}">${esc(p.isMe ? 'You' : p.name)} <span class="wi-muted">${allSpans(p)}</span></span>`).join('');
+
+      el.innerHTML = `
+        <section class="wi-box">
+          <h3 class="wi-box-title">In store now <span class="wi-count">${inNow.length}</span></h3>
+          ${inCards ? `<div class="wi-people">${inCards}</div>` : `<div class="wi-empty">Nobody's in right now.</div>`}
+        </section>
+        ${laterRows ? `
+          <section class="wi-box">
+            <h3 class="wi-box-title">Still to come in today <span class="wi-count">${later.length}</span></h3>
+            <ul class="wi-lines">${laterRows}</ul>
+          </section>` : ''}
+        ${doneChips ? `
+          <section class="wi-box wi-box-quiet">
+            <h3 class="wi-box-title">Gone home <span class="wi-count">${done.length}</span></h3>
+            <div class="wi-dones">${doneChips}</div>
+          </section>` : ''}`;
       return;
     }
 
-    const toMins = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m; };
-    const allStarts = entries.flatMap(e => e.spans.map(sp => toMins(sp.start)));
-    const allEnds   = entries.flatMap(e => e.spans.map(sp => toMins(sp.end)));
-    const axisStart = Math.floor(Math.min(...allStarts) / 60) * 60;
-    const axisEnd   = Math.ceil(Math.max(...allEnds)   / 60) * 60;
-    const axisDur   = axisEnd - axisStart;
+    // Any other day: who opens up and who closes
+    const first = Math.min(...people.map(p => p.first));
+    const last = Math.max(...people.map(p => p.last));
+    const openers = people.filter(p => p.first <= first + 30);
+    const closers = people.filter(p => p.last >= last - 30).sort((a, b) => b.last - a.last);
+    const line = (p, when) => `
+      <li class="wi-line${p.isMe ? ' wi-line-me' : ''}">
+        <span class="wi-line-time">${when}</span>
+        <span class="wi-line-name">${nameOf(p)}</span>
+        <span class="wi-line-sub">${allSpans(p)}</span>
+      </li>`;
+    el.innerHTML = `
+      <div class="wi-pair">
+        <section class="wi-box">
+          <h3 class="wi-box-title">Opening</h3>
+          <ul class="wi-lines">${openers.map(p => line(p, this._hhmm(p.first))).join('')}</ul>
+        </section>
+        <section class="wi-box">
+          <h3 class="wi-box-title">Closing</h3>
+          <ul class="wi-lines">${closers.map(p => line(p, this._hhmm(p.last))).join('')}</ul>
+        </section>
+      </div>`;
+  },
 
-    const pct = mins => ((mins - axisStart) / axisDur * 100).toFixed(3) + '%';
+  // ── Day at a glance ────────────────────────────────────────────────────────
 
-    // Hour marks
+  _renderTimeline(data, people) {
+    const wrap = document.getElementById('wiTimeline');
+    const legend = document.getElementById('wiLegend');
+    if (!wrap) return;
+    const box = wrap.closest('.wi-box');
+    if (box) box.hidden = !people.length;   // the "no shifts" card above already says so
+    if (!people.length) {
+      wrap.innerHTML = '';
+      if (legend) legend.innerHTML = '';
+      return;
+    }
+
+    const from = Math.floor(Math.min(...people.map(p => p.first)) / 60) * 60;
+    const to = Math.ceil(Math.max(...people.map(p => p.last)) / 60) * 60;
+    const dur = Math.max(60, to - from);
+    const pct = m => ((m - from) / dur * 100).toFixed(3) + '%';
+    const now = data.isToday ? this._mins(data.currentTime) : null;
+    const showNow = now !== null && now >= from && now <= to;
+
     const hours = [];
-    for (let m = axisStart; m <= axisEnd; m += 60) hours.push(m);
+    for (let m = from; m <= to; m += 60) hours.push(m);
+    // Hour labels the red "now" label would sit on top of are left out. The
+    // track's width in pixels decides how close is too close (it's the full
+    // width on a phone, the width minus the name column on a wider screen).
+    const phone = window.matchMedia('(max-width: 640px)').matches;
+    const trackPx = Math.max(200, (wrap.clientWidth || 600) - (phone ? 0 : 162));
+    const nearNow = m => showNow && Math.abs(m - now) / dur * trackPx < 46;
+    // Every hour on a wide screen; every other one on a phone (CSS hides .wi-odd)
+    const axis = hours.map((m, i) => nearNow(m) ? '' : `
+      <span class="wi-tick${i % 2 ? ' wi-odd' : ''}${i === 0 ? ' wi-tick-first' : ''}${i === hours.length - 1 ? ' wi-tick-last' : ''}" style="left:${pct(m)}">${this._hhmm(m)}</span>`).join('');
+    const grid = hours.map(m => `<span class="wi-grid" style="left:${pct(m)}"></span>`).join('');
+    const nowLine = showNow ? `<span class="wi-now" style="left:${pct(now)}"></span>` : '';
 
-    const hourTicks = hours.map(m =>
-      `<div class="wi-hour-tick" style="left:${pct(m)}"><span>${String(m / 60).padStart(2,'0')}:00</span></div>`
-    ).join('');
-
-    const gridLines = hours.map(m =>
-      `<div class="wi-grid-line" style="left:${pct(m)}"></div>`
-    ).join('');
-
-    // Now-line (only when viewing real today)
-    const nowMins = toMins(currentTime);
-    const showNow = isToday && nowMins >= axisStart && nowMins <= axisEnd;
-    const nowLine = showNow
-      ? `<div class="wi-now-line" style="left:${pct(nowMins)}"><span class="wi-now-label">Now</span></div>`
-      : '';
-
-    const rows = entries.map(e => {
-      const bars = e.spans.map(sp => {
-        const st = toMins(sp.start), en = toMins(sp.end);
-        const barLeft  = pct(st);
-        const barWidth = ((en - st) / axisDur * 100).toFixed(3) + '%';
-        const isActive   = isToday && st <= nowMins && en > nowMins;
-        const isPast     = isToday && en <= nowMins;
-        const barClass   = e.isMe      ? 'wi-bar wi-bar-me'
-                         : !isToday    ? 'wi-bar wi-bar-future'
-                         : isActive    ? 'wi-bar wi-bar-active'
-                         : isPast      ? 'wi-bar wi-bar-past'
-                         :               'wi-bar wi-bar-upcoming';
-        return `<div class="${barClass}" style="left:${barLeft};width:${barWidth}" title="${esc(e.name)}: ${sp.start}–${sp.end}">
-              <span>${sp.start}–${sp.end}</span>
-            </div>`;
+    const statusOf = (p, sp) => {
+      if (p.isMe) return 'me';
+      if (now === null) return 'day';
+      if (sp.start <= now && sp.end > now) return 'in';
+      return sp.end <= now ? 'done' : 'later';
+    };
+    const rows = people.map(p => {
+      const bars = p.spans.map(sp => {
+        const w = (sp.end - sp.start) / dur * 100;
+        const st = statusOf(p, sp);
+        const pastMe = p.isMe && now !== null && sp.end <= now ? ' wi-bar-past' : '';
+        return `<span class="wi-bar wi-bar-${st}${pastMe}" style="left:${pct(sp.start)};width:${w.toFixed(3)}%"
+          title="${esc(p.name)}: ${sp.startStr}–${sp.endStr}">${w >= 14 ? `<span class="wi-bar-text">${sp.startStr}–${sp.endStr}</span>` : ''}</span>`;
       }).join('');
-
       return `
-        <div class="wi-tl-row">
-          <div class="wi-tl-name${e.isMe ? ' me' : ''}" title="${esc(e.name)}">${esc(e.name)}</div>
-          <div class="wi-tl-track">
-            ${gridLines}
-            ${nowLine}
-            ${bars}
+        <div class="wi-row${p.isMe ? ' wi-row-me' : ''}${p.status === 'done' ? ' wi-row-done' : ''}">
+          <div class="wi-row-name" title="${esc(p.name)}">
+            <span class="wi-row-who">${esc(p.name)}</span>
+            <span class="wi-row-time">${p.spans.map(s => `${s.startStr}–${s.endStr}`).join(', ')}</span>
           </div>
+          <div class="wi-track">${grid}${nowLine}${bars}</div>
         </div>`;
     }).join('');
 
+    // "In store" — how many people are in, in 15-minute steps
+    const slots = this._coverage(people, from, to, 15);
+    const peak = Math.max(1, ...slots.map(s => s.count));
+    const firstIn = Math.min(...people.map(p => p.first));
+    const lastOut = Math.max(...people.map(p => p.last));
+    const cov = slots.map(s => {
+      // Nobody in before the first person arrives or after the last one
+      // leaves is just the shop being shut — only a gap in between is a gap.
+      if (s.count === 0 && (s.end <= firstIn || s.start >= lastOut)) return '';
+      const tone = s.count === 0 ? 'c0' : s.count === 1 ? 'c1' : s.count === 2 ? 'c2' : 'c3';
+      const showNum = s.start % 60 === 0 || slots.length <= 24;
+      return `<span class="wi-cov wi-${tone}" style="left:${pct(s.start)};width:${(15 / dur * 100).toFixed(3)}%;--h:${Math.max(18, s.count / peak * 100).toFixed(0)}%"
+        title="${this._hhmm(s.start)}–${this._hhmm(s.end)}: ${s.count ? s.count + ' in' : 'nobody in'}${s.names.length ? ' — ' + esc(s.names.join(', ')) : ''}">${showNum && s.count ? `<span class="wi-cov-n">${s.count}</span>` : ''}</span>`;
+    }).join('');
+
     wrap.innerHTML = `
-      <div class="wi-timeline">
-        <div class="wi-tl-axis">
-          <div class="wi-name-col"></div>
-          <div class="wi-hours-strip">${hourTicks}</div>
+      <div class="wi-tl">
+        <div class="wi-row wi-axis-row">
+          <div class="wi-row-name"></div>
+          <div class="wi-axis">${axis}${showNow ? `<span class="wi-now-label" style="left:${pct(now)}">${data.currentTime}</span>` : ''}</div>
         </div>
         ${rows}
+        <div class="wi-row wi-cov-row">
+          <div class="wi-row-name"><span class="wi-row-who">In store</span><span class="wi-row-time">how many in</span></div>
+          <div class="wi-track wi-cov-track">${grid}${nowLine}${cov}</div>
+        </div>
+        <div class="wi-row wi-cov-key-row">
+          <div class="wi-row-name"></div>
+          <div class="wi-legend" id="wiCovKey"></div>
+        </div>
       </div>`;
+
+    if (legend) {
+      const item = (cls, label) => `<span class="wi-key"><span class="wi-key-sw ${cls}"></span>${label}</span>`;
+      legend.innerHTML = (data.isToday
+        ? item('wi-bar-in', 'In now') + item('wi-bar-later', 'Later') + item('wi-bar-done', 'Gone home')
+        : item('wi-bar-day', 'Shift')) + item('wi-bar-me', 'You')
+        + (showNow ? `<span class="wi-key"><span class="wi-key-now"></span>Now</span>` : '');
+      const covKey = document.getElementById('wiCovKey');
+      if (covKey) covKey.innerHTML = item('wi-c1', '1 in') + item('wi-c2', '2 in') + item('wi-c3', '3+ in')
+        + (slots.some(s => s.count === 0 && s.end > firstIn && s.start < lastOut) ? item('wi-c0', 'Nobody in') : '');
+    }
   },
 };

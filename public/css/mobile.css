@@ -119,13 +119,6 @@
   [data-theme="dark"] .table-wrapper table:not(#shiftsTable) thead th:first-child { background: #1E2130; }
 }
 
-/* ── Who's In timeline: fit the screen instead of scrolling sideways ────── */
-@media (max-width: 600px) {
-  .wi-timeline { min-width: 0 !important; }
-  .wi-tl-name  { width: 64px !important; font-size: 11px !important; }
-  .wi-tl-axis span, .wi-tl-axis div { font-size: 10px; }
-}
-
 /* ── Clock In/Out page: in and out side by side ─────────────────────────── */
 @media (max-width: 600px) {
   .ck-cols { gap: 8px !important; flex-wrap: nowrap !important; }
