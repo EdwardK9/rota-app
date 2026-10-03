@@ -24,7 +24,7 @@ const WhosInView = {
     this._viewDate = null;
     this._render();
     await this._load();
-    this._refreshInterval = setInterval(() => this._load(), 60_000);
+    this._refreshInterval = setInterval(() => this._load(true), 60_000);
   },
 
   destroy() {
@@ -84,7 +84,9 @@ const WhosInView = {
     this._clockInterval = setInterval(tick, 15_000);
   },
 
-  async _load() {
+  /** quiet: the once-a-minute refresh. If that fails (bad signal), keep what's
+   *  on screen rather than replacing it with an error. */
+  async _load(quiet = false) {
     try {
       const data = await API.getWhosIn(this._viewDate);
       this._lastData = data;
@@ -96,6 +98,7 @@ const WhosInView = {
       const todayBtn = document.getElementById('wiTodayBtn');
       if (todayBtn) todayBtn.hidden = !this._viewDate || data.date === data.today;
     } catch (e) {
+      if (quiet && this._lastData) return;
       const el = document.getElementById('wiNow');
       if (el) el.innerHTML = `<div class="wi-empty" style="color:var(--danger)">Couldn't load: ${esc(e.message)}</div>`;
     }
