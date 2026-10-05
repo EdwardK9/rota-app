@@ -49,6 +49,9 @@ const fakeGemini = http.createServer((rq, rs) => {
     if (fake.mode === 'quota-then-fallback' && model === 'gemini-main') {
       return send(429, { error: { code: 429, message: 'You exceeded your current quota. Quota exceeded for metric: generate_content_free_tier_requests, limit: 0', status: 'RESOURCE_EXHAUSTED' } });
     }
+    if (fake.mode === 'text-only-main' && model === 'gemini-main') {
+      return send(400, { error: { code: 400, message: 'Image input modality is not enabled for models/gemini-main', status: 'INVALID_ARGUMENT' } });
+    }
     if (fake.mode === 'nonsense') return reply("Sorry, I can't read this image clearly.");
     return reply(JSON.stringify(fakeSchedule));
   });
@@ -193,6 +196,16 @@ const fakeGemini = http.createServer((rq, rs) => {
     const inQueue = q => [...q.pending, ...q.waiting, ...q.failed].some(x => x.id === fbId);
     const fbDone = await waitFor(async () => !inQueue(await queueState()));
     check('when the main model is out of quota, another model reads it', fbDone && fake.modelsUsed.includes('gemini-fallback'), { state: await queueState(), used: fake.modelsUsed });
+
+    fake.mode = 'text-only-main';
+    fake.modelsUsed = [];
+    const voId = await queueOne('text-only-main');
+    const voDone = await waitFor(async () => !(await queueState()).pending.concat((await queueState()).waiting, (await queueState()).failed).some(x => x.id === voId));
+    check('a model that can\'t read images is skipped for one that can', voDone && fake.modelsUsed.includes('gemini-fallback'), { used: fake.modelsUsed });
+    fake.modelsUsed = [];
+    const voId2 = await queueOne('text-only-again');
+    await waitFor(async () => (await queueState()).pending.every(x => x.id !== voId2));
+    check('…and isn\'t asked again for the next photo', !fake.modelsUsed.includes('gemini-main'), fake.modelsUsed);
 
     fake.mode = 'nonsense';
     const badId = await queueOne('nonsense');
