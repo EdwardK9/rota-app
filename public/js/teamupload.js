@@ -124,7 +124,7 @@ const TeamUploadView = {
 
     btn.disabled = true;
     try {
-      const { conflicts } = await API.getBatchConflicts(batchId);
+      const { conflicts, photo_id } = await API.getBatchConflicts(batchId);
       btn.disabled = false;
       if (!conflicts.length) {
         showToast('Nothing left to review on this import', 'info');
@@ -137,7 +137,7 @@ const TeamUploadView = {
       const td = document.createElement('td');
       td.colSpan = 5;
       td.style.padding = '8px';
-      td.innerHTML = this._conflictPanelHtml(conflicts, 'tuBatchReview' + batchId);
+      td.innerHTML = this._conflictPanelHtml(conflicts, 'tuBatchReview' + batchId, photo_id);
       tr.appendChild(td);
       row.after(tr);
 
@@ -164,14 +164,16 @@ const TeamUploadView = {
 
   // Shared conflict-resolution table markup — used by the "Needs Review" panel
   // above. idPrefix scopes element ids so more than one panel can exist at once.
-  _conflictPanelHtml(conflicts, idPrefix) {
+  _conflictPanelHtml(conflicts, idPrefix, photoId) {
     const fmtTime = (st, et, type) => {
       if (type === 'leave')   return '🌴 Leave';
       if (type === 'all_day') return '🏪 All Day';
       return `${st} – ${et}`;
     };
+    const photoSrc = photoId ? `/api/photo-library/files/${photoId}/image` : '';
     return `
-      <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
+      <div class="tu-review${photoId ? ' tu-review-has-photo' : ''}">
+      <div class="tu-review-main" style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
         <div style="padding:8px 12px;background:rgba(245,158,11,0.1);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-weight:600">⚡ ${conflicts.length} conflict${conflicts.length !== 1 ? 's' : ''} — this person already has a shift that day</span>
           <span style="color:var(--text-muted);font-size:11px">Choose what to do with each, then Apply</span>
@@ -206,6 +208,12 @@ const TeamUploadView = {
           <button id="${idPrefix}-apply" class="btn btn-sm btn-primary">Apply</button>
           <span id="${idPrefix}-count" style="font-size:11px;color:var(--text-muted)"></span>
         </div>
+      </div>
+      ${photoId ? `
+        <a class="tu-review-photo" href="${photoSrc}" target="_blank" rel="noopener" title="Original screenshot — tap to open full size">
+          <div class="tu-review-photo-label">📷 Original screenshot</div>
+          <img src="${photoSrc}" alt="Original team schedule screenshot" />
+        </a>` : ''}
       </div>`;
   },
 
