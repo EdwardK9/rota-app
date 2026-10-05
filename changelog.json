@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:53:49.434Z",
-  "commit": "f447adc",
+  "generated_at": "2026-10-05T08:57:05.900Z",
+  "commit": "df9196d",
   "entries": [
+    {
+      "version": "6.4.9",
+      "date": "2026-10-05",
+      "summary": "Miles driven now agree everywhere (round trip)",
+      "details": "Stats\n- Trophies (Road Warrior), the Records page (\"Miles driven\" and marathons),\n  Wrapped (\"driven to work this year\") and Year in Numbers were showing the\n  ONE-WAY distance, half of what the \"You have driven N miles to work\" card\n  and the Commute Cost page show. They now count there and back, so the\n  numbers match. Your Road Warrior progress will go up accordingly.\n- Importing shifts with both a \"miles there\" and a \"miles back\" column used\n  to add the two together, which got doubled again in every total. It now\n  stores their average as the one-way distance.\n- The shift form and Settings now say the distance is one way.\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.8",
       "date": "2026-10-05",
