@@ -1,7 +1,19 @@
 {
-  "generated_at": "2026-10-05T08:48:49.511Z",
-  "commit": "c920891",
+  "generated_at": "2026-10-05T08:53:49.434Z",
+  "commit": "f447adc",
   "entries": [
+    {
+      "version": "6.4.8",
+      "date": "2026-10-05",
+      "summary": "Fun fact miles now match the \"driven to work\" card",
+      "details": "Fun fact\n- The AI bonus fact and the \"You have driven N miles to work\" card showed\n  different totals (2,520 vs 5,040). The card counts the round trip; the AI\n  fact was only being given the one-way distance, so it showed half. Both\n  now use the round trip.\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
+    {
+      "version": "6.4.7",
+      "date": "2026-10-05",
+      "summary": "Fun facts try another Gemini model when one is out of quota",
+      "details": "Fun fact\n- When the Gemini model you've chosen has used up its free quota, the fun\n  fact now tries another model instead of showing Google's long error. It\n  remembers which model is used up for a while, so the next fact doesn't\n  wait on it again.\n- If every model is out of quota, the message is now a plain \"Gemini's free\n  quota is used up ... try again later\".\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.6",
       "date": "2026-10-05",

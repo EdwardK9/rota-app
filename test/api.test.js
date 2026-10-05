@@ -49,6 +49,7 @@ const fakeGemini = http.createServer((rq, rs) => {
     if (fake.mode === 'quota-then-fallback' && model === 'gemini-main') {
       return send(429, { error: { code: 429, message: 'You exceeded your current quota. Quota exceeded for metric: generate_content_free_tier_requests, limit: 0', status: 'RESOURCE_EXHAUSTED' } });
     }
+    fake.lastPrompt = body;
     if (fake.mode === 'text-only-main' && model === 'gemini-main') {
       return send(400, { error: { code: 400, message: 'Image input modality is not enabled for models/gemini-main', status: 'INVALID_ARGUMENT' } });
     }
@@ -196,6 +197,24 @@ const fakeGemini = http.createServer((rq, rs) => {
     const inQueue = q => [...q.pending, ...q.waiting, ...q.failed].some(x => x.id === fbId);
     const fbDone = await waitFor(async () => !inQueue(await queueState()));
     check('when the main model is out of quota, another model reads it', fbDone && fake.modelsUsed.includes('gemini-fallback'), { state: await queueState(), used: fake.modelsUsed });
+
+    // The fun fact is plain text, not a screenshot — same "try another model" rule.
+    fake.mode = 'quota-then-fallback';
+    fake.modelsUsed = [];
+    const fact = await req('GET', '/api/v3/did-you-know/ai');
+    check('fun fact: when the main model is out of quota, another model answers', fact.status === 200 && !!fact.body.fact && fake.modelsUsed.includes('gemini-fallback'), { status: fact.status, body: fact.body, used: fake.modelsUsed });
+    fake.modelsUsed = [];
+    await req('GET', '/api/v3/did-you-know/ai');
+    check('fun fact: …and the used-up model is not asked again straight away', !fake.modelsUsed.includes('gemini-main'), fake.modelsUsed);
+
+    // The card says "driven N miles to work" (round trip); the AI fact must use that same N.
+    await req('PATCH', '/api/shifts/bulk-mileage', { ids: [created.body.id], distance_miles: 12.5 });
+    const cards = (await req('GET', '/api/v3/did-you-know')).body.facts;
+    const milesCard = cards.find(f => /miles to work/.test(f.text));
+    await req('GET', '/api/v3/did-you-know/ai');
+    check('the "driven to work" card counts the round trip', milesCard && /25 miles/.test(milesCard.text), milesCard);
+    const promptText = (() => { try { return JSON.parse(fake.lastPrompt).contents[0].parts[0].text; } catch (_) { return ''; } })();
+    check('the AI fact is given that same round-trip figure', /"total_commute_miles_round_trip":25[,}]/.test(promptText), promptText.slice(-300));
 
     fake.mode = 'text-only-main';
     fake.modelsUsed = [];
