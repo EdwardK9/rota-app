@@ -1229,6 +1229,7 @@ router.get('/colleagues/import-batches', (req, res) => {
   const batches = db.prepare(`
     SELECT id, source, note, inserted_count, undone_at, created_at, pending_conflicts, summary,
       schedule_data IS NOT NULL AS can_rerun,
+      (SELECT id FROM photo_files WHERE import_batch_id = import_batches.id ORDER BY id DESC LIMIT 1) AS photo_id,
       (SELECT COUNT(*) FROM colleague_shifts WHERE import_batch_id = import_batches.id) AS remaining_count
     FROM import_batches
     WHERE inserted_count > 0 OR pending_conflicts IS NOT NULL
@@ -1618,7 +1619,11 @@ router.get('/colleagues/import-batches/:id/conflicts', (req, res) => {
   const batch = db.prepare('SELECT * FROM import_batches WHERE id = ?').get(batchId);
   if (!batch) return res.status(404).json({ error: 'Import batch not found' });
   if (!batch.pending_conflicts) return res.json({ conflicts: [], schedule_data: null });
+  // The screenshot this import was read from, so the review screen can show it
+  // next to the conflicts instead of making you hunt for it in the Photo Library.
+  const photo = db.prepare('SELECT id FROM photo_files WHERE import_batch_id = ? ORDER BY id DESC LIMIT 1').get(batchId);
   res.json({
+    photo_id:      photo?.id || null,
     conflicts:     JSON.parse(batch.pending_conflicts),
     schedule_data: JSON.parse(batch.pending_schedule_data),
     date_range:    batch.note,

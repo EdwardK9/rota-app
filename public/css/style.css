@@ -2010,6 +2010,24 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 }
 .dash-clock-pending { font-size: 12px; font-weight: 600; color: var(--warning); white-space: nowrap; }
 
+/* Team Upload — wide cards; the Recent Imports table wraps its Detail column
+   (td is nowrap globally) so the table fits the card with no sideways scroll */
+.tu-card { max-width: 1200px; margin: 0 auto 20px; }
+.tu-batch-table .tu-detail { white-space: normal; overflow-wrap: anywhere; }
+
+/* Team Upload — conflict review: original screenshot beside the table */
+.tu-review { display: flex; gap: 12px; align-items: flex-start; }
+.tu-review-main { flex: 1 1 0; min-width: 0; }
+.tu-review-photo { flex: 0 0 38%; max-width: 460px; position: sticky; top: 8px; display: block; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); text-decoration: none; color: var(--text); overflow: hidden; }
+.tu-review-photo-label { padding: 6px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.tu-review-photo img { display: block; width: 100%; max-height: 80vh; object-fit: contain; object-position: top; background: #000; }
+@media (max-width: 900px) {
+  .tu-review { flex-direction: column; align-items: stretch; }
+  .tu-review-main { flex: none; }
+  .tu-review-photo { flex: none; max-width: none; width: 100%; position: static; }
+  .tu-review-photo img { max-height: 60vh; }
+}
+
 /* Team Upload — names an import didn't recognise */
 .tu-unknown { margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); font-size: 12px; }
 .tu-unknown-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
