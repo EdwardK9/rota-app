@@ -29,7 +29,7 @@ async function req(method, p, body) {
 // A stand-in for the Gemini API, so the screenshot queue can be tested end to
 // end without a key or network. `mode` picks how it behaves.
 const http = require('http');
-const fake = { mode: 'ok', modelsUsed: [] };
+const fake = { mode: 'ok', modelsUsed: [], models: ['gemini-main', 'gemini-fallback'] };
 const fakeSchedule = { date_range: 'Oct 12, 2026 – Oct 18, 2026', schedule: [
   { date: 'Mon 12', shifts: [{ name: 'Erin Ward', time: '09:00 - 17:00' }] },
   { date: 'Tue 13', shifts: [{ name: 'Wayne Aitken', time: '12:00 - 20:00' }] },
@@ -40,7 +40,7 @@ const fakeGemini = http.createServer((rq, rs) => {
   rq.on('end', () => {
     const send = (code, obj) => { rs.writeHead(code, { 'Content-Type': 'application/json' }); rs.end(JSON.stringify(obj)); };
     if (rq.method === 'GET') {   // model list
-      return send(200, { models: ['gemini-main', 'gemini-fallback'].map(n => ({ name: 'models/' + n, supportedGenerationMethods: ['generateContent'] })) });
+      return send(200, { models: fake.models.map(n => ({ name: 'models/' + n, supportedGenerationMethods: ['generateContent'] })) });
     }
     const model = (rq.url.match(/models\/([^:]+):/) || [])[1];
     fake.modelsUsed.push(model);
@@ -211,10 +211,43 @@ const fakeGemini = http.createServer((rq, rs) => {
     await req('PATCH', '/api/shifts/bulk-mileage', { ids: [created.body.id], distance_miles: 12.5 });
     const cards = (await req('GET', '/api/v3/did-you-know')).body.facts;
     const milesCard = cards.find(f => /miles to work/.test(f.text));
-    await req('GET', '/api/v3/did-you-know/ai');
+    await req('GET', '/api/v3/did-you-know/ai?theme=commute');
     check('the "driven to work" card counts the round trip', milesCard && /25 miles/.test(milesCard.text), milesCard);
     const promptText = (() => { try { return JSON.parse(fake.lastPrompt).contents[0].parts[0].text; } catch (_) { return ''; } })();
     check('the AI fact is given that same round-trip figure', /"total_commute_miles_round_trip":25[,}]/.test(promptText), promptText.slice(-300));
+
+    const rec = (await req('GET', '/api/v3/records')).body;
+    check('Records "Miles driven" counts the round trip too', rec.lifetime && rec.lifetime.miles === 25, rec.lifetime);
+    const trophies = await req('GET', '/api/v3/trophies');
+    const road = JSON.stringify(trophies.body).match(/"code":"miles"[^}]*?"value":([\d.]+)/);
+    check('the Road Warrior trophy counts the round trip', !road || Number(road[1]) === 25, road && road[0]);
+
+    // Fun facts rotate topics instead of always reaching for the miles.
+    const themes = new Set();
+    let sawNot = false;
+    for (let i = 0; i < 12; i++) {
+      const r = await req('GET', '/api/v3/did-you-know/ai?not=commute');
+      themes.add(r.body.theme);
+      if (r.body.theme === 'commute') sawNot = true;
+    }
+    check('the AI fact varies its topic', themes.size >= 3, [...themes]);
+    check('…and ?not= keeps it off the topic it just showed', !sawNot, [...themes]);
+    check('the deck has more than miles and hours', (await req('GET', '/api/v3/did-you-know')).body.count >= 10, (await req('GET', '/api/v3/did-you-know')).body.count);
+
+    // Auto-pick: the best everyday model for the key, not a text-only or pro one.
+    fake.models = ['gemini-2.0-flash', 'gemini-3.1-pro', 'gemini-3.0-flash', 'gemini-3.0-flash-lite', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-image'];
+    const gm = (await req('GET', '/api/colleagues/gemini-models')).body;
+    check('suggests the newest flash model as the all-rounder', gm.suggestions && gm.suggestions.auto === 'gemini-3.0-flash' && gm.recommended === 'gemini-3.0-flash', gm.suggestions);
+    check('…flash-lite as fastest and pro as most accurate', gm.suggestions.fast === 'gemini-3.0-flash-lite' && gm.suggestions.accurate === 'gemini-3.1-pro', gm.suggestions);
+    check('text-to-speech and image-output models are not offered', !gm.models.some(m => /tts|image/.test(m)), gm.models);
+    await req('POST', '/api/settings', { gemini_model: 'auto' });
+    fake.mode = 'ok';
+    fake.modelsUsed = [];
+    const autoId = await queueOne('auto-pick');
+    await waitFor(async () => (await queueState()).pending.every(x => x.id !== autoId));
+    check('with the model set to Auto, the best model is the one used', fake.modelsUsed[0] === 'gemini-3.0-flash', fake.modelsUsed);
+    await req('POST', '/api/settings', { gemini_model: 'gemini-main' });
+    fake.models = ['gemini-main', 'gemini-fallback'];
 
     fake.mode = 'text-only-main';
     fake.modelsUsed = [];

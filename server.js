@@ -1093,7 +1093,8 @@ app.get('/api/wrapped', (req, res) => {
   const completed = shifts.filter(s => s.completed);
 
   const totalHours = Math.round(completed.reduce((s, x) => s + (x.hours_worked || 0), 0) * 10) / 10;
-  const totalMiles = Math.round(completed.reduce((s, x) => s + (x.distance_miles || 0), 0) * 10) / 10;
+  // distance_miles is one way; Wrapped's "driven to work" is there and back
+  const totalMiles = Math.round(completed.reduce((s, x) => s + (x.distance_miles || 0) * 2, 0) * 10) / 10;
   const totalShifts = completed.length;
 
   const payslips = db.prepare("SELECT * FROM payslips WHERE substr(month, 1, 4) = ?").all(year);
@@ -2498,9 +2499,13 @@ app.post('/api/import/shifts', (req, res) => {
         const calculated_pay = hourly_rate ? Math.round(hours_paid * hourly_rate * 100) / 100 : null;
         const distThere  = parseFloat(row[mapping.distance_miles]        || 0) || 0;
         const distReturn = parseFloat(row[mapping.distance_miles_return] || 0) || 0;
-        const distance_miles = (distThere || distReturn)
-          ? distThere + distReturn
-          : defaultDist;
+        // distance_miles is the one-way distance everywhere else in the app (the
+        // totals double it for the round trip). With both columns filled in the
+        // fair one-way figure is their average — adding them stored the whole
+        // round trip, which every total then doubled again.
+        const distance_miles = (distThere && distReturn)
+          ? (distThere + distReturn) / 2
+          : (distThere || distReturn || defaultDist);
         const completed = row[mapping.completed] ? (row[mapping.completed].toLowerCase() === 'true' || row[mapping.completed] === '1' ? 1 : 0) : 0;
         const notes = row[mapping.notes] || null;
 

@@ -920,7 +920,7 @@ const ShiftsView = {
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label>Distance (miles)</label>
+              <label>Distance (miles, one way)</label>
               <input type="number" id="sfDist" step="0.1" value="${s.distance_miles ?? 3.6}" tabindex="-1" />
             </div>
             ${s.id ? `

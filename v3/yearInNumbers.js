@@ -72,7 +72,8 @@ router.get('/year-in-numbers', (req, res) => {
       days_worked: byYear[y].dates.size,
       hours,
       pay,
-      miles: round1(rows.reduce((t, s) => t + (s.distance_miles || 0), 0)),
+      // one-way distance stored per shift; miles driven is there and back
+      miles: round1(rows.reduce((t, s) => t + (s.distance_miles || 0) * 2, 0)),
       weekend_shifts: rows.filter(s => isWeekend(s.date)).length,
       bank_holidays: rows.filter(s => s.is_bank_holiday).length,
       early_starts: rows.filter(s => toMins(s.start_time) <= 7 * 60).length,

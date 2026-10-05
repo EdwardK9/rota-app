@@ -53,7 +53,9 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
 
   const totalHours  = round1(shifts.reduce((t, s) => t + paidHours(s), 0));
   const totalPay    = round2(shifts.reduce((t, s) => t + (shiftPay(s) || 0), 0));
-  const totalMiles  = round1(shifts.reduce((t, s) => t + (s.distance_miles || 0), 0));
+  // distance_miles is the ONE-WAY distance; "miles driven to work" is the round
+  // trip, same as the Did You Know card and the Commute Cost page.
+  const totalMiles  = round1(shifts.reduce((t, s) => t + (s.distance_miles || 0) * 2, 0));
 
   const isBH = s => !!s.is_bank_holiday || bankHolidayDates.has(s.date);
 
@@ -84,7 +86,7 @@ function careerStats({ bankHolidayDates = new Set() } = {}) {
       bucket.shifts += 1;
       bucket.hours  += paidHours(s);
       bucket.pay    += shiftPay(s) || 0;
-      bucket.miles  += s.distance_miles || 0;
+      bucket.miles  += (s.distance_miles || 0) * 2;
     }
     byDow[dowIndex(s.date)] += 1;
     byStartHour[Math.floor(toMins(s.start_time) / 60)] = (byStartHour[Math.floor(toMins(s.start_time) / 60)] || 0) + 1;

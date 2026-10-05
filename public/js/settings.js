@@ -42,7 +42,7 @@ const SettingsView = {
             <div class="card-body">
               <div class="form-row">
                 <div class="form-group">
-                  <label>Default Distance (miles per shift)</label>
+                  <label>Default Distance (miles, one way)</label>
                   <input type="number" id="setDefaultDist" step="0.1" placeholder="3.6" />
                   <div class="form-hint">Used when adding new shifts. Can override per shift.</div>
                 </div>
@@ -537,20 +537,27 @@ const SettingsView = {
                   <input type="password" id="setGeminiKey" placeholder="Paste your API key" autocomplete="off" />
                   <div class="form-hint">Stored on your server only — never sent anywhere except Google's Gemini API.</div>
                 </div>
-                <div class="form-group" style="max-width:220px">
+                <div class="form-group" style="max-width:420px">
                   <label>
                     Model
                     <button type="button" class="btn btn-ghost btn-sm" id="geminiModelRefresh"
                       title="Refresh model list from Google" style="padding:0 4px;font-size:12px">&#8635;</button>
                   </label>
                   <select id="setGeminiModel">
-                    <option value="gemini-3.6-flash">gemini-3.6-flash (default)</option>
+                    <option value="auto">✨ Auto — pick the best one for me (recommended)</option>
                     <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash (retired for new keys)</option>
                     <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                   </select>
                   <div class="form-hint" id="geminiModelRefreshStatus">
-                    List above is a fallback — hit &#8635; to pull the live list for your key.
+                    Hit &#8635; to pull the live list for your key.
+                  </div>
+                  <div class="form-hint" style="margin-top:8px;line-height:1.5">
+                    <strong>Not sure? Leave it on Auto.</strong> It uses the newest everyday ("flash") model your key
+                    can use, and quietly switches to another if one runs out of free allowance or can't read images.
+                    The same model is used for screenshot import, renaming photos and fun facts.<br>
+                    ⚡ <em>Fastest</em> suits quick jobs and stretches the free allowance furthest.
+                    🎯 <em>Most accurate</em> reads messy screenshots best, but free keys often get a tiny or zero
+                    allowance on it.
                   </div>
                 </div>
               </div>
@@ -1954,7 +1961,8 @@ const SettingsView = {
 
   populateGemini() {
     const modelEl = document.getElementById('setGeminiModel');
-    if (modelEl && this.settings.gemini_model) modelEl.value = this.settings.gemini_model;
+    // Nothing saved yet means Auto — same as the server treats it.
+    if (modelEl) modelEl.value = this.settings.gemini_model || 'auto';
     const keyEl = document.getElementById('setGeminiKey');
     if (keyEl && this.settings.gemini_api_key) keyEl.placeholder = '••••••••••••••••••• (saved)';
     // Best-effort background refresh — a key's already saved, so pull the live list
@@ -1969,23 +1977,31 @@ const SettingsView = {
     const status  = document.getElementById('geminiModelRefreshStatus');
     const modelEl = document.getElementById('setGeminiModel');
     if (!modelEl) return;
-    const current = modelEl.value;
+    // modelEl.value is '' when the saved model isn't one of the options yet
+    const current = modelEl.value || this.settings.gemini_model || 'auto';
     if (status) status.textContent = 'Loading models…';
     try {
-      const { models, recommended } = await API.getGeminiModels();
+      const { models, recommended, suggestions = {} } = await API.getGeminiModels();
       if (!models || !models.length) {
         if (status) status.textContent = 'No models returned — save an API key first.';
         return;
       }
-      // Server already ranks these best-first (same ranking used for automatic
-      // overload fallback) — mark the top one so the most capable option is obvious
-      // rather than making you guess between similarly-named models.
-      modelEl.innerHTML = models.map(m =>
-        `<option value="${esc(m)}">${esc(m)}${m === recommended ? ' ⭐ Recommended (most capable)' : ''}</option>`
-      ).join('');
-      // Keep the previous selection if it's still valid, otherwise default to the recommended one
-      modelEl.value = models.includes(current) ? current : (recommended || models[0]);
-      if (status) status.textContent = `✓ ${models.length} model${models.length !== 1 ? 's' : ''} available to your key — ⭐ = most capable`;
+      // What each suggestion is for, so you don't have to know the model names.
+      const tag = m =>
+        m === suggestions.auto     ? ' — ⭐ best all-rounder' :
+        m === suggestions.fast     ? ' — ⚡ fastest, lightest' :
+        m === suggestions.accurate ? ' — 🎯 most accurate (small free allowance)' : '';
+      const rank = m => (m === suggestions.auto ? 0 : m === suggestions.fast ? 1 : m === suggestions.accurate ? 2 : 3);
+      const ordered = [...models].sort((a, b) => rank(a) - rank(b));   // stable: the rest keep the server's order
+      modelEl.innerHTML =
+        `<option value="auto">✨ Auto — pick the best one for me${recommended ? ` (now: ${esc(recommended)})` : ''} (recommended)</option>` +
+        ordered.map(m => `<option value="${esc(m)}">${esc(m)}${tag(m)}</option>`).join('');
+      // Keep the previous selection if it's still valid, otherwise fall back to Auto
+      const stillThere = current === 'auto' || models.includes(current);
+      modelEl.value = stillThere ? current : 'auto';
+      if (status) status.textContent = stillThere
+        ? `✓ ${models.length} model${models.length !== 1 ? 's' : ''} available to your key`
+        : `${current} isn't available to your key any more — switched to Auto. Press Save to keep that.`;
     } catch (e) {
       if (status) status.textContent = 'Could not load models: ' + e.message;
     }

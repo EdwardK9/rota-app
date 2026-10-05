@@ -87,8 +87,8 @@ V3.register('did-you-know', '🎲 Did You Know', {
       idle: `
         <div class="card-body" style="text-align:center;padding:24px">
           <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-            Everything above is a fixed formula. This one asks Gemini to find a fresh angle on the
-            same kind of numbers — a different comparison every time you ask.
+            Everything above is a fixed formula. This one asks Gemini to find a fresh angle on a
+            different part of your history each time you ask.
           </div>
           <button class="btn btn-primary" id="dykAiBtn">🤖 Ask Gemini for a fact</button>
         </div>`,
@@ -128,8 +128,9 @@ V3.register('did-you-know', '🎲 Did You Know', {
     ];
 
     try {
-      const d = await V3.api.didYouKnowAI();
+      const d = await V3.api.didYouKnowAI(this.aiTheme);   // last topic, so "Get another" changes angle
       this.aiFact = d.fact;
+      this.aiTheme = d.theme;
       this.aiState = 'done';
     } catch (e) {
       this.aiError = e.message;

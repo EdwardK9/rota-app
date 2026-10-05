@@ -77,7 +77,7 @@ router.get('/did-you-know', (req, res) => {
     if (g > longestGap) { longestGap = g; gapFrom = sorted[i - 1]; gapTo = sorted[i]; }
   }
   if (longestGap > 1) {
-    add('🏝️', `Your longest gap between shifts was ${longestGap - 1} days off in a row.`,
+    add('🏝️', `Your longest gap between shifts was ${longestGap - 1} day${longestGap - 1 === 1 ? '' : 's'} off in a row.`,
       `Between ${gapFrom} and ${gapTo}.`);
   }
 
@@ -153,6 +153,71 @@ router.get('/did-you-know', (req, res) => {
       `${longest.start_time}–${longest.end_time} on ${longest.date}.`);
   }
 
+  // ── More angles on the same history ──────────────────────────────────────
+  // The deck used to lean on miles and hours; these draw on weekends, bank
+  // holidays, early starts, streaks, breaks, tax and leave, so a page of four
+  // isn't four ways of saying the same number.
+  const cs = careerStats();
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const fmtDay = d => new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  if (cs.weekendShifts > 0 && cs.totalShifts > 0) {
+    const pct = round1((cs.weekendShifts / cs.totalShifts) * 100);
+    add('🛍️', `${cs.weekendShifts} of your ${cs.totalShifts} shifts were at a weekend.`,
+      `That's ${pct}% — about ${Math.max(1, Math.round(pct / 10))} in every 10.`);
+  }
+  if (cs.bankHolidayShifts > 0) {
+    add('🎌', `You have worked ${plural(cs.bankHolidayShifts, 'bank holiday', 'bank holidays')}.`,
+      `Most recently ${fmtDay(cs.bankHolidayList[cs.bankHolidayList.length - 1])}.`);
+  }
+  if (cs.earliestStart) {
+    add('🌅', `Your earliest ever start was ${cs.earliestStart.start_time}.`,
+      `${fmtDay(cs.earliestStart.date)}${cs.earlyStarts > 1 ? ` — and you have started at 7am or earlier ${cs.earlyStarts} times in all.` : '.'}`);
+  }
+  if (cs.latestFinish) {
+    add('🌙', `Your latest ever finish was ${cs.latestFinish.end_time}.`,
+      `${fmtDay(cs.latestFinish.date)}${cs.lateFinishes > 1 ? ` — you have finished at 7pm or later ${cs.lateFinishes} times.` : '.'}`);
+  }
+  if (cs.longestStreakDays >= 3) {
+    add('🔥', `Your longest run without a day off was ${cs.longestStreakDays} days in a row.`,
+      cs.longestStreakEnd ? `It ended on ${fmtDay(cs.longestStreakEnd)}.` : null);
+  }
+  if (cs.breaksSkipped > 0) {
+    add('🥪', `You have skipped your break ${plural(cs.breaksSkipped, 'time', 'times')}.`,
+      `Against ${cs.breaksFull} full break${cs.breaksFull === 1 ? '' : 's'} taken.`);
+  }
+  if (cs.lifetimeGross > 0 && cs.lifetimeTax > 0) {
+    add('🏛️', `You have paid ${money(cs.lifetimeTax)} in tax and National Insurance.`,
+      `${round1((cs.lifetimeTax / cs.lifetimeGross) * 100)}% of ${money(cs.lifetimeGross)} gross, across ${plural(cs.payslipCount, 'payslip', 'payslips')}.`);
+  }
+  if (cs.leaveDays > 0) {
+    add('🏖️', `You have taken ${cs.leaveDays} day${cs.leaveDays === 1 ? '' : 's'} of leave.`,
+      `Across ${plural(cs.leaveEntries, 'booking', 'bookings')}.`);
+  }
+  if (totalHours > 0 && totalPay > 0) {
+    add('⚡', `Every hour on the clock has earned you ${money(totalPay / totalHours)} on average.`,
+      `${money(totalPay)} over ${round1(totalHours)} hours.`);
+  }
+  if (cs.distinctColleagues > 0) {
+    add('🧑‍🤝‍🧑', `You have shared a shift with ${cs.distinctColleagues} different colleague${cs.distinctColleagues === 1 ? '' : 's'}.`,
+      cs.biggestCrewDay && cs.biggestCrewDay.count ? `Your busiest day had ${cs.biggestCrewDay.count} of them in with you (${fmtDay(cs.biggestCrewDay.date)}).` : null);
+  }
+  if (cs.bestWeekByHours && cs.bestWeekByHours.hours > 0) {
+    add('💪', `Your biggest week was ${cs.bestWeekByHours.hours} hours.`,
+      `${cs.bestWeekByHours.shifts} shifts, ${money(cs.bestWeekByHours.pay)} — week of ${fmtDay(cs.bestWeekByHours.key)}.`);
+  }
+  if (cs.firstShift) {
+    const since = daysBetween(cs.firstShift.date, today);
+    if (since > 0) {
+      add('🗓️', `Your first logged shift was ${since.toLocaleString('en-GB')} days ago.`,
+        since >= 365 ? `${fmtDay(cs.firstShift.date)} — about ${round1(since / 365.25)} years.` : `${fmtDay(cs.firstShift.date)}.`);
+    }
+  }
+  if (cs.clockIns >= 5 && cs.earliestClockIn) {
+    add('⏰', `Your earliest ever clock-in was ${cs.earliestClockIn.clocked_in}.`,
+      `On ${fmtDay(cs.earliestClockIn.date)}.`);
+  }
+
   // Deterministic shuffle so the client can page without repeats
   const seed = parseInt(req.query.seed, 10) || Math.floor(Date.now() / 86400000);
   shuffle(facts, seed);
@@ -177,41 +242,48 @@ router.get('/did-you-know/ai', async (req, res) => {
 
   // Aggregate numbers only — no colleague names, no dates, nothing that reads
   // as a diary entry once it leaves the server.
-  const context = {
-    total_shifts: s.totalShifts,
-    total_hours: round1(s.totalHours),
-    total_pay_gbp: round2(s.totalPay),
-    // s.totalMiles sums the stored one-way distance; the "driven to work" card
-    // above and the Commute Cost page both count the round trip, so give the AI
-    // the same number or the two facts contradict each other (2,520 vs 5,040).
-    total_commute_miles_round_trip: round1(s.totalMiles * 2),
-    weekend_shifts: s.weekendShifts,
-    bank_holiday_shifts: s.bankHolidayShifts,
-    longest_single_shift_hours: s.longestShift ? round1(paidHours(s.longestShift)) : 0,
-    longest_streak_of_days_worked: s.longestStreakDays,
-    distinct_colleagues_worked_with: s.distinctColleagues,
-    breaks_skipped_count: s.breaksSkipped,
-    clock_ins_recorded: s.clockIns,
-    lifetime_tax_and_ni_paid_gbp: round2(s.lifetimeTax),
-    leave_days_taken: s.leaveDays,
-    days_employed: s.daysEmployed || 0,
+  //
+  // Every request used to send the same bag of numbers and ask for "a surprising
+  // comparison", and the model reached for the biggest, most dramatic one each
+  // time — commute miles. So each request now gets ONE topic and only that
+  // topic's numbers; the client says which topic it just showed (?not=) so
+  // "Get another" never repeats the same angle back to back.
+  const THEMES = {
+    time: { ask: 'how much time they have spent at work', data: { total_hours: round1(s.totalHours), total_shifts: s.totalShifts, days_employed: s.daysEmployed || 0 } },
+    money: { ask: 'what they have earned', data: { total_pay_gbp: round2(s.totalPay), total_hours: round1(s.totalHours), total_shifts: s.totalShifts } },
+    tax: { ask: 'tax and National Insurance paid', data: { lifetime_tax_and_ni_paid_gbp: round2(s.lifetimeTax), lifetime_gross_pay_gbp: round2(s.lifetimeGross) }, need: s.lifetimeTax > 0 },
+    weekends: { ask: 'weekend and bank holiday working', data: { weekend_shifts: s.weekendShifts, bank_holiday_shifts: s.bankHolidayShifts, total_shifts: s.totalShifts }, need: s.weekendShifts + s.bankHolidayShifts > 0 },
+    endurance: { ask: 'their longest efforts', data: { longest_single_shift_hours: s.longestShift ? round1(paidHours(s.longestShift)) : 0, longest_streak_of_days_worked: s.longestStreakDays }, need: !!s.longestShift },
+    early_late: { ask: 'early starts and late finishes', data: { starts_at_or_before_7am: s.earlyStarts, finishes_at_or_after_7pm: s.lateFinishes, total_shifts: s.totalShifts }, need: s.earlyStarts + s.lateFinishes > 0 },
+    people: { ask: 'how many colleagues they have worked alongside', data: { distinct_colleagues_worked_with: s.distinctColleagues, biggest_crew_on_one_day: s.biggestCrewDay ? s.biggestCrewDay.count : 0 }, need: s.distinctColleagues > 0 },
+    breaks: { ask: 'their breaks', data: { full_breaks_taken: s.breaksFull, breaks_skipped: s.breaksSkipped, total_shifts: s.totalShifts } },
+    leave: { ask: 'time off they have taken', data: { leave_days_taken: s.leaveDays, days_employed: s.daysEmployed || 0 }, need: s.leaveDays > 0 },
+    commute: { ask: 'their commute (there and back)', data: { total_commute_miles_round_trip: round1(s.totalMiles), total_shifts: s.totalShifts }, need: s.totalMiles > 0 },
   };
+  const available = Object.keys(THEMES).filter(k => THEMES[k].need !== false);
+  const not = String(req.query.not || '');
+  const pool = available.filter(k => k !== not);
+  const forced = available.includes(String(req.query.theme || '')) ? String(req.query.theme) : null;   // for tests / debugging
+  const themeKey = forced || (pool.length ? pool : available)[Math.floor(Math.random() * (pool.length ? pool.length : available.length))];
+  const theme = THEMES[themeKey];
 
   const prompt = `You write a single "did you know" fact for a UK retail shift-worker's personal work-stats app, based on the real JSON data below.
+
+This time the topic is: ${theme.ask}. Use ONLY the numbers given — do not bring in any other topic.
 
 Rules:
 - Output ONLY the fact itself as plain text. No preamble, no markdown, no quote marks, no label.
 - One or two sentences, under 220 characters total.
-- Turn one of the numbers into a surprising real-world comparison or conversion (e.g. equivalent in films watched, marathons, football pitches, flights, batteries of a phone charged — vary it, don't just restate the number).
+- Turn one of the numbers into a surprising real-world comparison or conversion (e.g. equivalent in films watched, marathons, football pitches, flights, cups of tea, steps, phone charges — vary it, don't just restate the number).
 - Be playful but honest — every number you use must be derivable from the data given, don't invent statistics.
 - Do not give financial or tax advice, just observations.
 
 Data:
-${JSON.stringify(context)}`;
+${JSON.stringify(theme.data)}`;
 
   try {
     const fact = await callGeminiText(prompt);
-    res.json({ fact });
+    res.json({ fact, theme: themeKey });
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message || 'Gemini request failed.' });
   }
