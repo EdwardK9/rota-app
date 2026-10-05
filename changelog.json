@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:04:57.065Z",
-  "commit": "668c055",
+  "generated_at": "2026-10-05T08:20:28.748Z",
+  "commit": "5471b5f",
   "entries": [
+    {
+      "version": "6.4.1",
+      "date": "2026-10-05",
+      "summary": "Review screenshot fills its panel and scrolls",
+      "details": "Team Upload\n- The original screenshot beside the conflict table now fills the whole\n  panel width (no more black bars either side), so the text is bigger and\n  easier to read.\n- Long screenshots scroll up and down inside the panel, so the page itself\n  doesn't have to scroll to compare.\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.0",
       "date": "2026-10-05",
