@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:57:05.900Z",
-  "commit": "df9196d",
+  "generated_at": "2026-10-05T09:00:54.120Z",
+  "commit": "d341f85",
   "entries": [
+    {
+      "version": "6.4.10",
+      "date": "2026-10-05",
+      "summary": "More varied fun facts, and Gemini model \"Auto\" in Settings",
+      "details": "Fun facts\n- The deck has a lot more to say: weekends and bank holidays worked, your\n  earliest start and latest finish, longest run without a day off, breaks\n  skipped, tax and National Insurance paid, leave taken, average pay per\n  hour, how many colleagues you've worked with, your biggest week, how long\n  ago your first shift was, and your earliest clock-in.\n- The AI bonus fact now picks a different topic each time (time, pay, tax,\n  weekends, early/late shifts, colleagues, breaks, leave or commute) and only\n  sees that topic's numbers, so it stops turning everything into miles.\n  \"Get another\" never repeats the topic it just showed.\n\nSettings → AI Screenshot Import\n- New \"Auto\" model choice (and the default): uses the newest everyday model\n  your key can use and switches itself if one runs out of free allowance.\n- The model list now labels the best all-rounder, the fastest and the most\n  accurate, with a short note on which to pick. Text-to-speech and\n  image-generation models are no longer listed.\n- Your saved model isn't changed — pick Auto in Settings to switch.\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.9",
       "date": "2026-10-05",
