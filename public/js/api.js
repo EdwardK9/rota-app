@@ -107,7 +107,6 @@ const API = {
 
   // Leave
   getLeave:    (params = {}) => API.get('/api/leave?' + new URLSearchParams(params)),
-  getBestLeaveDays: (days) => API.get('/api/leave/best-days' + (days ? '?days=' + days : '')),
   createLeave: (data)        => API.post('/api/leave', data),
   updateLeave: (id, data)    => API.put(`/api/leave/${id}`, data),
   deleteLeave: (id)          => API.delete(`/api/leave/${id}`),

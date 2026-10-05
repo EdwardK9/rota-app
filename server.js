@@ -1836,55 +1836,6 @@ app.get('/api/leave', (req, res) => {
   res.json(db.prepare(query).all(...params));
 });
 
-// GET /api/leave/best-days?days=60 — upcoming shifts of yours where the team is
-// already well covered without you, so booking leave there is least likely to
-// create a coverage gap. Excludes other-store colleague shifts and days you've
-// already got leave booked.
-app.get('/api/leave/best-days', (req, res) => {
-  const days = Math.min(parseInt(req.query.days, 10) || 60, 120);
-  const today = localDateStr();
-  const endDate = (() => {
-    const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + days);
-    return localDateStr(d);
-  })();
-
-  const myShifts = db.prepare(
-    "SELECT date, start_time, end_time FROM shifts WHERE date > ? AND date <= ? ORDER BY date"
-  ).all(today, endDate);
-
-  const existingLeave = db.prepare(
-    'SELECT start_date, end_date FROM leave_entries WHERE end_date >= ? AND start_date <= ?'
-  ).all(today, endDate);
-  const leaveDates = new Set();
-  existingLeave.forEach(le => {
-    let cur = new Date(le.start_date + 'T00:00:00');
-    const end = new Date(le.end_date + 'T00:00:00');
-    while (cur <= end) { leaveDates.add(localDateStr(cur)); cur.setDate(cur.getDate() + 1); }
-  });
-
-  const colShifts = db.prepare(`
-    SELECT date, colleague_id FROM colleague_shifts
-    WHERE date > ? AND date <= ? AND shift_type = 'shift' AND (store IS NULL OR store = '')
-  `).all(today, endDate);
-  const headcountByDate = {};
-  colShifts.forEach(cs => {
-    (headcountByDate[cs.date] ||= new Set()).add(cs.colleague_id);
-  });
-
-  const candidates = myShifts
-    .filter(s => !leaveDates.has(s.date))
-    .map(s => ({
-      date: s.date,
-      start_time: s.start_time,
-      end_time: s.end_time,
-      coverage: headcountByDate[s.date] ? headcountByDate[s.date].size : 0,
-    }))
-    .sort((a, b) => b.coverage - a.coverage || a.date.localeCompare(b.date))
-    .slice(0, 10);
-
-  res.json({ from: today, to: endDate, candidates });
-});
-
 app.post('/api/leave', (req, res) => {
   const { start_date, end_date, hours_taken, leave_type = 'annual', notes } = req.body;
   if (!start_date || !end_date || hours_taken === undefined) {

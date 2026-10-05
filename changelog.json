@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:33:44.823Z",
-  "commit": "c501948",
+  "generated_at": "2026-10-05T08:37:18.455Z",
+  "commit": "042c3e3",
   "entries": [
+    {
+      "version": "6.4.5",
+      "date": "2026-10-05",
+      "summary": "Removed \"Best Days to Book Leave\" from the Leave tab",
+      "details": "Leave\n- The \"Best Days to Book Leave\" suggestions are gone. They only looked about\n  60 days ahead at shifts already in the app, which can't help when leave\n  needs about 4 weeks' notice, after the last rota that's been published.\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.4",
       "date": "2026-10-05",
