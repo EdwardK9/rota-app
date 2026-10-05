@@ -707,11 +707,11 @@ const textQuotaUntil = new Map();   // model -> epoch ms
 
 // "Please retry in 15h9m38.009s" / "retry in 38.5s" -> seconds (null if absent)
 function retrySecsFromMessage(msg) {
-  const m = String(msg || '').match(/retry in ((?:\d+(?:\.\d+)?\s*[hms]\s*)+)/i);
+  const m = String(msg || '').match(/retry in ((?:\d+(?:\.\d+)?\s*(?:ms|h|m|s)(?![a-z])\s*)+)/i);
   if (!m) return null;
   let secs = 0;
-  for (const [, n, unit] of m[1].matchAll(/(\d+(?:\.\d+)?)\s*([hms])/gi)) {
-    secs += parseFloat(n) * { h: 3600, m: 60, s: 1 }[unit.toLowerCase()];
+  for (const [, n, unit] of m[1].matchAll(/(\d+(?:\.\d+)?)\s*(ms|h|m|s)(?![a-z])/gi)) {
+    secs += parseFloat(n) * { ms: 0.001, h: 3600, m: 60, s: 1 }[unit.toLowerCase()];
   }
   return secs || null;
 }
