@@ -152,6 +152,20 @@ const fakeGemini = http.createServer((rq, rs) => {
     await req('POST', '/api/colleagues/import-json', { schedule_data: weekOf([]) });
     check('a different-store shift missing from a full day is cleared too', (await tueShifts()).length === 0, await tueShifts());
 
+    console.log('\nClock map — only clock-ins and outs count as "where you clock from":');
+    await req('POST', '/api/settings', { commute_work_lat: '50.9', commute_work_lon: '-1.4', commute_home_lat: '51.2', commute_home_lon: '-1.0',
+      v5_location_enabled: '1', v5_location_on_open: '1' });
+    const fix = (kind, lat, lon) => req('POST', '/api/v5/ingest', { session_id: 'map-test', location: { kind, lat, lon, accuracy_m: 10 } });
+    await fix('clock_in', 50.9001, -1.4001);
+    await fix('clock_out', 50.9002, -1.4002);
+    for (let i = 0; i < 4; i++) await fix('app_open', 51.2, -1.0);   // opening the app at home
+    const loc = (await req('GET', '/api/v5/locations?days=30')).body;
+    const placeCount = n => (loc.by_place.find(p => p.name === n) || {}).count || 0;
+    check('app opens at home are not counted as clocking in from home', placeCount('Home') === 0, loc.by_place);
+    check('both clock fixes count as Work', placeCount('Work') === 2, loc.by_place);
+    const clockOnly = (await req('GET', '/api/v5/locations?days=30&kind=clock')).body;
+    check('kind=clock returns clock-ins and outs only', clockOnly.points.length === 2 && clockOnly.points.every(p => p.kind.startsWith('clock')), clockOnly.points.map(p => p.kind));
+
     console.log('\nScreenshot queue (with a stand-in Gemini):');
     await req('POST', '/api/settings', { gemini_api_key: 'test-key', gemini_model: 'gemini-main' });
     // Each test screenshot's file name shows up in its batch note.

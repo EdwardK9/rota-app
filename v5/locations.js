@@ -34,10 +34,14 @@ function workPoint() {
 
 router.get('/locations', (req, res) => {
   const { days, since } = windowFromQuery(req.query, 90);
+  // kind=clock means clock-ins and clock-outs together (the page's default);
+  // a missing kind or "all" also includes the fixes taken when the app opens.
   const kind = req.query.kind && req.query.kind !== 'all' ? String(req.query.kind) : null;
   const flags = privacyFlags();
 
-  const rows = kind
+  const rows = kind === 'clock'
+    ? db.prepare("SELECT * FROM v5_locations WHERE local_date >= ? AND kind IN ('clock_in','clock_out') ORDER BY ts DESC").all(since)
+    : kind
     ? db.prepare('SELECT * FROM v5_locations WHERE local_date >= ? AND kind = ? ORDER BY ts DESC').all(since, kind)
     : db.prepare('SELECT * FROM v5_locations WHERE local_date >= ? ORDER BY ts DESC').all(since);
 
@@ -93,8 +97,11 @@ router.get('/locations', (req, res) => {
   }
 
   /* ── Where you clock in from ────────────────────────────────────────── */
+  // Clock-ins and clock-outs only. App-open fixes are wherever you happened to
+  // be holding the phone — counting them made "where you clock from" read as
+  // half at home when almost every clock fix was at the store.
   const byPlace = {};
-  for (const p of points) {
+  for (const p of points.filter(x => x.kind === 'clock_in' || x.kind === 'clock_out')) {
     const key = p.place || 'Elsewhere';
     const e = (byPlace[key] ||= { name: key, icon: p.place_icon || '❓', count: 0, kinds: {} });
     e.count++;

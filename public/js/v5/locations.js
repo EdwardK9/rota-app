@@ -18,7 +18,7 @@
 
 V5.register('v5-locations', '📍 Clock Map', {
   data: null,
-  kind: 'all',
+  kind: 'clock',
 
   async init() {
     const el = document.getElementById('view-v5-locations');
@@ -51,7 +51,7 @@ V5.register('v5-locations', '📍 Clock Map', {
           </select>
           <label style="margin:0 4px 0 12px;font-weight:500">Show:</label>
           <select id="v5LocKind" style="width:auto">
-            ${[['all', 'Everything'], ['clock_in', 'Clock-ins'], ['clock_out', 'Clock-outs'], ['app_open', 'App opens']]
+            ${[['clock', 'Clock-ins & outs'], ['clock_in', 'Clock-ins only'], ['clock_out', 'Clock-outs only'], ['app_open', 'App opens'], ['all', 'Everything']]
               .map(([v, l]) => `<option value="${v}" ${v === this.kind ? 'selected' : ''}>${l}</option>`).join('')}
           </select>
         </div>
@@ -214,6 +214,10 @@ V5.register('v5-locations', '📍 Clock Map', {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
       maxZoom: 19,
+      // The server sends Referrer-Policy: same-origin, so tile requests went out
+      // with no Referer at all and OpenStreetMap answered 403 "Access blocked".
+      // Their usage policy wants the site identified; the origin is enough.
+      referrerPolicy: 'origin',
     }).addTo(map);
 
     L.marker([work.lat, work.lon], {
@@ -236,7 +240,7 @@ V5.register('v5-locations', '📍 Clock Map', {
         `<br><a href="${esc(p.maps_url)}" target="_blank" rel="noopener">Open in Google Maps ↗</a>`
       );
     }
-    if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
+    if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 17 });
   },
 
   /** A scatter of every GPS fix relative to the store, with the axes in metres.
@@ -247,13 +251,16 @@ V5.register('v5-locations', '📍 Clock Map', {
    *  of bug fixes. See the module comment for why this stays a plain scatter
    *  rather than becoming a real tile map.) */
   _plot(d) {
-    if (!d.work_configured || !d.points.length) return '';
+    // Clock-ins and clock-outs only: app opens can be miles away, and a single
+    // one would stretch the axes until the clock fixes are one dot in the middle.
+    const clockPts = d.points.filter(p => p.kind === 'clock_in' || p.kind === 'clock_out');
+    if (!d.work_configured || !clockPts.length) return '';
     const work = d.work;
     // Local flat-earth projection — over a commute-sized area the error is far
     // smaller than a GPS fix's own accuracy.
     const mPerDegLat = 111320;
     const mPerDegLon = 111320 * Math.cos((work.lat * Math.PI) / 180);
-    const pts = d.points.map(p => ({
+    const pts = clockPts.map(p => ({
       ...p,
       x: (p.lon - work.lon) * mPerDegLon,
       y: (p.lat - work.lat) * mPerDegLat,
@@ -286,9 +293,8 @@ V5.register('v5-locations', '📍 Clock Map', {
         <div class="v3-chips" style="justify-content:center">
           <span class="v3-chip"><span class="v5-dot" style="background:#10B981"></span> Clock in</span>
           <span class="v3-chip"><span class="v5-dot" style="background:#6366F1"></span> Clock out</span>
-          <span class="v3-chip"><span class="v5-dot" style="background:#F59E0B"></span> App open</span>
         </div>
-        <p class="v3-note">The store is the centre; the rings are 250 m and 1 km. The plot spans about
+        <p class="v3-note">Clock-ins and clock-outs only. The store is the centre; the rings are 250 m and 1 km. The plot spans about
         ${Math.round(extent)} m in each direction. Hover a point for the detail.</p>
       </div></div>`;
   },
