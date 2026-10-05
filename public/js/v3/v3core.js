@@ -55,7 +55,7 @@ const V3 = {
                                       })),
     yearInNumbers:()          => API.get('/api/v3/year-in-numbers'),
     didYouKnow:   (seed)      => API.get('/api/v3/did-you-know' + (seed ? '?seed=' + seed : '')),
-    didYouKnowAI: ()          => API.get('/api/v3/did-you-know/ai'),
+    didYouKnowAI: (not)       => API.get('/api/v3/did-you-know/ai' + (not ? '?not=' + encodeURIComponent(not) : '')),
     leavePlanner: (to, maxSpan) => API.get('/api/v3/leave-planner?' + new URLSearchParams({
                                      ...(to ? { to } : {}),
                                      ...(maxSpan ? { max_span: maxSpan } : {}),

@@ -430,7 +430,7 @@ function isNoVisionError(message) {
 // Names that are never going to read a screenshot, so they're kept out of the
 // model dropdown and the fallback list. Not exhaustive — the API doesn't say
 // which models take images — which is what isNoVisionError above is for.
-const NON_VISION_MODEL = /embedding|aqa|tts|native-audio|-live|imagen|veo|robotics|learnlm/i;
+const NON_VISION_MODEL = /embedding|aqa|tts|native-audio|-live|imagen|veo|robotics|learnlm|image-generation|(?:^|-)image(?:-|$)/i;
 
 // Models that answered "I can't see images" this run — skipped straight away
 // next time, rather than costing a failed call on every one of 300 photos.
@@ -470,6 +470,51 @@ function rankGeminiModel(name) {
   if (/flash-lite|flash-8b/i.test(name)) score -= 60;
   if (/preview|exp/i.test(name)) score -= 10;
   return score;
+}
+
+// Which model to use when the setting is "auto" (or empty). The free tier gives
+// "pro" models a tiny or zero allowance and gives "flash" models a usable one,
+// so auto prefers the newest regular flash model, then flash-lite, then pro —
+// the opposite of rankGeminiModel's "most capable first", which is still what
+// the "most accurate" suggestion in Settings uses.
+function autoScoreGeminiModel(name) {
+  return rankGeminiModel(name) - (/\bpro\b/i.test(name) ? 150 : 0);
+}
+
+function suggestGeminiModels(models) {
+  const usable = models.filter(m => !NON_VISION_MODEL.test(m));
+  const byAuto = [...usable].sort((a, b) => autoScoreGeminiModel(b) - autoScoreGeminiModel(a));
+  const isLite = m => /flash-lite|flash-8b/i.test(m);
+  const isPro  = m => /\bpro\b/i.test(m);
+  const isFlash = m => /\bflash\b/i.test(m) && !isLite(m);
+  return {
+    // newest regular flash; else flash-lite; else whatever ranks best
+    auto:     byAuto.find(isFlash) || byAuto.find(isLite) || byAuto[0] || null,
+    // smallest and cheapest on the free allowance — for plain, quick reads
+    fast:     byAuto.find(isLite) || null,
+    // biggest brain, but usually a very small (or zero) free-tier allowance
+    accurate: [...usable].sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a)).find(isPro) || null,
+  };
+}
+
+// The model actually used for a call. A saved choice is used as-is; "auto" (or
+// nothing saved) means "the best one your key can use today", looked up from
+// Google's live list and remembered briefly so each call doesn't re-ask.
+let autoModelCache = { at: 0, key: '', model: null };
+async function resolveGeminiModel(apiKey, configured) {
+  const chosen = (configured || '').trim();
+  if (chosen && chosen !== 'auto') return chosen;
+  if (autoModelCache.model && autoModelCache.key === apiKey && Date.now() - autoModelCache.at < 30 * 60_000) {
+    return autoModelCache.model;
+  }
+  const available = await fetchAvailableGeminiModels(apiKey).catch(() => []);
+  const picked = suggestGeminiModels(available).auto;
+  if (picked) {
+    autoModelCache = { at: Date.now(), key: apiKey, model: picked };
+    return picked;
+  }
+  // Couldn't reach the list — Google's own always-current alias for flash.
+  return 'gemini-flash-latest';
 }
 
 // Vision requests are naturally slower than the text-only path (image
@@ -554,12 +599,12 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT, {
   const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
   const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
   const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
-  const primaryModel = (modelRow && modelRow.value && modelRow.value.trim()) || 'gemini-2.0-flash';
   if (!apiKey) {
     const err = new Error('No Gemini API key configured. Add one in Settings → AI Screenshot Import.');
     err.status = 400;
     throw err;
   }
+  const primaryModel = await resolveGeminiModel(apiKey, modelRow && modelRow.value);
 
   const imageB64 = imageBuffer.toString('base64');
 
@@ -583,7 +628,7 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT, {
     const available = await fetchAvailableGeminiModels(apiKey);
     fallbacks = available
       .filter(m => m !== primaryModel && !noVisionModels.has(m))
-      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
+      .sort((a, b) => autoScoreGeminiModel(b) - autoScoreGeminiModel(a))
       .slice(0, 3);
   } catch (_) { /* no model list available — fall through with nothing to try */ }
 
@@ -720,12 +765,12 @@ async function callGeminiText(prompt) {
   const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
   const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
   const apiKey   = keyRow   && keyRow.value   && keyRow.value.trim();
-  const primaryModel = (modelRow && modelRow.value && modelRow.value.trim()) || 'gemini-2.0-flash';
   if (!apiKey) {
     const err = new Error('No Gemini API key configured. Add one in Settings → AI Screenshot Import.');
     err.status = 400;
     throw err;
   }
+  const primaryModel = await resolveGeminiModel(apiKey, modelRow && modelRow.value);
 
   // "Try another model" applies to a model that's busy and to one that's out of
   // quota — either way a different model can usually still answer.
@@ -759,7 +804,7 @@ async function callGeminiText(prompt) {
     const available = await fetchAvailableGeminiModels(apiKey);
     fallbacks = available
       .filter(m => m !== primaryModel && !quotaBlocked(m))
-      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
+      .sort((a, b) => autoScoreGeminiModel(b) - autoScoreGeminiModel(a))
       .slice(0, 3);
   } catch (_) { /* no model list available — fall through with nothing to try */ }
 
@@ -810,11 +855,11 @@ router.get('/colleagues/gemini-models', async (req, res) => {
       // models support generateContent too but aren't useful here, so drop obvious
       // non-multimodal names.
       .filter(name => !NON_VISION_MODEL.test(name))
-      // Best-ranked first (same ranking used for automatic overload fallback) so the
-      // most capable option is the obvious default rather than whatever sorts first
-      // alphabetically.
-      .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a));
-    res.json({ models, recommended: models[0] || null });
+      // Same order auto-pick and the fallbacks use, so the top of the list is what
+      // "Auto" would choose.
+      .sort((a, b) => autoScoreGeminiModel(b) - autoScoreGeminiModel(a));
+    const suggestions = suggestGeminiModels(models);
+    res.json({ models, recommended: suggestions.auto, suggestions });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
