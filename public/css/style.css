@@ -2018,14 +2018,15 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 /* Team Upload — conflict review: original screenshot beside the table */
 .tu-review { display: flex; gap: 12px; align-items: flex-start; }
 .tu-review-main { flex: 1 1 0; min-width: 0; }
-.tu-review-photo { flex: 0 0 38%; max-width: 460px; position: sticky; top: 8px; display: block; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); text-decoration: none; color: var(--text); overflow: hidden; }
+.tu-review-photo { flex: 0 0 42%; max-width: 560px; position: sticky; top: 8px; display: block; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); text-decoration: none; color: var(--text); overflow: hidden; }
 .tu-review-photo-label { padding: 6px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
-.tu-review-photo img { display: block; width: 100%; max-height: 80vh; object-fit: contain; object-position: top; background: #000; }
+.tu-review-photo-scroll { max-height: 80vh; overflow-y: auto; background: #000; }
+.tu-review-photo img { display: block; width: 100%; height: auto; }
 @media (max-width: 900px) {
   .tu-review { flex-direction: column; align-items: stretch; }
   .tu-review-main { flex: none; }
   .tu-review-photo { flex: none; max-width: none; width: 100%; position: static; }
-  .tu-review-photo img { max-height: 60vh; }
+  .tu-review-photo-scroll { max-height: 60vh; }
 }
 
 /* Team Upload — names an import didn't recognise */

@@ -212,7 +212,7 @@ const TeamUploadView = {
       ${photoId ? `
         <a class="tu-review-photo" href="${photoSrc}" target="_blank" rel="noopener" title="Original screenshot — tap to open full size">
           <div class="tu-review-photo-label">📷 Original screenshot</div>
-          <img src="${photoSrc}" alt="Original team schedule screenshot" />
+          <div class="tu-review-photo-scroll"><img src="${photoSrc}" alt="Original team schedule screenshot" /></div>
         </a>` : ''}
       </div>`;
   },
