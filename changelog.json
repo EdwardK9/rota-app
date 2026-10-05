@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:24:35.833Z",
-  "commit": "71ea530",
+  "generated_at": "2026-10-05T08:28:56.968Z",
+  "commit": "84deda4",
   "entries": [
+    {
+      "version": "6.4.3",
+      "date": "2026-10-05",
+      "summary": "Fix old different-store shifts being left behind after an import",
+      "details": "Team Calendar\n- When someone moved to a different store (e.g. Winchester one week's\n  screenshot, Fratton in the corrected one), the old Winchester shift was\n  left in the calendar next to the new Fratton one. Importing a screenshot\n  now removes shifts at other stores that it no longer shows, the same way\n  it already did for shifts at your own store.\n- Only days the screenshot shows in full are cleaned up, and shifts you\n  added by hand are never touched.\n- To fix the Winchester shift already on the calendar, press Re-run on that\n  week's import in Recent Imports (or delete it by hand).\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.2",
       "date": "2026-10-05",
