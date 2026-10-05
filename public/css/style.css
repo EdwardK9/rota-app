@@ -2010,6 +2010,11 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 }
 .dash-clock-pending { font-size: 12px; font-weight: 600; color: var(--warning); white-space: nowrap; }
 
+/* Team Upload — wide cards; the Recent Imports table wraps its Detail column
+   (td is nowrap globally) so the table fits the card with no sideways scroll */
+.tu-card { max-width: 1200px; margin: 0 auto 20px; }
+.tu-batch-table .tu-detail { white-space: normal; overflow-wrap: anywhere; }
+
 /* Team Upload — names an import didn't recognise */
 .tu-unknown { margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); font-size: 12px; }
 .tu-unknown-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }

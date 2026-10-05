@@ -59,7 +59,7 @@ const TeamUploadView = {
                 <tr id="tuBatchRow-${b.id}" style="border-bottom:1px solid var(--border);${b.pending_conflict_count ? 'background:rgba(245,158,11,0.06)' : ''}">
                   <td style="padding:5px 8px;white-space:nowrap">${esc(this._fmtWhen(b.created_at))}</td>
                   <td style="padding:5px 8px">${esc(sourceLabel[b.source] || b.source)}</td>
-                  <td style="padding:5px 8px;color:var(--text-muted)">
+                  <td class="tu-detail" style="padding:5px 8px;color:var(--text-muted)">
                     ${esc(b.note || '')}${b.week ? `<div style="font-size:11.5px">Week ${esc(fmtDate(b.week[0]))} – ${esc(fmtDate(b.week[1]))}</div>` : ''}
                     ${!b.undone_at && b.unknown_names.length ? `
                       <div class="tu-unknown">
@@ -290,7 +290,7 @@ const TeamUploadView = {
   render() {
     document.getElementById('view-team-upload').innerHTML = `
 
-      <div class="card" style="max-width:760px;margin:0 auto 20px">
+      <div class="card tu-card">
         <div class="card-header" style="padding-bottom:0">
           <h2 style="margin-bottom:12px">Team Rota Import</h2>
           <div class="import-tabs">
@@ -388,14 +388,14 @@ const TeamUploadView = {
         </div>
       </div>
 
-      <div class="card" id="tuQueueCard" style="max-width:760px;margin:0 auto 20px;display:none">
+      <div class="card tu-card" id="tuQueueCard" style="display:none">
         <div class="card-header"><h2>\u{1F4E5} Processing Queue</h2></div>
         <div class="card-body">
           <div id="tuQueueGrid"></div>
         </div>
       </div>
 
-      <div class="card" style="max-width:760px;margin:0 auto 20px">
+      <div class="card tu-card">
         <div class="card-header"><h2>Recent Imports</h2></div>
         <div class="card-body">
           <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
