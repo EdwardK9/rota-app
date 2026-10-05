@@ -1439,6 +1439,10 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
   // of those days but is completely absent from this one is stale data, not a
   // day off that just needs recording — see the reconciliation pass below.
   const incomingHomePresence = new Set(); // `${colleague_id}|${date}`
+  // Same idea for shifts at another store, but keyed by store name too: moving
+  // someone from Winchester to Fratton leaves the old Winchester row stale even
+  // though the colleague is still in the screenshot that day.
+  const incomingAwayPresence = new Set(); // `${colleague_id}|${date}|${store lower-cased}`
   const resolvedDates = new Set();
 
   db.transaction(() => {
@@ -1499,6 +1503,7 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
         // happens with the actual insert below (matched, conflicting, whatever)
         // — that's enough to protect this colleague/date from reconciliation.
         if (!store) incomingHomePresence.add(`${col.id}|${dayDate}`);
+        else incomingAwayPresence.add(`${col.id}|${dayDate}|${store.toLowerCase()}`);
 
         const overrideKey = `${col.id}|${dayDate}|${start_time}`;
         const override    = overrideMap.get(overrideKey);
@@ -1554,8 +1559,8 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
     // appear in this screenshot at all on that day is stale — delete it. Scoped
     // to import_batch_id IS NOT NULL so hand-entered/manually-corrected shifts
     // (added via the Team Calendar "Add Shift" modal) are never touched, and to
-    // home-store rows only, since this screenshot has no authority over what a
-    // colleague is doing at a different store.
+    // home-store rows here; different-store rows get the same treatment just
+    // below, matched on store name as well.
     const staleHomeRowsStmt = db.prepare(
       `SELECT id, colleague_id FROM colleague_shifts
        WHERE date = ? AND (store IS NULL OR store = '') AND import_batch_id IS NOT NULL`
@@ -1566,12 +1571,26 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
     // last days visible may be cut off at the top or bottom of the screen —
     // the rest of that day is often in the next screenshot. Clearing those
     // used to delete real shifts imported from the other half of the week.
+    const staleAwayRowsStmt = db.prepare(
+      `SELECT id, colleague_id, store FROM colleague_shifts
+       WHERE date = ? AND store IS NOT NULL AND store != '' AND import_batch_id IS NOT NULL`
+    );
     const shownDays = weekDates.filter(d => resolvedDates.has(d));
     const fullyShown = new Set(shownDays.slice(1, -1));
     for (const d of weekDates) {
       if (!fullyShown.has(d)) continue;
       for (const row of staleHomeRowsStmt.all(d)) {
         if (!incomingHomePresence.has(`${row.colleague_id}|${d}`)) {
+          deleteShiftById.run(row.id);
+          reconciled++;
+        }
+      }
+      // A different-store shift that's no longer on the schedule for that day —
+      // either dropped altogether or moved to another store — is stale too.
+      // The screenshot lists every shift with its location line, so it does
+      // speak for them; hand-entered shifts (no import batch) are still safe.
+      for (const row of staleAwayRowsStmt.all(d)) {
+        if (!incomingAwayPresence.has(`${row.colleague_id}|${d}|${String(row.store).trim().toLowerCase()}`)) {
           deleteShiftById.run(row.id);
           reconciled++;
         }

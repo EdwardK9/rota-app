@@ -175,15 +175,15 @@ const TeamUploadView = {
       <div class="tu-review${photoId ? ' tu-review-has-photo' : ''}">
       <div class="tu-review-main" style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
         <div style="padding:8px 12px;background:rgba(245,158,11,0.1);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:600">⚡ ${conflicts.length} conflict${conflicts.length !== 1 ? 's' : ''} — this person already has a shift that day</span>
-          <span style="color:var(--text-muted);font-size:11px">Choose what to do with each, then Apply</span>
+          <span style="font-weight:600">⚡ ${conflicts.length} shift${conflicts.length !== 1 ? 's' : ''} where the screenshot doesn't match what's saved</span>
+          <span style="color:var(--text-muted);font-size:11px">Pick what to do with each, then press Apply</span>
         </div>
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
             <th style="padding:5px 8px;text-align:left;font-weight:500">Person</th>
             <th style="padding:5px 8px;text-align:left;font-weight:500">Date</th>
-            <th style="padding:5px 8px;text-align:left;font-weight:500">Existing</th>
-            <th style="padding:5px 8px;text-align:left;font-weight:500">Incoming</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:500">Saved now</th>
+            <th style="padding:5px 8px;text-align:left;font-weight:500">Screenshot says</th>
             <th style="padding:5px 8px;text-align:left;font-weight:500">Action</th>
           </tr></thead>
           <tbody>
@@ -196,9 +196,9 @@ const TeamUploadView = {
                 <td style="padding:5px 8px">
                   <select class="${idPrefix}-action form-control" style="font-size:12px;padding:3px 6px"
                     data-colleague-id="${c.colleague_id}" data-date="${c.date}" data-start-time="${c.incoming.start_time}">
-                    <option value="skip" selected>Skip — keep existing as-is</option>
-                    ${c.existing.map(e => `<option value="replace:${e.id}">Replace ${esc(fmtTime(e.start_time, e.end_time, e.shift_type))} with incoming</option>`).join('')}
-                    <option value="add">Keep both — add as extra shift</option>
+                    <option value="skip" selected>Leave as saved (no change)</option>
+                    ${c.existing.map(e => `<option value="replace:${e.id}">Change ${esc(fmtTime(e.start_time, e.end_time, e.shift_type))} to ${esc(fmtTime(c.incoming.start_time, c.incoming.end_time, c.incoming.shift_type))}</option>`).join('')}
+                    <option value="add">Keep saved and add ${esc(fmtTime(c.incoming.start_time, c.incoming.end_time, c.incoming.shift_type))} as a second shift</option>
                   </select>
                 </td>
               </tr>`).join('')}

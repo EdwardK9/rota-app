@@ -134,6 +134,24 @@ const fakeGemini = http.createServer((rq, rs) => {
     const rerun = await req('POST', `/api/colleagues/import-batches/${imp.body.batchId}/rerun`, {});
     check('re-running after adding them imports their shift', rerun.body.inserted === 1 && !rerun.body.unknownNames.length, rerun.body);
 
+    console.log('\nTeam import — a shift that moved to another store:');
+    const amelia = (await req('POST', '/api/colleagues', { name: 'Amelia Stubbington' })).body;
+    const weekOf = (tue) => ({ date_range: 'Oct 19 – Oct 25', schedule: [
+      { date: 'Mon 19', shifts: [{ name: 'Erin Ward', time: '09:00 - 17:00' }] },
+      { date: 'Tue 20', shifts: [{ name: 'Erin Ward', time: '09:00 - 17:00' }, ...tue] },
+      { date: 'Wed 21', shifts: [{ name: 'Erin Ward', time: '09:00 - 17:00' }] },
+      { date: 'Thu 22', shifts: [] }, { date: 'Fri 23', shifts: [] }, { date: 'Sat 24', shifts: [] }, { date: 'Sun 25', shifts: [] },
+    ] });
+    await req('POST', '/api/colleagues/import-json', { schedule_data: weekOf([{ name: 'Amelia Stubbington', time: '07:00 - 14:30', store: 'Winchester' }]) });
+    const tueShifts = async () => (await req('GET', `/api/working-with/team-calendar?colleagueId=${amelia.id}&from=2026-10-20&to=2026-10-20`)).body.shifts;
+    check('the Winchester shift is saved with its store', (await tueShifts()).map(x => x.store).join() === 'Winchester', await tueShifts());
+    const moved = await req('POST', '/api/colleagues/import-json', { schedule_data: weekOf([{ name: 'Amelia Stubbington', time: '08:00 - 16:00', store: 'Portsmouth - Fratton' }]) });
+    const after = await tueShifts();
+    check('moving her to Fratton replaces the old Winchester shift', after.length === 1 && after[0].store === 'Portsmouth - Fratton', after);
+    check('the clean-up is counted', moved.body.reconciled >= 1, moved.body);
+    await req('POST', '/api/colleagues/import-json', { schedule_data: weekOf([]) });
+    check('a different-store shift missing from a full day is cleared too', (await tueShifts()).length === 0, await tueShifts());
+
     console.log('\nScreenshot queue (with a stand-in Gemini):');
     await req('POST', '/api/settings', { gemini_api_key: 'test-key', gemini_model: 'gemini-main' });
     // Each test screenshot's file name shows up in its batch note.
