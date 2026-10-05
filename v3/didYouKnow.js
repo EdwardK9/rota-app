@@ -181,10 +181,9 @@ router.get('/did-you-know/ai', async (req, res) => {
     total_shifts: s.totalShifts,
     total_hours: round1(s.totalHours),
     total_pay_gbp: round2(s.totalPay),
-    // s.totalMiles sums the stored one-way distance; the "driven to work" card
-    // above and the Commute Cost page both count the round trip, so give the AI
-    // the same number or the two facts contradict each other (2,520 vs 5,040).
-    total_commute_miles_round_trip: round1(s.totalMiles * 2),
+    // careerStats().totalMiles is the round trip (stored one-way distance x 2),
+    // matching the "driven to work" card above and the Commute Cost page.
+    total_commute_miles_round_trip: round1(s.totalMiles),
     weekend_shifts: s.weekendShifts,
     bank_holiday_shifts: s.bankHolidayShifts,
     longest_single_shift_hours: s.longestShift ? round1(paidHours(s.longestShift)) : 0,

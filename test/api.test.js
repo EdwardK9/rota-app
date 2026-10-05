@@ -216,6 +216,12 @@ const fakeGemini = http.createServer((rq, rs) => {
     const promptText = (() => { try { return JSON.parse(fake.lastPrompt).contents[0].parts[0].text; } catch (_) { return ''; } })();
     check('the AI fact is given that same round-trip figure', /"total_commute_miles_round_trip":25[,}]/.test(promptText), promptText.slice(-300));
 
+    const rec = (await req('GET', '/api/v3/records')).body;
+    check('Records "Miles driven" counts the round trip too', rec.lifetime && rec.lifetime.miles === 25, rec.lifetime);
+    const trophies = await req('GET', '/api/v3/trophies');
+    const road = JSON.stringify(trophies.body).match(/"code":"miles"[^}]*?"value":([\d.]+)/);
+    check('the Road Warrior trophy counts the round trip', !road || Number(road[1]) === 25, road && road[0]);
+
     fake.mode = 'text-only-main';
     fake.modelsUsed = [];
     const voId = await queueOne('text-only-main');

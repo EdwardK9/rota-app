@@ -42,7 +42,7 @@ const SettingsView = {
             <div class="card-body">
               <div class="form-row">
                 <div class="form-group">
-                  <label>Default Distance (miles per shift)</label>
+                  <label>Default Distance (miles, one way)</label>
                   <input type="number" id="setDefaultDist" step="0.1" placeholder="3.6" />
                   <div class="form-hint">Used when adding new shifts. Can override per shift.</div>
                 </div>
