@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:20:28.748Z",
-  "commit": "5471b5f",
+  "generated_at": "2026-10-05T08:24:35.833Z",
+  "commit": "71ea530",
   "entries": [
+    {
+      "version": "6.4.2",
+      "date": "2026-10-05",
+      "summary": "Clearer wording when reviewing import conflicts",
+      "details": "Team Upload\n- The review options now say exactly what will happen, e.g. \"Leave as\n  saved (no change)\", \"Change 14:00 – 18:00 to 14:00 – 20:00\" and \"Keep\n  saved and add 14:00 – 20:00 as a second shift\".\n- Column headings are now \"Saved now\" and \"Screenshot says\", and the\n  banner reads \"shifts where the screenshot doesn't match what's saved\".\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.1",
       "date": "2026-10-05",
