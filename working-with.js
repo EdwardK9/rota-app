@@ -699,6 +699,23 @@ async function callGeminiOnceText(prompt, apiKey, model) {
 // (common on the free-tier flash models at busy times) surfaced straight to
 // the user instead of quietly trying the next-best model like screenshot
 // import already does.
+// Text-path models that just said "out of quota", with when to try them again.
+// The free tier gives every model its own daily allowance, so one being used up
+// says nothing about the others — but it's also pointless to ask it again on the
+// next fun fact when the reply said to come back in 15 hours.
+const textQuotaUntil = new Map();   // model -> epoch ms
+
+// "Please retry in 15h9m38.009s" / "retry in 38.5s" -> seconds (null if absent)
+function retrySecsFromMessage(msg) {
+  const m = String(msg || '').match(/retry in ((?:\d+(?:\.\d+)?\s*[hms]\s*)+)/i);
+  if (!m) return null;
+  let secs = 0;
+  for (const [, n, unit] of m[1].matchAll(/(\d+(?:\.\d+)?)\s*([hms])/gi)) {
+    secs += parseFloat(n) * { h: 3600, m: 60, s: 1 }[unit.toLowerCase()];
+  }
+  return secs || null;
+}
+
 async function callGeminiText(prompt) {
   const keyRow   = db.prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
   const modelRow = db.prepare("SELECT value FROM settings WHERE key = 'gemini_model'").get();
@@ -710,20 +727,38 @@ async function callGeminiText(prompt) {
     throw err;
   }
 
+  // "Try another model" applies to a model that's busy and to one that's out of
+  // quota — either way a different model can usually still answer.
+  const worthNextModel = err => err.overloaded || isGeminiQuotaError(err);
+  const noteQuota = (model, err) => {
+    if (!isGeminiQuotaError(err)) return;
+    const secs = retrySecsFromMessage(err.message);
+    // Cap at an hour so a model that comes back sooner than promised isn't
+    // shut out for the rest of a day.
+    textQuotaUntil.set(model, Date.now() + Math.min(secs ?? 60, 3600) * 1000);
+  };
+  const quotaBlocked = model => (textQuotaUntil.get(model) || 0) > Date.now();
+
   let lastErr;
-  try {
-    const { text } = await callGeminiOnceText(prompt, apiKey, primaryModel);
-    return text;
-  } catch (err) {
-    if (!err.overloaded) throw err;
-    lastErr = err;
+  if (quotaBlocked(primaryModel)) {
+    lastErr = new Error(`${primaryModel} is out of free quota for now`);
+    lastErr.status = 429;
+  } else {
+    try {
+      const { text } = await callGeminiOnceText(prompt, apiKey, primaryModel);
+      return text;
+    } catch (err) {
+      noteQuota(primaryModel, err);
+      if (!worthNextModel(err)) throw err;
+      lastErr = err;
+    }
   }
 
   let fallbacks = [];
   try {
     const available = await fetchAvailableGeminiModels(apiKey);
     fallbacks = available
-      .filter(m => m !== primaryModel)
+      .filter(m => m !== primaryModel && !quotaBlocked(m))
       .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
       .slice(0, 3);
   } catch (_) { /* no model list available — fall through with nothing to try */ }
@@ -734,14 +769,21 @@ async function callGeminiText(prompt) {
       return text;
     } catch (err) {
       lastErr = err;
-      if (!err.overloaded) throw err;
+      noteQuota(model, err);
+      if (!worthNextModel(err)) throw err;
     }
   }
 
-  lastErr.message = fallbacks.length
-    ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all overloaded right now — try again shortly. (${lastErr.message})`
-    : lastErr.message;
-  throw lastErr;
+  // Say it in plain words — Google's own quota message is three sentences and
+  // two links, and the useful part (every model is spent for now) isn't in it.
+  const allQuota = isGeminiQuotaError(lastErr);
+  const e = new Error(allQuota
+    ? `Gemini's free quota is used up on ${primaryModel}${fallbacks.length ? ` and ${fallbacks.length} other model${fallbacks.length === 1 ? '' : 's'}` : ''} for now — try again later.`
+    : fallbacks.length
+      ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all busy right now — try again shortly. (${lastErr.message})`
+      : lastErr.message);
+  e.status = lastErr.status;
+  throw e;
 }
 
 // Live model list from Google, rather than a hardcoded dropdown that inevitably goes

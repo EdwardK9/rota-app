@@ -197,6 +197,15 @@ const fakeGemini = http.createServer((rq, rs) => {
     const fbDone = await waitFor(async () => !inQueue(await queueState()));
     check('when the main model is out of quota, another model reads it', fbDone && fake.modelsUsed.includes('gemini-fallback'), { state: await queueState(), used: fake.modelsUsed });
 
+    // The fun fact is plain text, not a screenshot — same "try another model" rule.
+    fake.mode = 'quota-then-fallback';
+    fake.modelsUsed = [];
+    const fact = await req('GET', '/api/v3/did-you-know/ai');
+    check('fun fact: when the main model is out of quota, another model answers', fact.status === 200 && !!fact.body.fact && fake.modelsUsed.includes('gemini-fallback'), { status: fact.status, body: fact.body, used: fake.modelsUsed });
+    fake.modelsUsed = [];
+    await req('GET', '/api/v3/did-you-know/ai');
+    check('fun fact: …and the used-up model is not asked again straight away', !fake.modelsUsed.includes('gemini-main'), fake.modelsUsed);
+
     fake.mode = 'text-only-main';
     fake.modelsUsed = [];
     const voId = await queueOne('text-only-main');
