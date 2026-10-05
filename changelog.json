@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:28:56.968Z",
-  "commit": "84deda4",
+  "generated_at": "2026-10-05T08:33:44.823Z",
+  "commit": "c501948",
   "entries": [
+    {
+      "version": "6.4.4",
+      "date": "2026-10-05",
+      "summary": "Clock Map fixes — map tiles, \"where you clock from\", distance plot",
+      "details": "Clock Map\n- The map shows real map tiles again. It was showing \"Access blocked\" tiles\n  because the app wasn't telling OpenStreetMap where the request came from.\n- \"Where you clock from\" now counts clock-ins and clock-outs only. It used to\n  include every time the app was opened, so opening the app at home made it\n  look like you were clocking in from home half the time.\n- \"Distance from the store\" shows clock-ins and clock-outs only, so one\n  far-away app open no longer zooms the plot right out.\n- The page now opens on clock-ins and outs. \"App opens\" and \"Everything\" are\n  still in the Show dropdown if you want them.\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.3",
       "date": "2026-10-05",
