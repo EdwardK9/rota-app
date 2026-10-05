@@ -420,6 +420,22 @@ function isGeminiOverloadError(status, message) {
     /overloaded|high demand|unavailable|try again later|no longer available|is not found|deprecated/i.test(message || '');
 }
 
+// Gemini says this (400) when the chosen model is text-only — e.g. a Gemma or
+// audio/TTS model picked from the list. It's a "wrong model", not a bad image,
+// so the right response is to move on to a model that can see.
+function isNoVisionError(message) {
+  return /image input modality is not enabled|modality is not enabled|does not support image/i.test(message || '');
+}
+
+// Names that are never going to read a screenshot, so they're kept out of the
+// model dropdown and the fallback list. Not exhaustive — the API doesn't say
+// which models take images — which is what isNoVisionError above is for.
+const NON_VISION_MODEL = /embedding|aqa|tts|native-audio|-live|imagen|veo|robotics|learnlm/i;
+
+// Models that answered "I can't see images" this run — skipped straight away
+// next time, rather than costing a failed call on every one of 300 photos.
+const noVisionModels = new Set();
+
 // Same live-model fetch as GET /colleagues/gemini-models, reused here so the fallback
 // list never goes stale the way a hardcoded one would (see the gemini-2.5-flash
 // retirement this was already bitten by once).
@@ -439,7 +455,7 @@ async function fetchAvailableGeminiModels(apiKey) {
     .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
     .map(m => (m.name || '').replace(/^models\//, ''))
     .filter(Boolean)
-    .filter(name => !/embedding|aqa/i.test(name));
+    .filter(name => !NON_VISION_MODEL.test(name) && !noVisionModels.has(name));
 }
 
 // Rough capability ranking so fallback tries the next-BEST available model rather
@@ -505,6 +521,7 @@ async function callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, jsonMod
     const err = new Error(message);
     err.status = geminiRes.status;
     err.overloaded = isGeminiOverloadError(geminiRes.status, message);
+    err.noVision = isNoVisionError(message);
     throw err;
   }
 
@@ -547,18 +564,25 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT, {
   const imageB64 = imageBuffer.toString('base64');
 
   let lastErr;
-  try {
-    return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, primaryModel, true, timeoutMs);
-  } catch (err) {
-    if (!err.overloaded && !isGeminiQuotaError(err)) throw err;
-    lastErr = err;
+  if (noVisionModels.has(primaryModel)) {
+    lastErr = new Error(`${primaryModel} can't read images`);
+    lastErr.status = 400;
+    lastErr.noVision = true;
+  } else {
+    try {
+      return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, primaryModel, true, timeoutMs);
+    } catch (err) {
+      if (err.noVision) noVisionModels.add(primaryModel);
+      if (!err.overloaded && !isGeminiQuotaError(err) && !err.noVision) throw err;
+      lastErr = err;
+    }
   }
 
   let fallbacks = [];
   try {
     const available = await fetchAvailableGeminiModels(apiKey);
     fallbacks = available
-      .filter(m => m !== primaryModel)
+      .filter(m => m !== primaryModel && !noVisionModels.has(m))
       .sort((a, b) => rankGeminiModel(b) - rankGeminiModel(a))
       .slice(0, 3);
   } catch (_) { /* no model list available — fall through with nothing to try */ }
@@ -568,10 +592,18 @@ async function callGeminiVision(imageBuffer, mimeType, prompt = OLLAMA_PROMPT, {
       return await callGeminiOnce(imageB64, mimeType, prompt, apiKey, model, true, timeoutMs);
     } catch (err) {
       lastErr = err;
-      if (!err.overloaded && !isGeminiQuotaError(err)) throw err;
+      if (err.noVision) noVisionModels.add(model);
+      if (!err.overloaded && !isGeminiQuotaError(err) && !err.noVision) throw err;
     }
   }
 
+  if (noVisionModels.has(primaryModel)) {
+    // Nothing else could read the image either (or there was nothing to try).
+    // Say what's actually wrong and where to fix it, not "all busy".
+    const e = new Error(`${primaryModel} can't read images, and no other vision model was available. Pick a different model in Settings → AI Screenshot Import.`);
+    e.status = 400;
+    throw e;
+  }
   lastErr.message = fallbacks.length
     ? `${primaryModel} and ${fallbacks.length} fallback model(s) are all busy or out of quota right now — try again shortly. (${lastErr.message})`
     : lastErr.message;
@@ -735,7 +767,7 @@ router.get('/colleagues/gemini-models', async (req, res) => {
       // Vision screenshot import needs an image-capable model — embedding/text-only
       // models support generateContent too but aren't useful here, so drop obvious
       // non-multimodal names.
-      .filter(name => !/embedding|aqa/i.test(name))
+      .filter(name => !NON_VISION_MODEL.test(name))
       // Best-ranked first (same ranking used for automatic overload fallback) so the
       // most capable option is the obvious default rather than whatever sorts first
       // alphabetically.
