@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-10-05T08:37:18.455Z",
-  "commit": "042c3e3",
+  "generated_at": "2026-10-05T08:48:49.511Z",
+  "commit": "c920891",
   "entries": [
+    {
+      "version": "6.4.6",
+      "date": "2026-10-05",
+      "summary": "AI rename and screenshot import skip models that can't see images",
+      "details": "Photo Library / Team Upload\n- If the AI model chosen in Settings can't read images (the \"Image input\n  modality is not enabled for this model\" error), the app now moves on to\n  another model that can, instead of failing every photo. It remembers\n  which model that was, so running the rename on all your past photos\n  doesn't waste a try on it each time.\n- Text-only models (audio, text-to-speech, image-generation and the like)\n  are no longer offered in the model list in Settings.\n- If no model can read the image, the error now says so and points to\n  Settings → AI Screenshot Import.\n\n\nClaude-Session: https://claude.ai/code/session_0155Qm5nKMgEGvVi8xYczgQF"
+    },
     {
       "version": "6.4.5",
       "date": "2026-10-05",
