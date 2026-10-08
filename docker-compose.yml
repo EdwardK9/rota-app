@@ -18,3 +18,17 @@ services:
       # - GITHUB_BACKUP_TOKEN=ghp_your_token_here
       # - GITHUB_BACKUP_BRANCH=main
       # - GITHUB_BACKUP_PATH=backups
+
+  # Maintainerr — library cleanup tool for Plex / Jellyfin / Emby.
+  # Web UI: http://<server>:6246 — connect it to your media server from its Settings page.
+  # Image moved from jorenn92/maintainerr to maintainerr/maintainerr; the old path is deprecated.
+  maintainerr:
+    image: ghcr.io/maintainerr/maintainerr:latest
+    container_name: maintainerr
+    restart: unless-stopped
+    ports:
+      - "6246:6246"
+    volumes:
+      - /mnt/user/appdata/maintainerr:/opt/data
+    environment:
+      - TZ=Europe/London
