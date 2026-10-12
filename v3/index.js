@@ -28,6 +28,8 @@ const FEATURES = [
     blurb: 'Projects the tax year: gross, tax, NI and what actually lands.' },
   { view: 'shift-dna',    icon: '🧬', name: 'Shift DNA',        module: './shiftDna',
     blurb: 'Six traits scored from your rota, and the archetype they add up to.' },
+  { view: 'annoying-shifts', icon: '😤', name: 'Annoying Shifts', module: './annoyingShifts',
+    blurb: 'Counts the awkward ones: under 3 hours, mid-day, short evenings, split days and quick turnarounds.' },
   { view: 'balance',      icon: '⚖️', name: 'Work-Life Balance',module: './balance',
     blurb: 'One score for how sustainable the last few months actually were.' },
   { view: 'commute-cost', icon: '⛽', name: 'Commute Cost',     module: './commuteCost',
