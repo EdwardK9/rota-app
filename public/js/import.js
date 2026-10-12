@@ -400,7 +400,7 @@ const ImportView = {
                   <hr style="border:none;border-top:1px solid var(--border);margin:14px 0" />
                   <h4 style="font-size:14px;margin-bottom:6px">Full history check</h4>
                   <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">
-                    Compares your entire saved history against Rotageek (job start → +60 days) and lists every difference.
+                    Compares your entire saved history against Rotageek (12 May 2026 → +60 days) and lists every difference.
                     <strong>Compare</strong> only reports differences and changes nothing; <strong>Sync all time</strong> then applies the safe ones.
                   </p>
                   <div style="display:flex;gap:8px;flex-wrap:wrap">

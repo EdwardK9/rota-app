@@ -3339,10 +3339,13 @@ app.post('/api/rotageek/graphql-sync', async (req, res) => {
   res.status(result.error ? 502 : 200).json(result);
 });
 
+// The app didn't exist before this date, so full-history checks never reach back further
+const APP_LAUNCH_DATE = '2026-05-12';
 // Resolve the widest sensible date range: job start (or 2018-01-01) → now + 60 days
 function allTimeRange() {
   const jobStart = db.prepare("SELECT value FROM settings WHERE key='job_start_date'").get()?.value;
-  const from = (jobStart && /^\d{4}-\d{2}-\d{2}$/.test(jobStart)) ? jobStart : '2018-01-01';
+  let from = (jobStart && /^\d{4}-\d{2}-\d{2}$/.test(jobStart)) ? jobStart : '2018-01-01';
+  if (from < APP_LAUNCH_DATE) from = APP_LAUNCH_DATE;
   const to = new Date(); to.setDate(to.getDate() + 60);
   return { from, to: localDateStr(to) };
 }
@@ -3350,7 +3353,7 @@ function allTimeRange() {
 // POST /api/rotageek/diff-all — read-only comparison across all time; reports differences, writes nothing
 app.post('/api/rotageek/diff-all', async (req, res) => {
   const range = allTimeRange();
-  const from = req.body?.from || range.from;
+  const from = (req.body?.from && req.body.from > range.from) ? req.body.from : range.from;
   const to   = req.body?.to   || range.to;
   const result = await runRotageekSync({ from, to, source: 'diff_all', compareOnly: true });
   res.status(result.error ? 502 : 200).json(result);
@@ -3359,7 +3362,7 @@ app.post('/api/rotageek/diff-all', async (req, res) => {
 // POST /api/rotageek/sync-all — apply a full-history sync (job start → now + 60 days)
 app.post('/api/rotageek/sync-all', async (req, res) => {
   const range = allTimeRange();
-  const from = req.body?.from || range.from;
+  const from = (req.body?.from && req.body.from > range.from) ? req.body.from : range.from;
   const to   = req.body?.to   || range.to;
   const result = await runRotageekSync({ from, to, source: 'sync_all' });
   res.status(result.error ? 502 : 200).json(result);
