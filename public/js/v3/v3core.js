@@ -34,7 +34,9 @@ const V3 = {
                                       year: year || 'all', person: person || 'me',
                                     })),
     dnaPeople:    ()          => API.get('/api/v3/shift-dna/people'),
-    annoyingShifts: (year)    => API.get('/api/v3/annoying-shifts?year=' + encodeURIComponent(year || 'all')),
+    annoyingShifts: (year, person) => API.get('/api/v3/annoying-shifts?' + new URLSearchParams({
+                                        year: year || 'all', person: person || 'me',
+                                      })),
     balance:      (weeks)     => API.get('/api/v3/balance?weeks=' + encodeURIComponent(weeks || 12)),
     commuteCost:  (year)      => API.get('/api/v3/commute-cost?year=' + encodeURIComponent(year || 'all')),
     saveCommuteSettings: (d)  => API.post('/api/v3/commute-cost/settings', d),

@@ -1,5 +1,9 @@
 /* ─── 😤 Annoying Shifts (V3.0) ────────────────────────────────────────────
-   GET /api/v3/annoying-shifts[?year=YYYY|all]
+   GET /api/v3/annoying-shifts[?year=YYYY|all][&person=me|<colleagueId>]
+
+   Works for colleagues too. Their shifts carry no break information, so their
+   hours are the full rostered span (breaks not deducted); hours_basis tells the
+   client which one it is looking at.
 
    Counts the shifts that cost more than they pay: short ones, ones stranded in
    the middle of the day, short evenings, split days and quick turnarounds.
@@ -43,12 +47,32 @@ const CATEGORIES = [
 
 router.get('/annoying-shifts', (req, res) => {
   const year = req.query.year && req.query.year !== 'all' ? String(req.query.year) : null;
+  const person = req.query.person && req.query.person !== 'me' ? String(req.query.person) : 'me';
   const today = localDateStr();
   const from = year ? `${year}-01-01` : '0000-01-01';
   const to = year && `${year}-12-31` < today ? `${year}-12-31` : today;
 
-  // Fetch from the day before `from` so the first shift's turnaround can be judged.
-  const all = db.prepare('SELECT * FROM shifts WHERE date <= ? ORDER BY date ASC, start_time ASC').all(to);
+  // Load everything up to `to` (not just from `from`) so the first shift's turnaround can be judged.
+  let all, personName, hoursBasis;
+  if (person === 'me') {
+    all = db.prepare('SELECT * FROM shifts WHERE date <= ? ORDER BY date ASC, start_time ASC').all(to)
+      .map(s => ({ date: s.date, start_time: s.start_time, end_time: s.end_time, hours: paidHours(s) }));
+    personName = 'You';
+    hoursBasis = 'paid';
+  } else {
+    const colleague = db.prepare('SELECT * FROM colleagues WHERE id = ?').get(person);
+    if (!colleague) return res.status(404).json({ error: 'Colleague not found' });
+    // No break data on colleague shifts, so hours are the raw rostered span.
+    all = db.prepare(`
+      SELECT * FROM colleague_shifts
+      WHERE colleague_id = ? AND date <= ? AND shift_type = 'shift' AND (store IS NULL OR store = '')
+      ORDER BY date ASC, start_time ASC
+    `).all(person, to)
+      .map(s => ({ date: s.date, start_time: s.start_time, end_time: s.end_time,
+                   hours: spanMins(s.start_time, s.end_time) / 60 }));
+    personName = colleague.name;
+    hoursBasis = 'rostered';
+  }
 
   const perDay = {};
   for (const s of all) (perDay[s.date] ||= []).push(s);
@@ -65,7 +89,7 @@ router.get('/annoying-shifts', (req, res) => {
     if (s.date < from) continue;
 
     shiftCount++;
-    const hours = paidHours(s);
+    const hours = s.hours;
     const start = toMins(s.start_time), end = toMins(s.end_time);
     const tags = [];
 
@@ -103,7 +127,7 @@ router.get('/annoying-shifts', (req, res) => {
   }
 
   res.json({
-    year: year || 'all',
+    year: year || 'all', person, person_name: personName, hours_basis: hoursBasis,
     rules: RULES,
     shift_count: shiftCount,
     annoying_total: annoyingList.length,
