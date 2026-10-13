@@ -747,6 +747,10 @@ const PayslipsView = {
                 <button class="btn btn-primary" id="psDocUploadBtn">⬆ Upload</button>
               </div>
             </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px">
+              <input type="checkbox" id="psDocRename" checked />
+              Name it after the month <span style="font-size:11px;color:var(--text-muted)">(e.g. “October - 2026.pdf”)</span>
+            </label>
             <div style="font-size:11px;color:var(--text-muted)">Or drag files anywhere onto this box — they'll be filed under the month selected above.</div>
           </div>
 
@@ -806,9 +810,25 @@ const PayslipsView = {
       b.addEventListener('click', () => this.deleteDocument(+b.dataset.id)));
   },
 
+  // Names already used by documents filed under a month, so new ones don't clash.
+  _docNamesFor(month, exceptId) {
+    return (this.documents || []).filter(d => d.month === month && d.id !== exceptId).map(d => d.filename);
+  },
+
+  // Renames a batch to "Month - Year.ext", numbering any that would share a name.
+  _nameByMonth(files, month) {
+    const taken = this._docNamesFor(month);
+    return files.map(f => {
+      const name = payslipDocName(month, f.name, taken);
+      taken.push(name);
+      return renameFile(f, name);
+    });
+  },
+
   async uploadDocuments(files) {
     const month = document.getElementById('psDocMonth')?.value || getCurrentMonth();
     const notes = document.getElementById('psDocNotes')?.value?.trim() || '';
+    if (document.getElementById('psDocRename')?.checked) files = this._nameByMonth(files, month);
     showToast(`Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`, 'info');
     try {
       await API.uploadPayslipFiles(files, month, notes);
@@ -835,7 +855,10 @@ const PayslipsView = {
       </div>
       <div class="form-group">
         <label>Name <span style="font-size:11px;color:var(--text-muted)">(how it's listed here)</span></label>
-        <input type="text" id="pdName" value="${esc(d.filename)}" />
+        <div style="display:flex;gap:6px">
+          <input type="text" id="pdName" value="${esc(d.filename)}" style="flex:1" />
+          <button type="button" class="btn btn-sm btn-ghost" id="pdAutoName" title="Rename to match the month above">Month - Year</button>
+        </div>
       </div>
       <div class="form-group">
         <label>Note <span style="font-size:11px;color:var(--text-muted)">(optional)</span></label>
@@ -848,6 +871,23 @@ const PayslipsView = {
         <button class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
         <button class="btn btn-primary" id="pdSaveBtn">Save</button>
       </div>`);
+
+    // Changing the month renames the document too, but only while its name is
+    // still the automatic one for the month it was on — a name typed in by hand
+    // is left alone. The button forces it.
+    const monthSel = document.getElementById('pdMonth');
+    const nameIn   = document.getElementById('pdName');
+    const autoFor  = (m) => payslipDocName(m, d.filename, this._docNamesFor(m, id));
+    let lastAuto = autoFor(d.month);
+    monthSel.addEventListener('change', () => {
+      const next = autoFor(monthSel.value);
+      if (nameIn.value.trim() === lastAuto) nameIn.value = next;
+      lastAuto = next;
+    });
+    document.getElementById('pdAutoName').addEventListener('click', () => {
+      lastAuto = autoFor(monthSel.value);
+      nameIn.value = lastAuto;
+    });
 
     document.getElementById('pdSaveBtn').addEventListener('click', async () => {
       const filename = document.getElementById('pdName').value.trim();
@@ -1279,6 +1319,12 @@ const PayslipsView = {
   <textarea id="pfNotes" rows="2">${esc(p.notes || '')}</textarea>
 </div>
 
+<div class="form-group" style="margin-top:10px">
+  <label>📎 Payslip document <span style="font-size:11px;color:var(--text-muted)">(optional)</span></label>
+  <input type="file" id="pfDocInput" accept="application/pdf,image/*" multiple />
+  <div class="form-hint" id="pfDocHint">Upload the PDF or photo here and it's filed under the month above, renamed to “Month - Year”.</div>
+</div>
+
 <div class="modal-footer">
   <button class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
   <button class="btn btn-primary" id="pfSaveBtn">Save Payslip</button>
@@ -1306,6 +1352,19 @@ const PayslipsView = {
     this._wireAutofill(editId);
 
     document.getElementById('pfSaveBtn').addEventListener('click', () => this.savePayslipForm(editId));
+
+    // Say what the attached file(s) will be called, following the month select.
+    const docIn = document.getElementById('pfDocInput');
+    const docHint = document.getElementById('pfDocHint');
+    const monthSel = document.getElementById('pfMonth');
+    const showName = () => {
+      const files = [...(docIn.files || [])];
+      if (!files.length) return;
+      const names = this._nameByMonth(files, monthSel.value).map(f => f.name);
+      docHint.textContent = `Will be saved as: ${names.join(', ')}`;
+    };
+    docIn.addEventListener('change', showName);
+    monthSel.addEventListener('change', showName);
   },
 
   /* Fills in every figure the app can work out for itself — basic salary, both
@@ -1539,17 +1598,37 @@ const PayslipsView = {
       notes,
     };
 
+    // Read the file picker now — the modal's DOM is gone once it closes.
+    const docFiles = [...(document.getElementById('pfDocInput')?.files || [])];
+
     try {
       if (editId) {
         await API.updatePayslip(editId, body);
       } else {
         await API.createPayslip(body);
       }
-      Modal.close();
-      await this.load();
-      showToast(editId ? 'Payslip updated' : 'Payslip saved', 'success');
     } catch (e) {
       showToast('Error saving payslip: ' + e.message, 'error');
+      return;
+    }
+
+    // The payslip is saved either way; a failed upload shouldn't look like it wasn't.
+    let docError = null;
+    if (docFiles.length) {
+      try {
+        await API.uploadPayslipFiles(this._nameByMonth(docFiles, month), month, '');
+      } catch (e) { docError = e.message; }
+    }
+    Modal.close();
+    await this.load();
+    if (docError) {
+      showToast(`Payslip saved, but the document didn't upload: ${docError}`, 'warning');
+    } else {
+      const base = editId ? 'Payslip updated' : 'Payslip saved';
+      const wrongYear = docFiles.length && month.slice(0, 4) !== String(this.currentYear);
+      showToast(docFiles.length
+        ? `${base} — document filed as ${fmtMonth(month)}${wrongYear ? ` (switch the year to ${month.slice(0, 4)} to see it)` : ''}`
+        : base, 'success');
     }
   },
 
@@ -1577,6 +1656,23 @@ const PayslipsView = {
 function pf(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
 function pfToggled(togId, inputId) { return document.getElementById(togId)?.checked ? pf(inputId) : 0; }
 function round2(v) { return Math.round(v * 100) / 100; }
+// The name a payslip document is filed under: "October - 2026.pdf". The file's
+// own extension is kept (a download with none won't open), and a second file
+// for the same month gets " (2)" rather than sharing a name with the first.
+function payslipDocName(month, originalName, taken = []) {
+  if (!/^\d{4}-\d{2}$/.test(month || '')) return originalName;
+  const [y, m] = month.split('-').map(Number);
+  const ext  = (String(originalName || '').match(/\.[A-Za-z0-9]{1,5}$/) || [''])[0].toLowerCase();
+  const base = `${MONTHS[m - 1]} - ${y}`;
+  const used = new Set(taken.map(n => String(n).toLowerCase()));
+  let name = base + ext;
+  for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n})${ext}`;
+  return name;
+}
+// Same File, new name — what the upload sends, so the server stores that name.
+function renameFile(file, name) {
+  return new File([file], name, { type: file.type, lastModified: file.lastModified });
+}
 function fmtFileSize(bytes) {
   if (!bytes) return '—';
   return bytes < 1024 * 1024
