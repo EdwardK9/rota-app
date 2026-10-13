@@ -730,7 +730,7 @@ const PayslipsView = {
           <div id="psDocDrop" style="border:2px dashed var(--border);border-radius:8px;padding:14px;transition:border-color .15s,background .15s">
             <div class="form-row">
               <div class="form-group">
-                <label>Month <span style="font-size:11px;color:var(--text-muted)">(for files whose name doesn't say)</span></label>
+                <label>Month <span id="psDocMonthHint" style="font-size:11px;color:var(--text-muted)">(for files whose name doesn't say)</span></label>
                 <select id="psDocMonth">${getMonthOptions(getCurrentMonth())}</select>
               </div>
               <div class="form-group">
@@ -870,6 +870,18 @@ const PayslipsView = {
     const box = document.getElementById('psDocPlan');
     if (!box) return;
     const ticket = this._planTicket = (this._planTicket || 0) + 1;
+    // The Month box is only a fallback; when every file's name already says its
+    // month there is nothing for it to decide, so grey it out and say so.
+    const monthSel  = document.getElementById('psDocMonth');
+    const monthHint = document.getElementById('psDocMonthHint');
+    const setMonthBox = (notNeeded) => {
+      monthSel.disabled = notNeeded;
+      monthSel.style.opacity = notNeeded ? '0.45' : '';
+      monthHint.textContent = notNeeded
+        ? '(not needed — every file name says its month)'
+        : "(for files whose name doesn't say)";
+    };
+    setMonthBox(false);
     if (!files.length) { box.innerHTML = ''; return; }
     let pool = [];
     try { pool = (await API.getPayslipFiles()).files || []; } catch (_) {}
@@ -878,6 +890,7 @@ const PayslipsView = {
     const plan = this._planUploads(files, pool);
     const have = new Set(pool.map(d => d.month));
     const guessed = plan.filter(p => !p.found).length;
+    setMonthBox(guessed === 0);
     box.innerHTML = `
       <div style="font-weight:600;margin-bottom:4px">${files.length} file${files.length === 1 ? '' : 's'} ready</div>
       <div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px">
