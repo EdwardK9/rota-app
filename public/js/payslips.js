@@ -750,12 +750,12 @@ const PayslipsView = {
             <label class="toggle-label" style="margin-bottom:8px">
               <input type="checkbox" id="psDocByName" checked />
               <span>Work out each file's month from its name</span>
-              <span class="toggle-hint">e.g. Paystub_202507.pdf → July 2025</span>
+              <span class="toggle-hint">Paystub_YYYYPP files are read as tax year + tax month, e.g. Paystub_202602.pdf → May 2025</span>
             </label>
             <label class="toggle-label" style="margin-bottom:8px">
               <input type="checkbox" id="psDocRename" checked />
               <span>Rename each one to its month</span>
-              <span class="toggle-hint">e.g. “July - 2025.pdf”</span>
+              <span class="toggle-hint">e.g. “May - 2025.pdf”</span>
             </label>
             <div id="psDocPlan" style="font-size:12px;margin:8px 0"></div>
             <div style="font-size:11px;color:var(--text-muted)">Or drag files anywhere onto this box, check the list above, then press Upload.</div>
@@ -1779,10 +1779,26 @@ function payslipDocName(month, originalName, taken = []) {
   for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n})${ext}`;
   return name;
 }
-// "Paystub_202507.pdf" → "2025-07" (also "2025-07", "2025 07"). A run of digits
-// that goes on past the month — an 8-digit date, say — isn't read as one.
+// The month a payslip document belongs to, read from its file name.
+//
+// "Paystub_YYYYPP.pdf" is what the payroll portal names its downloads, and it is
+// the TAX year and TAX month, not the calendar: YYYY is the year the tax year
+// ends and PP counts from April (01 = April … 12 = March). So Paystub_202507 is
+// tax month 7 of 2024/25 — October 2024, paid 31.10.2024 — and Paystub_202703
+// is June 2026. Checked against the payment date printed inside all 21 PDFs.
+//
+// Any other name falls back to a plain calendar month ("2025-07", "2025 07"). A
+// run of digits that goes on past the month — an 8-digit date — isn't read as one.
 function monthFromFilename(name) {
-  const m = String(name || '').match(/(?<!\d)(20\d{2})[-_ .]?(0[1-9]|1[0-2])(?!\d)/);
+  const s = String(name || '');
+  const tax = s.match(/paystub[-_ ]?(20\d{2})(0[1-9]|1[0-2])(?!\d)/i);
+  if (tax) {
+    const endYear = +tax[1], period = +tax[2];
+    const calMonth = period <= 9 ? period + 3 : period - 9;
+    const calYear  = period <= 9 ? endYear - 1 : endYear;
+    return `${calYear}-${String(calMonth).padStart(2, '0')}`;
+  }
+  const m = s.match(/(?<!\d)(20\d{2})[-_ .]?(0[1-9]|1[0-2])(?!\d)/);
   return m ? `${m[1]}-${m[2]}` : null;
 }
 // Same File, new name — what the upload sends, so the server stores that name.
