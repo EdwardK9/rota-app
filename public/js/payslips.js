@@ -730,11 +730,11 @@ const PayslipsView = {
           <div id="psDocDrop" style="border:2px dashed var(--border);border-radius:8px;padding:14px;transition:border-color .15s,background .15s">
             <div class="form-row">
               <div class="form-group">
-                <label>Month</label>
+                <label>Month <span style="font-size:11px;color:var(--text-muted)">(for files whose name doesn't say)</span></label>
                 <select id="psDocMonth">${getMonthOptions(getCurrentMonth())}</select>
               </div>
               <div class="form-group">
-                <label>File(s)</label>
+                <label>File(s) <span style="font-size:11px;color:var(--text-muted)">(pick as many as you like)</span></label>
                 <input type="file" id="psDocInput" accept="application/pdf,image/*" multiple />
               </div>
             </div>
@@ -747,11 +747,18 @@ const PayslipsView = {
                 <button class="btn btn-primary" id="psDocUploadBtn">⬆ Upload</button>
               </div>
             </div>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px">
-              <input type="checkbox" id="psDocRename" checked />
-              Name it after the month <span style="font-size:11px;color:var(--text-muted)">(e.g. “October - 2026.pdf”)</span>
+            <label class="toggle-label" style="margin-bottom:8px">
+              <input type="checkbox" id="psDocByName" checked />
+              <span>Work out each file's month from its name</span>
+              <span class="toggle-hint">e.g. Paystub_202507.pdf → July 2025</span>
             </label>
-            <div style="font-size:11px;color:var(--text-muted)">Or drag files anywhere onto this box — they'll be filed under the month selected above.</div>
+            <label class="toggle-label" style="margin-bottom:8px">
+              <input type="checkbox" id="psDocRename" checked />
+              <span>Rename each one to its month</span>
+              <span class="toggle-hint">e.g. “July - 2025.pdf”</span>
+            </label>
+            <div id="psDocPlan" style="font-size:12px;margin:8px 0"></div>
+            <div style="font-size:11px;color:var(--text-muted)">Or drag files anywhere onto this box, check the list above, then press Upload.</div>
           </div>
 
           ${docs.length ? `
@@ -789,8 +796,14 @@ const PayslipsView = {
       this.uploadDocuments(files);
     });
 
-    // Drag and drop over the whole box — the month select still decides where
-    // the file is filed, so dropping is just a shortcut past the file picker.
+    // Keep the "this is what will happen" list in step with the files and options.
+    const refreshPlan = () => this._showUploadPlan([...(input.files || [])]);
+    input.addEventListener('change', refreshPlan);
+    ['psDocMonth', 'psDocByName', 'psDocRename'].forEach(id =>
+      document.getElementById(id).addEventListener('change', refreshPlan));
+
+    // Drag and drop over the whole box — dropping fills the file picker, so the
+    // list above shows where a whole batch is about to go before anything is sent.
     const glow = (on) => {
       drop.style.borderColor = on ? 'var(--primary)' : 'var(--border)';
       drop.style.background  = on ? 'var(--bg-hover, transparent)' : 'transparent';
@@ -800,8 +813,12 @@ const PayslipsView = {
     drop.addEventListener('drop', e => {
       e.preventDefault();
       glow(false);
-      const files = [...(e.dataTransfer?.files || [])];
-      if (files.length) this.uploadDocuments(files);
+      const dropped = [...(e.dataTransfer?.files || [])];
+      if (!dropped.length) return;
+      const dt = new DataTransfer();
+      dropped.forEach(f => dt.items.add(f));
+      input.files = dt.files;
+      refreshPlan();
     });
 
     el.querySelectorAll('.doc-edit-btn').forEach(b =>
@@ -825,23 +842,103 @@ const PayslipsView = {
     });
   },
 
+  // Works out, for each file, which month it files under and what it'll be called:
+  // the month in its name when asked to look (Paystub_202507.pdf → 2025-07), the
+  // month select otherwise. `pool` is every document already stored, so a new
+  // name never clashes with one from another year.
+  _planUploads(files, pool) {
+    const byName   = document.getElementById('psDocByName')?.checked;
+    const rename   = document.getElementById('psDocRename')?.checked;
+    const fallback = document.getElementById('psDocMonth')?.value || getCurrentMonth();
+    const taken = {};
+    return files.map(file => {
+      const found = byName ? monthFromFilename(file.name) : null;
+      const month = found || fallback;
+      let name = file.name;
+      if (rename) {
+        if (!taken[month]) taken[month] = pool.filter(d => d.month === month).map(d => d.filename);
+        name = payslipDocName(month, file.name, taken[month]);
+        taken[month].push(name);
+      }
+      return { file, month, found: !!found, name };
+    }).sort((a, b) => a.month.localeCompare(b.month));
+  },
+
+  // The preview under the file picker. Async because it needs every stored
+  // document, not just this year's; a counter drops answers that arrive late.
+  async _showUploadPlan(files) {
+    const box = document.getElementById('psDocPlan');
+    if (!box) return;
+    const ticket = this._planTicket = (this._planTicket || 0) + 1;
+    if (!files.length) { box.innerHTML = ''; return; }
+    let pool = [];
+    try { pool = (await API.getPayslipFiles()).files || []; } catch (_) {}
+    if (ticket !== this._planTicket || !document.getElementById('psDocPlan')) return;
+
+    const plan = this._planUploads(files, pool);
+    const have = new Set(pool.map(d => d.month));
+    const guessed = plan.filter(p => !p.found).length;
+    box.innerHTML = `
+      <div style="font-weight:600;margin-bottom:4px">${files.length} file${files.length === 1 ? '' : 's'} ready</div>
+      <div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px">
+        ${plan.map(p => `
+          <div style="display:flex;gap:8px;justify-content:space-between;padding:1px 0">
+            <span style="color:var(--text-muted)">${esc(p.file.name)}</span>
+            <span>→ <strong>${fmtMonth(p.month)}</strong>${p.name !== p.file.name ? ` · ${esc(p.name)}` : ''}
+              ${have.has(p.month) ? '<span title="A document is already filed for this month" style="margin-left:4px">⚠️</span>' : ''}
+              ${p.found ? '' : '<span style="color:var(--text-muted);margin-left:4px" title="No month in the file name, so the Month box above is used">(Month box)</span>'}
+            </span>
+          </div>`).join('')}
+      </div>
+      ${guessed ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${guessed} file${guessed === 1 ? ' has' : 's have'} no month in the name, so ${guessed === 1 ? 'it goes' : 'they go'} under the Month box.</div>` : ''}
+      ${plan.some(p => have.has(p.month)) ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">⚠️ = that month already has a document; uploading adds another copy.</div>' : ''}`;
+  },
+
   async uploadDocuments(files) {
-    const month = document.getElementById('psDocMonth')?.value || getCurrentMonth();
-    const notes = document.getElementById('psDocNotes')?.value?.trim() || '';
-    if (document.getElementById('psDocRename')?.checked) files = this._nameByMonth(files, month);
+    const notes  = document.getElementById('psDocNotes')?.value?.trim() || '';
+    const rename = document.getElementById('psDocRename')?.checked;
+
+    let pool = [];
+    try { pool = (await API.getPayslipFiles()).files || []; }
+    catch (e) { showToast('Upload failed: ' + e.message, 'error'); return; }
+
+    const plan = this._planUploads(files, pool);
+    const months = [...new Set(plan.map(p => p.month))];
+
+    const already = months.filter(m => pool.some(d => d.month === m));
+    if (already.length && !confirmAction(
+      `${already.map(fmtMonth).join(', ')} ${already.length === 1 ? 'already has' : 'already have'} a document. Upload these as extra copies?`)) return;
+
     showToast(`Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`, 'info');
-    try {
-      await API.uploadPayslipFiles(files, month, notes);
-      const wrongYear = month.slice(0, 4) !== String(this.currentYear);
-      await this.load();
-      showToast(
-        wrongYear
-          ? `Saved under ${fmtMonth(month)} — switch the year to ${month.slice(0, 4)} to see it`
-          : `Saved under ${fmtMonth(month)}`,
-        'success'
-      );
-    } catch (e) {
-      showToast('Upload failed: ' + e.message, 'error');
+
+    // One request per month (the server files a request under one month), in
+    // batches of 20 which is its limit per request.
+    let saved = 0;
+    const failed = [];
+    for (const month of months) {
+      const group = plan.filter(p => p.month === month)
+        .map(p => rename ? renameFile(p.file, p.name) : p.file);
+      for (let i = 0; i < group.length; i += 20) {
+        const batch = group.slice(i, i + 20);
+        try {
+          await API.uploadPayslipFiles(batch, month, notes);
+          saved += batch.length;
+        } catch (e) { failed.push(`${fmtMonth(month)}: ${e.message}`); }
+      }
+    }
+
+    await this.load();
+    const elsewhere = months.filter(m => m.slice(0, 4) !== String(this.currentYear));
+    const where = months.length === 1
+      ? `under ${fmtMonth(months[0])}`
+      : `across ${months.length} months (${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])})`;
+    const hint = elsewhere.length
+      ? ` — switch the year to see ${[...new Set(elsewhere.map(m => m.slice(0, 4)))].join(', ')}`
+      : '';
+    if (failed.length) {
+      showToast(`${saved} saved, ${failed.length} failed — ${failed.join('; ')}`, 'error');
+    } else {
+      showToast(`Saved ${saved} file${saved === 1 ? '' : 's'} ${where}${hint}`, 'success');
     }
   },
 
@@ -1668,6 +1765,12 @@ function payslipDocName(month, originalName, taken = []) {
   let name = base + ext;
   for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n})${ext}`;
   return name;
+}
+// "Paystub_202507.pdf" → "2025-07" (also "2025-07", "2025 07"). A run of digits
+// that goes on past the month — an 8-digit date, say — isn't read as one.
+function monthFromFilename(name) {
+  const m = String(name || '').match(/(?<!\d)(20\d{2})[-_ .]?(0[1-9]|1[0-2])(?!\d)/);
+  return m ? `${m[1]}-${m[2]}` : null;
 }
 // Same File, new name — what the upload sends, so the server stores that name.
 function renameFile(file, name) {
