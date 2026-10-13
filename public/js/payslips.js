@@ -730,12 +730,12 @@ const PayslipsView = {
           <div id="psDocDrop" style="border:2px dashed var(--border);border-radius:8px;padding:14px;transition:border-color .15s,background .15s">
             <div class="form-row">
               <div class="form-group">
-                <label>Month <span id="psDocMonthHint" style="font-size:11px;color:var(--text-muted)">(for files whose name doesn't say)</span></label>
-                <select id="psDocMonth">${getMonthOptions(getCurrentMonth())}</select>
-              </div>
-              <div class="form-group">
-                <label>File(s) <span style="font-size:11px;color:var(--text-muted)">(pick as many as you like)</span></label>
+                <label>File(s) <span style="font-size:11px;color:var(--text-muted)">(pick as many as you like — the month is worked out from each file's name)</span></label>
                 <input type="file" id="psDocInput" accept="application/pdf,image/*" multiple />
+              </div>
+              <div class="form-group" id="psDocMonthGroup" style="display:none">
+                <label>Month <span style="font-size:11px;color:var(--text-muted)">(for the files whose name doesn't say)</span></label>
+                <select id="psDocMonth">${getMonthOptions(getCurrentMonth())}</select>
               </div>
             </div>
             <div class="form-row">
@@ -748,14 +748,9 @@ const PayslipsView = {
               </div>
             </div>
             <label class="toggle-label" style="margin-bottom:8px">
-              <input type="checkbox" id="psDocByName" checked />
-              <span>Work out each file's month from its name</span>
-              <span class="toggle-hint">Paystub_YYYYPP files are read as tax year + tax month, e.g. Paystub_202602.pdf → May 2025</span>
-            </label>
-            <label class="toggle-label" style="margin-bottom:8px">
               <input type="checkbox" id="psDocRename" checked />
               <span>Rename each one to its month</span>
-              <span class="toggle-hint">e.g. “May - 2025.pdf”</span>
+              <span class="toggle-hint">Paystub_202602.pdf → “May - 2025.pdf” (Paystub names are tax year + tax month)</span>
             </label>
             <div id="psDocPlan" style="font-size:12px;margin:8px 0"></div>
             <div style="font-size:11px;color:var(--text-muted)">Or drag files anywhere onto this box, check the list above, then press Upload.</div>
@@ -799,7 +794,7 @@ const PayslipsView = {
     // Keep the "this is what will happen" list in step with the files and options.
     const refreshPlan = () => this._showUploadPlan([...(input.files || [])]);
     input.addEventListener('change', refreshPlan);
-    ['psDocMonth', 'psDocByName', 'psDocRename'].forEach(id =>
+    ['psDocMonth', 'psDocRename'].forEach(id =>
       document.getElementById(id).addEventListener('change', refreshPlan));
 
     // Drag and drop over the whole box — dropping fills the file picker, so the
@@ -847,12 +842,11 @@ const PayslipsView = {
   // month select otherwise. `pool` is every document already stored, so a new
   // name never clashes with one from another year.
   _planUploads(files, pool) {
-    const byName   = document.getElementById('psDocByName')?.checked;
     const rename   = document.getElementById('psDocRename')?.checked;
     const fallback = document.getElementById('psDocMonth')?.value || getCurrentMonth();
     const taken = {};
     return files.map(file => {
-      const found = byName ? monthFromFilename(file.name) : null;
+      const found = monthFromFilename(file.name);
       const month = found || fallback;
       let name = file.name;
       if (rename) {
@@ -870,16 +864,9 @@ const PayslipsView = {
     const box = document.getElementById('psDocPlan');
     if (!box) return;
     const ticket = this._planTicket = (this._planTicket || 0) + 1;
-    // The Month box is only a fallback; when every file's name already says its
-    // month there is nothing for it to decide, so grey it out and say so.
-    const monthSel  = document.getElementById('psDocMonth');
-    const monthHint = document.getElementById('psDocMonthHint');
-    const setMonthBox = (notNeeded) => {
-      monthSel.disabled = notNeeded;
-      monthSel.style.opacity = notNeeded ? '0.45' : '';
-      monthHint.textContent = notNeeded
-        ? '(not needed — every file name says its month)'
-        : "(for files whose name doesn't say)";
+    // The Month box stays hidden unless a file's name doesn't say its month.
+    const setMonthBox = (needed) => {
+      document.getElementById('psDocMonthGroup').style.display = needed ? '' : 'none';
     };
     setMonthBox(false);
     if (!files.length) { box.innerHTML = ''; return; }
@@ -890,7 +877,7 @@ const PayslipsView = {
     const plan = this._planUploads(files, pool);
     const have = new Set(pool.map(d => d.month));
     const guessed = plan.filter(p => !p.found).length;
-    setMonthBox(guessed === 0);
+    setMonthBox(guessed > 0);
     box.innerHTML = `
       <div style="font-weight:600;margin-bottom:4px">${files.length} file${files.length === 1 ? '' : 's'} ready</div>
       <div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px">
@@ -899,7 +886,7 @@ const PayslipsView = {
             <span style="color:var(--text-muted)">${esc(p.file.name)}</span>
             <span>→ <strong>${fmtMonth(p.month)}</strong>${p.name !== p.file.name ? ` · ${esc(p.name)}` : ''}
               ${have.has(p.month) ? '<span title="A document is already filed for this month" style="margin-left:4px">⚠️</span>' : ''}
-              ${p.found ? '' : '<span style="color:var(--text-muted);margin-left:4px" title="No month in the file name, so the Month box above is used">(Month box)</span>'}
+              ${p.found ? '' : '<span style="color:var(--text-muted);margin-left:4px" title="No month in the file name, so the Month box is used">(from Month box)</span>'}
             </span>
           </div>`).join('')}
       </div>
@@ -917,6 +904,15 @@ const PayslipsView = {
 
     const plan = this._planUploads(files, pool);
     const months = [...new Set(plan.map(p => p.month))];
+
+    // A file with no month in its name needs one chosen — show the box and stop
+    // rather than quietly filing it under whatever it happens to be set to.
+    const monthGroup = document.getElementById('psDocMonthGroup');
+    if (plan.some(p => !p.found) && monthGroup?.style.display === 'none') {
+      monthGroup.style.display = '';
+      showToast('Some file names don\'t say which month — pick one for those, then upload again', 'warning');
+      return;
+    }
 
     const already = months.filter(m => pool.some(d => d.month === m));
     if (already.length && !confirmAction(
