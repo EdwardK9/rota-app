@@ -41,6 +41,7 @@ const AuditView = {
                 <option value="sync_created">Sync – new</option>
                 <option value="sync_changed">Sync – changed</option>
                 <option value="sync_missing">Sync – missing</option>
+                <option value="midnight_sync">Midnight sync</option>
               </select>
               <select id="auditFilterDays" class="form-select" style="width:140px">
                 <option value="30">Last 30 days</option>
@@ -132,7 +133,7 @@ const AuditView = {
         created: 'Added manually', updated: 'Edited manually',
         deleted: 'Deleted manually', sync_created: 'Sync – new shift',
         sync_changed: 'Sync – changed', sync_missing: 'Sync – missing',
-        manual_sync: 'Manual sync',
+        manual_sync: 'Manual sync', midnight_sync: 'Midnight sync',
       };
       const actionColors = {
         sync_changed: 'var(--warning, #f59e0b)', sync_missing: 'var(--danger, #ef4444)',
@@ -220,6 +221,7 @@ const AuditView = {
         sync_created: '<span class="badge badge-success">Sync new</span>',
         sync_changed: '<span class="badge badge-warning">Sync changed</span>',
         sync_missing: '<span class="badge badge-danger">Sync missing</span>',
+        midnight_sync: '<span class="badge badge-info">Midnight sync</span>',
       };
 
       const esc = v => String(v ?? '').replace(/[&<>"']/g, c => (

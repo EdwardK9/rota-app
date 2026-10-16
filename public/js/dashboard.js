@@ -114,6 +114,7 @@ const DashboardView = {
     }
 
     el.innerHTML = `
+      <div id="dash-midnight-sync"></div>
       ${this._jsonReminderBanner()}
       <div class="dash-wrap">
         <div class="dash-left-col">
@@ -146,6 +147,50 @@ const DashboardView = {
     this.renderMonthSummary(monthShifts, todayStr);
     this.renderNextIn(nextIn, nextInAnchor, todayStr);
     this.renderPaydayPredictor(); // fire-and-forget — non-critical widget, own data fetch
+    this.renderMidnightSync();    // likewise
+  },
+
+  // Banner for last night's automatic midnight sync (the server sends no push for it).
+  // Shows for ~36h after the run; the ✕ hides that particular run only.
+  async renderMidnightSync() {
+    const el = document.getElementById('dash-midnight-sync');
+    if (!el) return;
+    try {
+      const { last } = await API.get('/api/rotageek/midnight-sync-status');
+      if (!last || !last.at || Date.now() - new Date(last.at).getTime() > 36 * 3600000) return;
+      let dismissed = null;
+      try { dismissed = localStorage.getItem('midnightSyncDismissed'); } catch {}
+      if (dismissed === last.at) return;
+      const when = new Date(last.at).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+      const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+      let title, sub;
+      if (!last.ok) {
+        title = 'Midnight sync failed';
+        sub = `${last.error || 'Unknown error'} · ${when}`;
+      } else if (!last.imported && !last.changed && !last.removed) {
+        title = 'Midnight sync: no changes';
+        sub = `Your rota matches Rotageek · ${when}`;
+      } else {
+        title = 'Midnight sync found changes';
+        sub = `${plural(last.imported, 'new shift')}, ${last.changed} changed, ${last.removed} removed · ${when}`;
+      }
+      el.innerHTML = `
+        <div class="dash-banner">
+          <span class="dash-banner-icon">${last.ok ? '🌙' : '⚠️'}</span>
+          <div class="dash-banner-text">
+            <div class="dash-banner-title">${esc(title)}</div>
+            <div class="dash-banner-sub">${esc(sub)}</div>
+          </div>
+          <div class="dash-banner-actions">
+            <button class="btn btn-primary btn-sm" onclick="App.navigate('audit')">View audit</button>
+          </div>
+          <button class="dash-banner-close" title="Dismiss" aria-label="Dismiss">✕</button>
+        </div>`;
+      el.querySelector('.dash-banner-close').addEventListener('click', () => {
+        try { localStorage.setItem('midnightSyncDismissed', last.at); } catch {}
+        el.innerHTML = '';
+      });
+    } catch (e) { /* non-critical — no banner */ }
   },
 
   // Countdown to the next predicted payday + an estimate of what it'll be, derived

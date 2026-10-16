@@ -3667,7 +3667,7 @@ function stopRgKeepAlive() {
 }
 
 // Shared sync logic used by both the manual endpoint and the auto-sync scheduler
-async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'auto_sync', compareOnly = false } = {}) {
+async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'auto_sync', compareOnly = false, silent = false } = {}) {
   const now = new Date();
   const defaultFrom = new Date(now); defaultFrom.setDate(now.getDate() - 7);
   const defaultTo   = new Date(now); defaultTo.setDate(now.getDate() + 60);
@@ -3983,7 +3983,8 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
   }
 
   // Send ntfy notification for each changed/removed shift individually
-  for (const chg of changeMessages) {
+  // (silent runs, e.g. the midnight sync, report on the dashboard instead of pushing)
+  for (const chg of silent ? [] : changeMessages) {
     if (!chg.date) continue;
     const d = new Date(chg.date + 'T00:00:00');
     const dayLabel = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
@@ -3996,7 +3997,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     }
   }
   // Also send a summary if new shifts were added
-  if (imported > 0) {
+  if (imported > 0 && !silent) {
     await sendNtfy(`Rota sync - ${imported} new shift${imported > 1 ? 's' : ''} added`, `${imported} new shift${imported > 1 ? 's' : ''} imported from Rotageek`, 'default');
   }
 
@@ -4231,6 +4232,55 @@ function startTimeSync() {
     else console.log(`[TimeSync] Done -- imported:${result.imported} changed:${result.changed}`);
   }, 30000); // check every 30 seconds
 }
+
+// Midnight sync
+// One Rotageek sync a day in the first hour after 00:00 (UK time, see TZ at the top).
+// No push notification: the result goes in the audit log and is shown as a banner
+// on the dashboard. The date is stored per run, so a restart inside that hour
+// catches up if midnight was missed, but never runs twice in one day.
+let midnightSyncTimer = null;
+let midnightSyncRunning = false;
+
+async function runMidnightSync() {
+  midnightSyncRunning = true;
+  rgUpsert('midnight_sync_date', localDateStr());   // marked first: a failure waits for tomorrow rather than retrying every 30s
+  let record;
+  try {
+    const r = await runRotageekSync({ source: 'midnight_sync', silent: true });
+    record = r.error
+      ? { ok: false, error: r.error }
+      : { ok: true, imported: r.imported || 0, changed: r.changed || 0, removed: r.removed || 0, errors: (r.errors || []).length };
+  } catch (e) {
+    record = { ok: false, error: e.message };
+  }
+  record.at = new Date().toISOString();
+  rgUpsert('midnight_sync_last', JSON.stringify(record));
+  logAudit({
+    action: 'midnight_sync',
+    new_values: record,
+    source: 'midnight_sync',
+    note: record.ok
+      ? `Midnight sync: ${record.imported} new, ${record.changed} changed, ${record.removed} removed${record.errors ? `, ${record.errors} error(s)` : ''}`
+      : `Midnight sync failed: ${record.error}`,
+  });
+  console.log('[MidnightSync]', record.ok ? `Done -- imported:${record.imported} changed:${record.changed} removed:${record.removed}` : `Failed: ${record.error}`);
+  midnightSyncRunning = false;
+}
+
+function startMidnightSync() {
+  if (midnightSyncTimer) clearInterval(midnightSyncTimer);
+  midnightSyncTimer = setInterval(() => {
+    if (midnightSyncRunning || new Date().getHours() !== 0) return;
+    if (rgSetting('midnight_sync_date') === localDateStr()) return;
+    runMidnightSync().catch(e => { midnightSyncRunning = false; console.error('[MidnightSync] Error:', e.message); });
+  }, 30000);
+}
+
+// GET /api/rotageek/midnight-sync-status -- last midnight sync result (dashboard banner)
+app.get('/api/rotageek/midnight-sync-status', (req, res) => {
+  const last = rgSetting('midnight_sync_last');
+  res.json({ last: last ? JSON.parse(last) : null });
+});
 
 // Shift-reminder notification scheduler
 // Fires an ntfy push N minutes before each upcoming shift start
@@ -4549,6 +4599,7 @@ function startArrivalReminderSync() {
 startAutoSync();
 startRgKeepAlive();
 startTimeSync();
+startMidnightSync();
 startShiftReminderSync();
 startJsonReminderSync();
 startBirthdayReminderSync();
