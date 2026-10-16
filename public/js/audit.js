@@ -269,7 +269,7 @@ const AuditView = {
               <tr${r.not_notified ? ' style="background:rgba(239,68,68,.08)"' : ''}>
                 <td style="white-space:nowrap;font-size:.85rem">${new Date(r.created_at).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
                 <td>${r.shift_exists
-                    ? `<a href="#" data-goto-shift="${r.shift_id}" data-goto-date="${r.shift_date}" style="color:var(--primary-text);text-decoration:underline">${shiftDate(r)}</a>`
+                    ? `<a href="#" data-goto-shift="${r.shift_id}" data-goto-date="${r.shift_date}" style="color:var(--accent-text);text-decoration:underline">${shiftDate(r)}</a>`
                     : `<span title="${r.shift_id ? 'That shift no longer exists (deleted)' : 'No shift linked to this event'}" style="color:var(--text-muted)">${shiftDate(r)}${r.shift_id ? ' 🚫' : ''}</span>`
                   }</td>
                 <td>${actionBadge[r.action] || `<span class="badge">${r.action}</span>`}</td>

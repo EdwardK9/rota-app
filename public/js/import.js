@@ -817,7 +817,7 @@ const ImportView = {
           if (isHeader) rowStyle = 'background:rgba(255,214,0,0.15);font-weight:600';
           if (isEnd)    rowStyle += ';border-bottom:2px solid var(--danger)';
           return `<tr data-rownum="${r.rowNum}" style="${rowStyle}">
-            <td style="text-align:center;font-size:11px;color:var(--text-muted);${isHeader ? 'color:var(--primary-text);font-weight:700' : ''}">
+            <td style="text-align:center;font-size:11px;color:var(--text-muted);${isHeader ? 'color:var(--accent-text);font-weight:700' : ''}">
               ${r.rowNum}${isHeader ? ' ★' : ''}${isEnd ? ' ⬇' : ''}
             </td>
             ${Array.from({length: maxCols}, (_,i) =>

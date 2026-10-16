@@ -42,7 +42,7 @@ const KeyView = {
         'Blue shift — upcoming',
         'A scheduled shift you have not worked yet. The cell gets a blue top border.'),
       this._row(
-        `<div style="background:#10B981;color:#fff;border-radius:5px;padding:4px 6px;font-size:11px;font-weight:600;display:inline-block">🌴 Annual Leave</div>`,
+        `<div style="background:#10B981;color:#111420;border-radius:5px;padding:4px 6px;font-size:11px;font-weight:600;display:inline-block">🌴 Annual Leave</div>`,
         'Green — annual leave',
         'A booked annual-leave day.'),
       this._row(
@@ -112,13 +112,13 @@ const KeyView = {
       this._row(`<div style="background:#3B82F6;color:#fff;border-radius:6px;padding:4px 7px;font-size:11px;display:inline-block">06:45 – 14:45</div>`,
         'Coloured shift blocks',
         'Each person is given their own colour so you can scan the grid quickly. Your own row is highlighted.'),
-      this._row(`<div style="background:#10B981;color:#fff;border-radius:6px;padding:4px 7px;font-size:11px;font-weight:600;display:inline-block">🌴 Annual Leave</div>`,
+      this._row(`<div style="background:#10B981;color:#111420;border-radius:6px;padding:4px 7px;font-size:11px;font-weight:600;display:inline-block">🌴 Annual Leave</div>`,
         'Green — annual leave', "A colleague's annual-leave day."),
-      this._row(`<div style="background:#F59E0B;color:#fff;border-radius:6px;padding:4px 7px;font-size:11px;font-weight:600;display:inline-block">🏪 All Day</div>`,
+      this._row(`<div style="background:#F59E0B;color:#111420;border-radius:6px;padding:4px 7px;font-size:11px;font-weight:600;display:inline-block">🏪 All Day</div>`,
         'Amber — all day', 'An all-day / open availability entry.'),
       this._row(`<span style="background:#EF4444;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">🚫 gap</span>`,
         'Red — coverage gap', 'Nobody is scheduled during part of trading hours that day.'),
-      this._row(`<span style="background:#F59E0B;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">⚠ low</span>`,
+      this._row(`<span style="background:#F59E0B;color:#111420;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">⚠ low</span>`,
         'Amber — low cover', 'Only one person is scheduled during part of trading hours.'),
     ];
 

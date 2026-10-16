@@ -699,7 +699,7 @@ const TeamCalendarView = {
       const badge = hasEmpty
         ? `<div title="Nobody scheduled during part of trading hours" style="display:block;width:fit-content;max-width:100%;margin:3px auto 0;background:#EF4444;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">🚫 gap</div>`
         : hasLow
-        ? `<div title="Only 1 person scheduled during part of trading hours" style="display:block;width:fit-content;max-width:100%;margin:3px auto 0;background:#F59E0B;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">⚠ low</div>`
+        ? `<div title="Only 1 person scheduled during part of trading hours" style="display:block;width:fit-content;max-width:100%;margin:3px auto 0;background:#F59E0B;color:#111420;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px">⚠ low</div>`
         : '';
       return `<th style="
         padding:8px 6px;text-align:center;font-size:12px;font-weight:600;
@@ -736,12 +736,12 @@ const TeamCalendarView = {
               font-size:10px;line-height:1;cursor:pointer;padding:0"
               title="Edit">✎</button>`;
           if (s.shift_type === 'leave') {
-            return `<div style="position:relative;background:#10B981;color:#fff;border-radius:6px;
+            return `<div style="position:relative;background:#10B981;color:#111420;border-radius:6px;
               padding:5px 7px;margin-bottom:3px;font-size:11px;line-height:1.3;font-weight:600">
               🌴 Annual Leave${delBtn}</div>`;
           }
           if (s.shift_type === 'all_day') {
-            return `<div style="position:relative;background:#F59E0B;color:#fff;border-radius:6px;
+            return `<div style="position:relative;background:#F59E0B;color:#111420;border-radius:6px;
               padding:5px 7px;margin-bottom:3px;font-size:11px;line-height:1.3;font-weight:600">
               🏪 All Day${delBtn}</div>`;
           }
@@ -894,7 +894,7 @@ const TeamCalendarView = {
       const badge = hasEmpty
         ? `<span style="background:#EF4444;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 7px">🚫 gap</span>`
         : hasLow
-        ? `<span style="background:#F59E0B;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 7px">⚠ low</span>`
+        ? `<span style="background:#F59E0B;color:#111420;border-radius:10px;font-size:10px;font-weight:700;padding:1px 7px">⚠ low</span>`
         : '';
 
       const peopleRows = rows.map(row => {

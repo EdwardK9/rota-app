@@ -43,7 +43,7 @@ const ClockInOutView = {
                 <div id="ckInDiff" style="margin-top:8px;font-size:13px;font-weight:600"></div>
               </div>
 
-              <div class="ck-arrow" style="align-self:center;font-size:24px;color:var(--border)">→</div>
+              <div class="ck-arrow" style="align-self:center;font-size:24px;color:var(--text-muted)">→</div>
 
               <!-- Clock Out -->
               <div class="ck-col" style="flex:1;min-width:200px;text-align:center">

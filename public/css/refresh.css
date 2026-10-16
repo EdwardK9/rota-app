@@ -383,3 +383,33 @@ body {
 @media (min-width: 1500px) {
   .view { width: 100%; max-width: 1320px; margin-left: auto; margin-right: auto; }
 }
+
+/* ── Dark-mode readability ──────────────────────────────────────────────────
+   --primary-text is the dark ink used ON the yellow --primary fill, so it is
+   unreadable as text on a dark page. --accent-text is for text/links sitting on
+   the page or card background: dark ink in light mode, the brand yellow in dark. */
+:root { --accent-text: #1A1A2E; }
+[data-theme="dark"] { --accent-text: #FFD600; }
+
+[data-theme="dark"] .import-tab.active,
+[data-theme="dark"] .break-btn-label.active,
+[data-theme="dark"] .break-btn-label:has(input:checked) { color: var(--accent-text); }
+/* the yellow "today" dot keeps its dark ink (the generic .cal-day-num grey was winning) */
+[data-theme="dark"] .cal-today-num { color: var(--primary-text); }
+
+/* Unstyled links and bare icon buttons (✏️ ▲ ▼) fall back to browser defaults (dark
+   blue, black), which vanish on dark. :where() keeps the link rule at zero specificity,
+   so any class that sets its own colour still wins. */
+:where([data-theme="dark"]) a:not([class]) { color: #93c5fd; }
+[data-theme="dark"] button[style*="background:none"]:not([style*="color"]) { color: var(--text); }
+[data-theme="dark"] button[style*="background:none"]:not([style*="color"]):disabled { color: var(--text-muted); }
+
+/* Red / pink / blue / brown tints that sit just under readable on dark cards */
+[data-theme="dark"] .badge-danger,
+[data-theme="dark"] .cal-bh-badge,
+[data-theme="dark"] .break-chip.break-none,
+[data-theme="dark"] .diff-alert-under { color: #f87171; }
+[data-theme="dark"] .cal-wt-chip.cal-wt-leave { color: #f472b6; }
+[data-theme="dark"] .cal-wt-chip.cal-wt-sched { color: #7db4fa; }
+[data-theme="dark"] .cal-note-chip { color: #fbbf24; }
+[data-theme="dark"] .dash-colleague-chip { color: #a5b4fc; }

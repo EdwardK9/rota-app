@@ -275,7 +275,7 @@ const CalendarView = {
 
       // Leave block
       if (isLeave) {
-        innerHtml += `<div style="background:#10B981;color:#fff;border-radius:5px;padding:4px 6px;font-size:11px;font-weight:600;margin-top:4px;line-height:1.2">🌴 Annual Leave</div>`;
+        innerHtml += `<div style="background:#10B981;color:#111420;border-radius:5px;padding:4px 6px;font-size:11px;font-weight:600;margin-top:4px;line-height:1.2">🌴 Annual Leave</div>`;
       }
 
       // Birthday chip

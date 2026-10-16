@@ -91,7 +91,7 @@ const PeopleView = {
         if (!ov) return `<td style="text-align:center;color:var(--border)">—</td>`;
         return `
           <td style="text-align:center;padding:6px">
-            <span style="display:block;font-weight:600;color:var(--primary-text);font-size:13px">${fmt(ov.mins)}</span>
+            <span style="display:block;font-weight:600;color:var(--accent-text);font-size:13px">${fmt(ov.mins)}</span>
             <span style="display:block;color:var(--text-muted);font-size:11px">${ov.start_time}–${ov.end_time}</span>
           </td>`;
       }).join('');
@@ -143,12 +143,12 @@ const PeopleView = {
 
       const cards = shifts.map((s, i) => `
         <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;${i===0?'border-color:var(--primary);background:rgba(255,214,0,0.06)':''}">
-          ${i===0 ? '<div style="font-size:11px;font-weight:700;color:var(--primary-text);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Next up</div>' : ''}
+          ${i===0 ? '<div style="font-size:11px;font-weight:700;color:var(--accent-text);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Next up</div>' : ''}
           <div style="font-weight:600;margin-bottom:6px">${fmtDate(s.date)}</div>
           <div style="display:flex;gap:20px;font-size:13px;color:var(--text-muted)">
             <span>You: <strong style="color:var(--text)">${s.myStart}–${s.myEnd}</strong></span>
             <span>${esc(c.name.split(' ')[0])}: <strong style="color:var(--text)">${s.theirStart}–${s.theirEnd}</strong></span>
-            <span>Together: <strong style="color:var(--primary-text)">${fmt(s.overlapMins)}</strong></span>
+            <span>Together: <strong style="color:var(--accent-text)">${fmt(s.overlapMins)}</strong></span>
           </div>
         </div>
       `).join('');

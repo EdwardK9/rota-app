@@ -33,7 +33,7 @@ const LeaderboardView = {
         <hr style="margin:16px 0;border-color:var(--border)"/>
         <p style="font-size:13px;color:var(--text-muted)">
           To import Team screenshots, use the
-          <a href="#" onclick="App.switchView('team-upload');return false" style="color:var(--primary-text)">📸 Team Upload</a>
+          <a href="#" onclick="App.switchView('team-upload');return false" style="color:var(--accent-text)">📸 Team Upload</a>
           tab in the sidebar.
         </p>
       </div>
@@ -257,7 +257,7 @@ const LeaderboardView = {
       return '<tr style="' + (r.left_date ? 'opacity:0.7' : '') + '">' +
         '<td style="width:40px;text-align:center;font-size:18px">' + medal + '</td>' +
         '<td style="font-weight:500">' + esc(r.name) + leftBadge + '</td>' +
-        '<td style="text-align:right;font-weight:700;color:var(--primary-text)">' + val + '</td>' +
+        '<td style="text-align:right;font-weight:700;color:var(--accent-text)">' + val + '</td>' +
         '<td style="width:120px;padding-left:12px">' +
           '<div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden">' +
             '<div style="background:var(--primary);width:' + pct + '%;height:100%;border-radius:4px"></div>' +

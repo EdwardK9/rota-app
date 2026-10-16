@@ -323,7 +323,7 @@ const TeamUploadView = {
               away, then read with Gemini and imported automatically in the background
               (works even if you close this page right after uploading, e.g. from your
               phone). Needs a Gemini API key set in
-              <a href="#" onclick="App.navigate('settings');return false" style="color:var(--primary-text)">Settings → AI Screenshot Import</a>.
+              <a href="#" onclick="App.navigate('settings');return false" style="color:var(--accent-text)">Settings → AI Screenshot Import</a>.
             </p>
 
             <div class="drop-zone" id="tuAutoDropZone" style="margin-bottom:14px">
@@ -361,7 +361,7 @@ const TeamUploadView = {
             <p style="color:var(--text-muted);font-size:13.5px;margin-bottom:16px">
               Paste or upload the JSON returned by the AI.
               Colleagues must already exist in your
-              <a href="#" onclick="App.navigate('people');return false" style="color:var(--primary-text)">People</a>
+              <a href="#" onclick="App.navigate('people');return false" style="color:var(--accent-text)">People</a>
               list to be matched.
             </p>
 
@@ -837,7 +837,7 @@ RULES — follow exactly:
 
       const weekDates = this._resolveWeekDates(data.date_range);
 
-      rows += `<tr><td colspan="5" style="padding:6px 8px;font-weight:600;color:var(--primary-text);background:var(--bg);font-size:12px">${esc(data.date_range || file)}</td></tr>`;
+      rows += `<tr><td colspan="5" style="padding:6px 8px;font-weight:600;color:var(--accent-text);background:var(--bg);font-size:12px">${esc(data.date_range || file)}</td></tr>`;
 
       for (const day of data.schedule) {
         const resolvedDate = this._resolveDayDate(day.date, weekDates);
