@@ -22,6 +22,7 @@ const exportsV2Router = require('./exportsV2');
 const payslipFilesRouter = require('./payslipFiles');
 // V3.0 feature set — self-contained under v3/, mounted as a single router.
 const v3Router = require('./v3');
+const v3Helpers = require('./v3/helpers');
 // V5.0 usage-analytics feature set — self-contained under v5/, same deal.
 const v5Router = require('./v5');
 const gcal = require('./google-calendar');
@@ -1771,7 +1772,25 @@ app.get('/api/reports/insights', (req, res) => {
     }
   })();
 
+  // Scheduled break that wasn't taken: worked but never paid (same sums as the Break Debt page).
+  // Colleagues' shifts carry no break-taken data, so this is only for your own shifts.
+  let breakUntaken = null;
+  if (!forColleague) {
+    const rows = db.prepare(
+      `SELECT * FROM shifts WHERE completed = 1 AND date >= ? AND date <= ?`
+    ).all(rangeFrom, rangeTo);
+    let minutes = 0, value = 0, shifts = 0;
+    for (const s of rows) {
+      const m = v3Helpers.unpaidBreakMinutes(s);
+      if (!m) continue;
+      minutes += m; shifts += 1;
+      value += v3Helpers.unpaidBreakValue(s, m);
+    }
+    breakUntaken = { minutes, shifts, value: Math.round(value * 100) / 100 };
+  }
+
   res.json({
+    breakUntaken,
     topShiftTimes, topPairings, weeklyEarlyLate, monthlyWeekends,
     distinctWeekends: distinctWeekends?.value ?? 0,
     dayOfWeek, shiftDuration, bestWeek, workedDates, leaveDates,

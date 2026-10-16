@@ -12,22 +12,13 @@
 
 const express = require('express');
 const {
-  db, DAYS, localDateStr, parseDate, mondayOf, paidHours, rateForDate, round1, round2, pct,
+  db, DAYS, localDateStr, parseDate, mondayOf, paidHours, unpaidBreakMinutes, unpaidBreakValue,
+  round1, round2, pct,
 } = require('./helpers');
 
 const router = express.Router();
 
-/** Minutes of scheduled break that weren't actually taken on a shift. */
-function unpaidMinutes(shift) {
-  const scheduled = shift.break_scheduled_minutes || 0;
-  if (scheduled <= 0) return 0;
-  if (shift.break_taken === 'none') return scheduled;
-  if (shift.break_taken === 'partial') {
-    const taken = shift.break_taken_minutes != null ? shift.break_taken_minutes : scheduled;
-    return Math.max(0, scheduled - taken);
-  }
-  return 0;   // 'full' — nothing owed
-}
+const unpaidMinutes = unpaidBreakMinutes;
 
 router.get('/break-debt', (req, res) => {
   const year = req.query.year && req.query.year !== 'all' ? String(req.query.year) : null;
@@ -50,8 +41,7 @@ router.get('/break-debt', (req, res) => {
     byDow[parseDate(s.date).getDay()].shifts += 1;
     if (!mins) continue;
 
-    const rate = s.hourly_rate != null ? s.hourly_rate : (rateForDate(s.date) || 0);
-    const value = (mins / 60) * rate * (s.is_bank_holiday ? 2 : 1);
+    const value = unpaidBreakValue(s, mins);
 
     totalMins += mins;
     totalValue += value;

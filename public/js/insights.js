@@ -231,6 +231,12 @@ const InsightsView = {
     const streakGap     = this.longestStreak(workedDates, leave, 1);
     const gapStats      = this.gapStats(workedDates || [], leave);
 
+    // Scheduled break not taken (null when viewing a colleague)
+    const bu = d.breakUntaken;
+    const buTime = bu ? (bu.minutes >= 60
+      ? `${Math.floor(bu.minutes / 60)}h ${String(bu.minutes % 60).padStart(2, '0')}m`
+      : `${bu.minutes}m`) : '';
+
     const viewLabel = this.colleagueId
       ? (this.colleagues.find(c => c.id == this.colleagueId)?.name || 'Colleague')
       : 'Me';
@@ -305,6 +311,16 @@ const InsightsView = {
 
         <!-- ── Top stat cards ─────────────────────────────────────── -->
         <div class="stats-grid" style="margin-bottom:20px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
+          ${bu ? `<div class="stat-card">
+            <div class="stat-label">Break untaken</div>
+            <div class="stat-value ${bu.minutes ? 'warning' : 'success'}">${buTime}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${bu.minutes ? `across ${bu.shifts} shift${bu.shifts !== 1 ? 's' : ''}` : 'every break taken'}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Break untaken pay</div>
+            <div class="stat-value ${bu.minutes ? 'warning' : 'success'}">${fmtCurrency(bu.value)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">worked, never paid</div>
+          </div>` : ''}
           <div class="stat-card">
             <div class="stat-label">Total shifts</div>
             <div class="stat-value">${totalShifts}</div>

@@ -104,6 +104,25 @@ function shiftPay(shift) {
   return round2(paidHours(shift) * rate * (shift.is_bank_holiday ? 2 : 1));
 }
 
+/** Minutes of scheduled break that weren't actually taken on a shift. Pay always
+ *  deducts the scheduled break, so these are minutes worked without being paid. */
+function unpaidBreakMinutes(shift) {
+  const scheduled = shift.break_scheduled_minutes || 0;
+  if (scheduled <= 0) return 0;
+  if (shift.break_taken === 'none') return scheduled;
+  if (shift.break_taken === 'partial') {
+    const taken = shift.break_taken_minutes != null ? shift.break_taken_minutes : scheduled;
+    return Math.max(0, scheduled - taken);
+  }
+  return 0;   // 'full' — nothing owed
+}
+
+/** What those unpaid break minutes are worth at the shift's rate (double on bank holidays). */
+function unpaidBreakValue(shift, mins = unpaidBreakMinutes(shift)) {
+  const rate = shift.hourly_rate != null ? shift.hourly_rate : (rateForDate(shift.date) || 0);
+  return (mins / 60) * rate * (shift.is_bank_holiday ? 2 : 1);
+}
+
 let _rateCache = null;
 function allRates() {
   if (!_rateCache) _rateCache = db.prepare('SELECT * FROM pay_rates ORDER BY effective_date ASC').all();
@@ -229,6 +248,6 @@ module.exports = {
   getSetting, getNumSetting, setSetting,
   localDateStr, parseDate, addDays, daysBetween, mondayOf, dowIndex, isWeekend,
   toMins, fromMins, spanMins, overlapMins,
-  paidHours, shiftPay, rateForDate, contractHoursForDate, shiftsSource,
+  paidHours, shiftPay, unpaidBreakMinutes, unpaidBreakValue, rateForDate, contractHoursForDate, shiftsSource,
   round1, round2, pct, clamp,
 };
