@@ -132,6 +132,19 @@ body {
 }
 .dash-kv strong { color: var(--text); font-weight: 700; }
 
+/* ── Midnight-sync status pill ── */
+#dash-midnight-sync { max-width: 1040px; margin: 8px auto 0; padding: 0 4px; }
+#dash-midnight-sync:empty { display: none; }
+.dash-sync-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-muted); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.dash-sync-pill:hover { color: var(--text); }
+.dash-sync-when { opacity: .7; }
+.dash-sync-fail { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
+
 /* ── Reminder banner ── */
 .dash-banner {
   position: relative;
