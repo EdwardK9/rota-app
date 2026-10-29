@@ -138,6 +138,30 @@ const fakeGemini = http.createServer((rq, rs) => {
     const rerun = await req('POST', `/api/colleagues/import-batches/${imp.body.batchId}/rerun`, {});
     check('re-running after adding them imports their shift', rerun.body.inserted === 1 && !rerun.body.unknownNames.length, rerun.body);
 
+    console.log('\nTeam import — nicknames and saved aliases:');
+    await req('POST', '/api/colleagues', { name: 'Thomas Hatch' });
+    await req('POST', '/api/colleagues', { name: 'Dana Reed' });
+    await req('POST', '/api/settings', { your_name: 'Ed Kay' });
+    const nick = await req('POST', '/api/colleagues/import-json', { schedule_data: {
+      date_range: 'Nov 23 – Nov 29',
+      schedule: [
+        { date: 'Mon 23', shifts: [{ name: 'Tom Hatch', time: '09:00 - 17:00' }, { name: 'Edward Kay', time: '09:00 - 17:00' }, { name: 'Dani Reid-Smith', time: '09:00 - 17:00' }] },
+        { date: 'Tue 24', shifts: [] }, { date: 'Wed 25', shifts: [] }, { date: 'Thu 26', shifts: [] }, { date: 'Fri 27', shifts: [] }, { date: 'Sat 28', shifts: [] }, { date: 'Sun 29', shifts: [] },
+      ],
+    } });
+    check('"Tom" is read as the existing "Thomas" and "Edward Kay" as you', nick.body.inserted === 1 && JSON.stringify(nick.body.unknownNames) === '["Dani Reid-Smith"]', nick.body);
+    const dana = (await req('GET', '/api/colleagues')).body.find(c => c.name === 'Dana Reed');
+    check('a name can be saved as an alias of an existing colleague', (await req('POST', '/api/colleagues/import-aliases', { name: 'Dani Reid-Smith', colleague_id: dana.id })).body.ok);
+    const aliased = await req('POST', `/api/colleagues/import-batches/${nick.body.batchId}/rerun`, {});
+    check('re-running imports the aliased person under the existing colleague', aliased.body.inserted === 1 && !aliased.body.unknownNames.length, aliased.body);
+    await req('POST', '/api/colleagues/import-aliases', { name: 'Someone Else', ignore: true });
+    const ign = await req('POST', '/api/colleagues/import-json', { schedule_data: {
+      date_range: 'Nov 30 – Dec 6',
+      schedule: [{ date: 'Mon 30', shifts: [{ name: 'Someone Else', time: '09:00 - 17:00' }] },
+        { date: 'Tue 01', shifts: [] }, { date: 'Wed 02', shifts: [] }, { date: 'Thu 03', shifts: [] }, { date: 'Fri 04', shifts: [] }, { date: 'Sat 05', shifts: [] }, { date: 'Sun 06', shifts: [] }],
+    } });
+    check('an ignored name is skipped without being reported as unknown', !ign.body.unknownNames.length && ign.body.inserted === 0, ign.body);
+
     console.log('\nTeam import — a shift that moved to another store:');
     const amelia = (await req('POST', '/api/colleagues', { name: 'Amelia Stubbington' })).body;
     const weekOf = (tue) => ({ date_range: 'Oct 19 – Oct 25', schedule: [

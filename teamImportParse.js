@@ -194,10 +194,63 @@ function levenshtein(a, b) {
 const normName = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 
+// First names that mean the same person. Every name in a row maps to the first
+// one, so "Tom Hatch" and "Thomas Hatch" (or "Ed Kay" and "Edward Kay") match
+// without the levenshtein tiers having to stretch to cover "tom" ~ "thomas".
+const NICKNAME_GROUPS = [
+  ['edward', 'ed', 'eddie', 'eddy'],
+  ['thomas', 'tom', 'tommy'],
+  ['william', 'will', 'bill', 'billy'],
+  ['robert', 'rob', 'bob', 'bobby', 'robbie'],
+  ['richard', 'rich', 'rick', 'ricky'],
+  ['james', 'jim', 'jimmy', 'jamie'],
+  ['john', 'jon', 'johnny'],
+  ['michael', 'mike', 'mick', 'mickey'],
+  ['christopher', 'chris'],
+  ['matthew', 'matt'],
+  ['daniel', 'dan', 'danny'],
+  ['david', 'dave', 'davey'],
+  ['andrew', 'andy'],
+  ['anthony', 'tony'],
+  ['benjamin', 'ben', 'benny'],
+  ['samuel', 'sam', 'sammy'],
+  ['joseph', 'joe', 'joey'],
+  ['nicholas', 'nick', 'nicky'],
+  ['alexander', 'alex', 'xander'],
+  ['jonathan', 'jonny'],
+  ['stephen', 'steven', 'steve'],
+  ['timothy', 'tim', 'timmy'],
+  ['peter', 'pete'],
+  ['kenneth', 'ken', 'kenny'],
+    ['elizabeth', 'liz', 'lizzie'],
+  ['katherine', 'catherine', 'kate', 'katie', 'kathy', 'cathy'],
+  ['jennifer', 'jen', 'jenny'],
+  ['rebecca', 'becca', 'becky'],
+  ['victoria', 'vicky', 'vicki', 'tori'],
+  ['amanda', 'mandy'],
+  ['deborah', 'debbie', 'deb'],
+  ['margaret', 'maggie', 'meg', 'peggy'],
+  ['susan', 'sue', 'suzie', 'susie'],
+  ['abigail', 'abby', 'abi'],
+  ['charlotte', 'charlie', 'lottie'],
+  ['alexandra', 'alex', 'lexi'],
+];
+const NICKNAME_CANON = new Map();
+for (const group of NICKNAME_GROUPS)
+  for (const n of group) if (!NICKNAME_CANON.has(n)) NICKNAME_CANON.set(n, group[0]);   // "sam" stays Samuel
+
+/** normName with the first word swapped for its canonical form ("tom hatch" → "thomas hatch"). */
+function canonName(s) {
+  const n = normName(s);
+  const [first, ...rest] = n.split(' ');
+  const canon = NICKNAME_CANON.get(first);
+  return canon ? [canon, ...rest].join(' ') : n;
+}
+
 /** Confident, typo-free name match: exact, first-name-only vs full name
  *  ("Nikki" ~ "Nikki Houghton"), or an initial ("Wayne A" ~ "Wayne Aitken"). */
 function nameMatchesStrict(raw, name) {
-  const a = normName(raw), b = normName(name);
+  const a = canonName(raw), b = canonName(name);
   if (!a || !b) return false;
   if (a === b) return true;
   if (a.startsWith(b + ' ') || b.startsWith(a + ' ')) return true;
@@ -214,11 +267,11 @@ function nameMatchesStrict(raw, name) {
  *  an "unknown name" the user can add is far better than a shift quietly
  *  filed under the wrong person. */
 function fuzzyMatch(raw, colleagues) {
-  const a = normName(raw);
+  const a = canonName(raw);
   if (!a) return null;
 
-  // Tier 1: exact
-  const exact = colleagues.filter(c => normName(c.name) === a);
+  // Tier 1: exact (nicknames folded: "Tom Hatch" ~ "Thomas Hatch")
+  const exact = colleagues.filter(c => canonName(c.name) === a);
   if (exact.length === 1) return exact[0];
   if (exact.length > 1) return exact[0];   // same name twice in the list — nothing better to go on
 
@@ -234,7 +287,7 @@ function fuzzyMatch(raw, colleagues) {
   const ta = a.split(' ');
   const scored = [];
   for (const c of colleagues) {
-    const b = normName(c.name);
+    const b = canonName(c.name);
     if (!b) continue;
     const tb = b.split(' ');
     let dist;
@@ -312,5 +365,5 @@ function coerceSchedule(parsed) {
 module.exports = {
   coerceSchedule,
   SHORT_MONTHS, weekContaining, resolveWeekDates, resolveWeekDatesStrict, resolveWeekDatesLoose, resolveWeekForSchedule,
-  resolveDayDate, parseTimeRange, levenshtein, normName, nameMatchesStrict, fuzzyMatch, extractJson,
+  resolveDayDate, parseTimeRange, levenshtein, normName, canonName, nameMatchesStrict, fuzzyMatch, extractJson,
 };

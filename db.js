@@ -343,6 +343,18 @@ colleagueMigrations.forEach(sql => {
   try { db.exec(sql); } catch (_) { /* already exists */ }
 });
 
+// Names the team-rota import should resolve without guessing: an alias points a
+// spelling it keeps meeting ("Tom Hatch") at an existing colleague, and a row
+// with ignored = 1 (and no colleague) means "skip this name" — e.g. you.
+// alias is stored normalised (lower-case, letters/digits/spaces only).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS import_name_aliases (
+    alias TEXT PRIMARY KEY,
+    colleague_id INTEGER REFERENCES colleagues(id) ON DELETE CASCADE,
+    ignored INTEGER NOT NULL DEFAULT 0
+  );
+`);
+
 // -----------------------------------------
 // V2.0 Phase 1.1 -- Team pay profiles
 // pay_type: 'hourly' | 'salaried'. Hourly staff use hourly_rate + contract_hours
