@@ -81,7 +81,10 @@ check('apostrophe dropped', who('Sean OBrien'), 7);
 check('words run together', who('ErinWard'), 2);
 check('a NEW starter "Sam Jones" is not Tom Jones', who('Sam Jones'), null);
 check('a stranger', who('Priya Shah'), null);
+check('nickname: "Thomas Jones" is Tom Jones', who('Thomas Jones'), 3);
+check('nickname: "Sam Jones" is still not Tom Jones', who('Sam Jones'), null);
 check('own-name check: "Ed Kay" vs setting "Ed Kay"', nameMatchesStrict('ED KAY', 'Ed Kay'), true);
+check('own-name check: "Edward Kay" vs setting "Ed Kay"', nameMatchesStrict('Edward Kay', 'Ed Kay'), true);
 check('own-name check: first name only', nameMatchesStrict('Ed', 'Ed Kay'), true);
 check('own-name check: someone else', nameMatchesStrict('Edna Kay', 'Ed Kay'), false);
 

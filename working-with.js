@@ -14,7 +14,7 @@ const express  = require('express');
 const multer   = require('multer');
 const {
   resolveWeekDates, resolveWeekForSchedule, resolveWeekDatesLoose, resolveDayDate, parseTimeRange,
-  fuzzyMatch, nameMatchesStrict, extractJson, coerceSchedule,
+  fuzzyMatch, nameMatchesStrict, normName, extractJson, coerceSchedule,
 } = require('./teamImportParse');
 const { db, effectiveHourlyRate, rolePayForDate, contractHoursForColleagueOnDate, autoBreakMinutes, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
 const router   = express.Router();
@@ -1379,6 +1379,22 @@ router.get('/colleagues/import-batches', (req, res) => {
   res.json({ batches });
 });
 
+// POST /colleagues/import-aliases — teach the import a name it didn't recognise.
+// Body: { name, colleague_id } to read it as an existing colleague, or
+// { name, ignore: true } to skip it from now on (e.g. you, spelled differently).
+router.post('/colleagues/import-aliases', (req, res) => {
+  const alias = normName(req.body.name);
+  if (!alias) return res.status(400).json({ error: 'name required' });
+  if (req.body.ignore) {
+    db.prepare('INSERT OR REPLACE INTO import_name_aliases (alias, colleague_id, ignored) VALUES (?, NULL, 1)').run(alias);
+    return res.json({ ok: true, alias, ignored: true });
+  }
+  const colleague = db.prepare('SELECT id, name FROM colleagues WHERE id = ?').get(parseInt(req.body.colleague_id, 10));
+  if (!colleague) return res.status(404).json({ error: 'Colleague not found' });
+  db.prepare('INSERT OR REPLACE INTO import_name_aliases (alias, colleague_id, ignored) VALUES (?, ?, 0)').run(alias, colleague.id);
+  res.json({ ok: true, alias, colleague });
+});
+
 // POST /colleagues/import-batches/:id/rerun — run a past import again from the
 // schedule it read, against the SAME batch (so Undo still covers everything it
 // added). For after adding the people it didn't recognise: their shifts go in,
@@ -1521,6 +1537,11 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
     'SELECT id, name, left_date FROM colleagues ORDER BY sort_order ASC, name ASC'
   ).all();
 
+  // Names the user has told us how to read: an alias points at a colleague, an
+  // ignored one (e.g. their own name under another spelling) is skipped.
+  const aliases = new Map(db.prepare('SELECT alias, colleague_id, ignored FROM import_name_aliases').all()
+    .map(a => [a.alias, a]));
+
   // Keywords that map to the 'leave' shift_type
   const isLeaveType = t => {
     const tl = (t || '').toLowerCase().trim();
@@ -1613,8 +1634,12 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
         // shift (populated by the AI when it spots a location line under the time).
         const store = (shift.store || '').trim() || null;
 
+        // A saved alias beats fuzzy matching either way
+        const alias = aliases.get(normName(rawName));
+        if (alias && alias.ignored) { skipped++; continue; }
+
         // Fuzzy-match against known colleagues
-        const col = fuzzyMatch(rawName, colleagues);
+        const col = (alias && colleagues.find(c => c.id === alias.colleague_id)) || fuzzyMatch(rawName, colleagues);
         if (!col) { unknownNames.add(rawName); skipped++; continue; }
         if (col.left_date && col.left_date < dayDate) { skipped++; continue; }
 

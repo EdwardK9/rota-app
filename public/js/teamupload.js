@@ -36,8 +36,15 @@ const TeamUploadView = {
     // Don't clobber an open review panel (e.g. mid-decision on the PC) just
     // because the background poll ticked — pick it back up next time it's closed.
     if (el.querySelector('[id^="tuBatchReview-"]')) return;
+    // Same for a "Same as…" dropdown that's being used — a redraw would snap it shut.
+    if (el.querySelector('.tu-unknown-name select:focus')) return;
     try {
       const { batches } = await API.getImportBatches(8);
+      // Only needed for the "Same as…" picker on unrecognised names.
+      let people = [];
+      if (batches.some(b => !b.undone_at && b.unknown_names.length)) {
+        try { people = (await API.getColleagues()).filter(c => !c.left_date); } catch (_) {}
+      }
       if (!batches.length) {
         el.innerHTML = '<span>No imports yet.</span>';
         return;
@@ -67,9 +74,14 @@ const TeamUploadView = {
                         <div class="tu-unknown-list">${b.unknown_names.map(n => `
                           <span class="tu-unknown-name">${esc(n)}
                             <button class="btn btn-sm btn-ghost" data-add-person="${esc(n)}" title="Add ${esc(n)} as a colleague">+ Add</button>
+                            <select class="form-control" data-alias-person="${esc(n)}" title="Same person as someone already in your list" style="font-size:12px;padding:2px 4px;max-width:130px">
+                              <option value="">Same as…</option>
+                              ${people.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+                            </select>
+                            <button class="btn btn-sm btn-ghost" data-ignore-person="${esc(n)}" title="Skip ${esc(n)} on every import — e.g. that's you">Ignore</button>
                           </span>`).join('')}
                         </div>
-                        <div style="font-size:11.5px">If it's someone already in your list under a different spelling, rename them in Manage People to match, then Re-run.</div>
+                        <div style="font-size:11.5px">Same person as someone already in your list? Pick them under "Same as…". "Ignore" skips a name (e.g. you) for good. Then Re-run.</div>
                       </div>` : ''}
                     ${!b.undone_at && b.warnings.length ? `
                       <details style="margin-top:4px;font-size:11.5px"><summary>${b.warnings.length} other issue${b.warnings.length === 1 ? '' : 's'}</summary>
@@ -104,6 +116,12 @@ const TeamUploadView = {
       );
       el.querySelectorAll('[data-add-person]').forEach(btn =>
         btn.addEventListener('click', () => this._addUnknownPerson(btn.dataset.addPerson, btn))
+      );
+      el.querySelectorAll('[data-alias-person]').forEach(sel =>
+        sel.addEventListener('change', () => sel.value && this._saveImportAlias(sel.dataset.aliasPerson, { colleague_id: parseInt(sel.value, 10) }, sel))
+      );
+      el.querySelectorAll('[data-ignore-person]').forEach(btn =>
+        btn.addEventListener('click', () => this._saveImportAlias(btn.dataset.ignorePerson, { ignore: true }, btn))
       );
       el.querySelectorAll('[data-rerun-batch]').forEach(btn =>
         btn.addEventListener('click', () => this._rerunImportBatch(parseInt(btn.dataset.rerunBatch, 10), btn))
@@ -266,6 +284,21 @@ const TeamUploadView = {
     } catch (e) {
       btn.disabled = false;
       showToast('Could not add: ' + e.message, 'error');
+    }
+  },
+
+  // Remember how to read a name the import didn't recognise (as an existing
+  // colleague, or to skip it) — applied to every import from now on.
+  async _saveImportAlias(name, opts, ctrl) {
+    ctrl.disabled = true;
+    try {
+      const r = await API.addImportAlias(name, opts);
+      const pill = ctrl.closest('.tu-unknown-name');
+      if (pill) pill.innerHTML = `${esc(name)} <span style="color:var(--text-muted)">${r.ignored ? '→ ignored' : '→ ' + esc(r.colleague.name)}</span>`;
+      showToast(r.ignored ? `${name} will be skipped — tap Re-run` : `${name} is now read as ${r.colleague.name} — tap Re-run`, 'success');
+    } catch (e) {
+      ctrl.disabled = false;
+      showToast('Could not save: ' + e.message, 'error');
     }
   },
 
