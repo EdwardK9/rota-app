@@ -162,6 +162,16 @@ const fakeGemini = http.createServer((rq, rs) => {
     } });
     check('an ignored name is skipped without being reported as unknown', !ign.body.unknownNames.length && ign.body.inserted === 0, ign.body);
 
+    console.log('\nPeople page — a new starter with a future start date:');
+    const starter = (await req('POST', '/api/colleagues', { name: 'Nia Starter' })).body;
+    const futureDay = new Date(Date.now() + 5 * 864e5).toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+    const put = await req('PUT', `/api/colleagues/${starter.id}`, { name: 'Nia Starter', start_date: futureDay, job_tier: 'assistant' });
+    check('start date saved', put.status < 300, put);
+    const before = (await req('GET', '/api/working-with/people')).body.colleagues.find(c => c.id === starter.id);
+    check('hidden while they have no upcoming shifts', !before, before);
+    await req('POST', '/api/colleague-shifts', { colleague_id: starter.id, date: futureDay, start_time: '09:00', end_time: '17:00' });
+    check('shown once they have one', (await req('GET', '/api/working-with/people')).body.colleagues.some(c => c.id === starter.id));
+
     console.log('\nTeam import — a shift that moved to another store:');
     const amelia = (await req('POST', '/api/colleagues', { name: 'Amelia Stubbington' })).body;
     const weekOf = (tue) => ({ date_range: 'Oct 19 – Oct 25', schedule: [

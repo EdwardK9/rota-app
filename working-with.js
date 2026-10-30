@@ -939,10 +939,15 @@ router.get('/working-with/people', (req, res) => {
   const allColleagues = db.prepare('SELECT * FROM colleagues ORDER BY name ASC').all();
   // Use today's date as the reference — screenshot imports are assumed to be recent
   const importDate = localDateStr();
-  const colleagues = allColleagues.filter(c => (!c.left_date || c.left_date >= importDate) && (!c.start_date || c.start_date <= importDate));
   const colShifts  = db.prepare(
     "SELECT * FROM colleague_shifts WHERE date >= ? AND (store IS NULL OR store = '') ORDER BY date ASC"
   ).all(today);
+  // A new starter whose start date is still ahead is shown as soon as they have
+  // an upcoming shift — this page is about upcoming shifts, so hiding them until
+  // their first day would hide exactly the shifts it exists to show.
+  const hasUpcoming = new Set(colShifts.map(cs => cs.colleague_id));
+  const colleagues = allColleagues.filter(c => (!c.left_date || c.left_date >= importDate)
+    && (!c.start_date || c.start_date <= importDate || hasUpcoming.has(c.id)));
 
   // For each of my shifts, find who's on with me and the overlap
   const rows = myShifts.map(my => {
