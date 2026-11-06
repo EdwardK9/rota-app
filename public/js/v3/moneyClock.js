@@ -56,7 +56,9 @@ V3.register('money-clock', '💸 Money Clock', {
     const remaining = Math.max(0, live.total_mins - elapsedMins);
     const pctDone = Math.min(100, (elapsedMins / live.total_mins) * 100);
 
-    const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+    // innerHTML, not textContent: fmtCurrency returns <span class="money"> markup, which
+    // textContent printed literally. Every value here is a number we formatted ourselves.
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.innerHTML = value; };
     set('mcLiveEarned', fmtCurrency(earned));
     set('mcLiveRemaining', this._hm(remaining));
     set('mcLiveElapsed', this._hm(elapsedMins));

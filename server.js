@@ -10,7 +10,7 @@ const zlib    = require('zlib');
 const { execSync, execFileSync } = require('child_process');
 const packageJson = require('./package.json');
 const { db, getPayRateForDate, calcHoursWorked, autoBreakMinutes, contractHoursForColleagueOnDate } = require('./db');
-const { leaveHoursByMonth, leaveHoursByWeek } = require('./leaveHours');
+const { leaveHoursByMonth, leaveHoursByWeek, leaveHoursByDay, spreadEntry, leaveDayHours, defaultHoursPerDay } = require('./leaveHours');
 const workingWithRouter = require('./working-with');
 const commuteRouter = require('./commute');
 const { DEFAULT_DELIVERY_TIME, normaliseDeliveryTime, serialiseDayTimes, deliveryCaseSql } = require('./delivery');
@@ -1713,52 +1713,18 @@ app.get('/api/reports/insights', (req, res) => {
       }
 
       // Also include annual leave hours so leave weeks don't appear under-contracted
-      {
-        const hpdRow = db.prepare(`SELECT value FROM settings WHERE key='hours_per_day'`).get();
-        const hpd = parseFloat(hpdRow?.value || '7.4');
-        const yearStart = rangeFrom;
-        const yearEnd   = rangeTo;
-        const leaveEntries = db.prepare(
-          `SELECT start_date, end_date, hours_taken, days_taken FROM leave_entries
-           WHERE start_date <= ? AND end_date >= ?`
-        ).all(yearEnd, yearStart);
-
-        for (const entry of leaveEntries) {
-          const fullStart = new Date(entry.start_date + 'T00:00:00');
-          const fullEnd   = new Date(entry.end_date   + 'T00:00:00');
-          let workingDays = 0;
-          const counter = new Date(fullStart);
-          while (counter <= fullEnd) {
-            const dow = counter.getDay();
-            if (dow >= 1 && dow <= 5) workingDays++;
-            counter.setDate(counter.getDate() + 1);
-          }
-          if (workingDays === 0) continue;
-          const totalHours = entry.hours_taken != null ? entry.hours_taken : (entry.days_taken * hpd);
-          const hoursPerDay = totalHours / workingDays;
-
-          const clampedStart = new Date(Math.max(fullStart, new Date(yearStart + 'T00:00:00')));
-          const clampedEnd   = new Date(Math.min(fullEnd,   new Date(yearEnd   + 'T00:00:00')));
-          const cur = new Date(clampedStart);
-          while (cur <= clampedEnd) {
-            const dow = cur.getDay();
-            if (dow >= 1 && dow <= 5) {
-              const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-              const key = getMonKey(dateStr);
-              if (!wMap[key]) {
-                const rate = getRateForDate(dateStr);
-                wMap[key] = {
-                  weekStart: key,
-                  hours_worked: 0,
-                  contracted_hours: rate ? rate.contracted_hours_per_week : 0,
-                  hourly_rate: rate ? rate.hourly_rate : 0
-                };
-              }
-              wMap[key].hours_worked += hoursPerDay;
-            }
-            cur.setDate(cur.getDate() + 1);
-          }
+      for (const [dateStr, hrs] of Object.entries(leaveHoursByDay(rangeFrom, rangeTo))) {
+        const key = getMonKey(dateStr);
+        if (!wMap[key]) {
+          const rate = getRateForDate(dateStr);
+          wMap[key] = {
+            weekStart: key,
+            hours_worked: 0,
+            contracted_hours: rate ? rate.contracted_hours_per_week : 0,
+            hourly_rate: rate ? rate.hourly_rate : 0
+          };
         }
+        wMap[key].hours_worked += hrs;
       }
 
       return Object.values(wMap)
@@ -1853,7 +1819,12 @@ app.get('/api/leave', (req, res) => {
     params.push(year, year);
   }
   query += ' ORDER BY start_date DESC';
-  res.json(db.prepare(query).all(...params));
+  // daily_hours: the per-day split of each entry, so the Shifts page and calendar
+  // show exactly what the reports count — see leaveHours.js.
+  const hpd = defaultHoursPerDay();
+  res.json(db.prepare(query).all(...params).map(e => ({
+    ...e, daily_hours: spreadEntry(e, leaveDayHours(e.start_date), hpd),
+  })));
 });
 
 app.post('/api/leave', (req, res) => {
