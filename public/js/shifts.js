@@ -186,36 +186,21 @@ const ShiftsView = {
       const mainDates = new Set(mainShifts.map(s => s.date));
       const dedupedAdj = adjShifts.filter(s => !mainDates.has(s.date));
 
-      // Expand leave entries into individual working-day rows
-      const hpdSetting = (this.settings && this.settings.hours_per_day) ? parseFloat(this.settings.hours_per_day) : 7.4;
+      // One row per leave day. The server decides which days an entry covers and
+      // how many hours each carries (leaveHours.js), so this matches the reports.
       const leaveRows = [];
       for (const entry of leaveEntries) {
-        const fullStart = new Date(entry.start_date + 'T00:00:00');
-        const fullEnd   = new Date(entry.end_date   + 'T00:00:00');
-        // Screwfix trades 7 days a week and this rota rotates across all of them,
-        // so there's no such thing as an inherently "non-working" day here — every
-        // calendar day the leave entry covers could have been a rostered shift.
-        // The hours entered for the leave period are spread evenly across every
-        // day it covers, weekend included, rather than only Mon–Fri.
-        const totalDays = Math.round((fullEnd - fullStart) / 86400000) + 1;
-        if (totalDays <= 0) continue;
-        const totalHours = entry.hours_taken != null ? entry.hours_taken : (entry.days_taken * hpdSetting);
-        const hoursPerDay = totalHours / totalDays;
-
-        const cur = new Date(fullStart);
-        while (cur <= fullEnd) {
-          const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+        for (const [dateStr, hrs] of Object.entries(entry.daily_hours || {})) {
           // Only include dates in the current month (not adjacent months)
           if (dateStr >= currentMonthStart && dateStr <= currentMonthEnd) {
             leaveRows.push({
               date: dateStr,
               _isLeave: true,
               _leaveType: entry.leave_type || 'annual',
-              _leaveHours: hoursPerDay,
+              _leaveHours: hrs,
               _leaveEntryId: entry.id,
             });
           }
-          cur.setDate(cur.getDate() + 1);
         }
       }
 

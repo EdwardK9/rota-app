@@ -122,19 +122,18 @@ const CalendarView = {
       this.leaveDates = new Set();
       this.leaveHoursByDate = {};
       for (const le of leaveEntries) {
+        // The full range stays marked as leave; hours only land on the days the
+        // server (leaveHours.js) says carry them.
         const start = new Date(le.start_date + 'T00:00:00');
         const end   = new Date(le.end_date   + 'T00:00:00');
-        const numDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
-        const totalHrs = le.hours_taken != null ? le.hours_taken : (le.days_taken || 0);
-        const perDay = totalHrs / numDays;
         const cur = new Date(start);
         while (cur <= end) {
           const d = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-          if (d >= firstDay && d <= lastDay) {
-            this.leaveDates.add(d);
-            if (perDay) this.leaveHoursByDate[d] = (this.leaveHoursByDate[d] || 0) + perDay;
-          }
+          if (d >= firstDay && d <= lastDay) this.leaveDates.add(d);
           cur.setDate(cur.getDate() + 1);
+        }
+        for (const [d, hrs] of Object.entries(le.daily_hours || {})) {
+          if (d >= firstDay && d <= lastDay && hrs) this.leaveHoursByDate[d] = (this.leaveHoursByDate[d] || 0) + hrs;
         }
       }
       this.renderStats();

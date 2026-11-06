@@ -25,6 +25,7 @@ const {
 } = require('./helpers');
 const { autoBreakMinutes } = require('../db');
 const { bankHolidayDates } = require('./bankHolidays');
+const { spreadEntry, leaveDayHours } = require('../leaveHours');
 
 const router = express.Router();
 
@@ -162,13 +163,9 @@ router.get('/health-check', async (req, res) => {
   // zero-hour 'day_off' as if it were a full day would hide a real shortfall.
   const leaveHoursByDay = new Map();
   for (const l of leave) {
-    let days = 0;
-    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) days++;
-    const total = l.hours_taken != null ? l.hours_taken : 0;
-    const perDay = days > 0 ? total / days : 0;
-    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) {
-      leaveDates.set(d, l.leave_type);
-      leaveHoursByDay.set(d, (leaveHoursByDay.get(d) || 0) + perDay);
+    for (let d = l.start_date; d <= l.end_date; d = addDays(d, 1)) leaveDates.set(d, l.leave_type);
+    for (const [d, h] of Object.entries(spreadEntry(l, leaveDayHours(l.start_date)))) {
+      leaveHoursByDay.set(d, (leaveHoursByDay.get(d) || 0) + h);
     }
   }
   const onLeave = shifts.filter(s => leaveDates.has(s.date))

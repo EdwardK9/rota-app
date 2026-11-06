@@ -10,16 +10,22 @@
        strftime('%Y-%m', start_date), so a holiday running 30 Mar → 11 Apr was
        booked entirely to March and April looked 22 hours under contract
 
-   All three now call in here, and the rule is v3/overtime.js's: spread across
-   every calendar day the entry covers, weekends included.
+   All of them (and the Shifts page, calendar and health check, via the
+   `daily_hours` field on GET /api/leave) now call in here.
 
-   The Mon–Fri rule the weekly endpoint used looks more correct and isn't. This
-   is a retail rota that trades seven days and rotates across all of them — over
-   the last twelve months 38% of shifts fell on a weekend, and Saturday is the
-   single biggest day by hours. Confining leave to weekdays would pile it onto
-   days often not worked, and an entry falling entirely on a weekend would
-   divide by zero and silently vanish, leaving that week still reading as a
-   shortfall.
+   The rule — how a lump sum becomes days:
+     • One leave day is worth contracted-hours-per-week / 5 (4h on a 20h
+       contract), taken from the pay rate in force on the entry's first day.
+       Falls back to the hours_per_day setting if there's no pay rate.
+     • The number of days is hours_taken / that figure (32h → 8 days), at least 1.
+     • Those days are the first N Mon–Fri days in the range; weekend days are
+       only used once the weekdays run out (or if the range has none). So
+       26 Oct → 4 Nov at 32h is 8 weekdays × 4h, skipping 31 Oct and 1 Nov, and a
+       single Saturday at 4h is that Saturday.
+     • If the range has no more days than that, every day is used and the hours
+       are divided evenly between them.
+   This replaces "an equal share of every calendar day", which gave 3.2h a day
+   for the example above and never matched what Rotageek shows.
 
    Entries are selected by overlap (end_date >= from AND start_date <= to), not
    by which month or year they start in, so a range crossing the boundary
@@ -47,6 +53,42 @@ function defaultHoursPerDay() {
   return Number.isFinite(n) && n > 0 ? n : 7.4;
 }
 
+/** Hours one leave day is worth on a given date: weekly contract / 5. */
+function leaveDayHours(dateStr) {
+  const r = db.prepare(
+    'SELECT contracted_hours_per_week AS c FROM pay_rates WHERE effective_date <= ? ORDER BY effective_date DESC LIMIT 1'
+  ).get(dateStr);
+  return r && r.c > 0 ? r.c / 5 : defaultHoursPerDay();
+}
+
+/**
+ * Spread one entry over the days it covers (see the rule above). Pure — no DB.
+ * @returns {Object<string, number>} 'YYYY-MM-DD' -> hours, unclipped
+ */
+function spreadEntry(entry, dayHours, hpd = 7.4) {
+  const start = toDate(entry.start_date);
+  const end   = toDate(entry.end_date);
+  if (!(end >= start)) return {};
+  const total = entry.hours_taken != null ? entry.hours_taken : (entry.days_taken || 0) * hpd;
+  if (!(total > 0)) return {};
+
+  const all = [];
+  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + DAY_MS)) all.push(new Date(d));
+
+  const n = Math.max(1, Math.round(total / (dayHours > 0 ? dayHours : hpd)));
+  let chosen = all;
+  if (n < all.length) {
+    const wk = all.filter(d => d.getDay() >= 1 && d.getDay() <= 5);
+    const we = all.filter(d => d.getDay() === 0 || d.getDay() === 6);
+    chosen = [...wk, ...we].slice(0, n);
+  }
+
+  const out = {};
+  const perDay = total / chosen.length;
+  for (const d of chosen) out[toStr(d)] = perDay;
+  return out;
+}
+
 /**
  * Leave hours per calendar day across [from, to].
  * @returns {Object<string, number>} keyed 'YYYY-MM-DD'
@@ -58,28 +100,11 @@ function leaveHoursByDay(from, to) {
 
   const hpd = defaultHoursPerDay();
   const out = {};
-
   for (const entry of rows) {
-    const start = toDate(entry.start_date);
-    const end   = toDate(entry.end_date);
-    if (!(end >= start)) continue;
-
-    const total = entry.hours_taken != null
-      ? entry.hours_taken
-      : (entry.days_taken || 0) * hpd;
-    if (!(total > 0)) continue;
-
-    // Every calendar day the entry covers carries an equal share — see above
-    // for why weekends are not excluded.
-    const days = [];
-    for (let d = new Date(start); d <= end; d = new Date(d.getTime() + DAY_MS)) days.push(new Date(d));
-    if (!days.length) continue;
-
-    const perDay = total / days.length;
-    for (const d of days) {
-      const key = toStr(d);
+    const spread = spreadEntry(entry, leaveDayHours(entry.start_date), hpd);
+    for (const [key, h] of Object.entries(spread)) {
       if (key < from || key > to) continue;   // clip to the window asked for
-      out[key] = (out[key] || 0) + perDay;
+      out[key] = (out[key] || 0) + h;
     }
   }
   return out;
@@ -108,4 +133,4 @@ function leaveHoursByWeek(from, to, mondayOf) {
   return out;
 }
 
-module.exports = { leaveHoursByDay, leaveHoursByMonth, leaveHoursByWeek, defaultHoursPerDay };
+module.exports = { spreadEntry, leaveDayHours, leaveHoursByDay, leaveHoursByMonth, leaveHoursByWeek, defaultHoursPerDay };
