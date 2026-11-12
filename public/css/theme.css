@@ -13,6 +13,13 @@
 
 :root {
   --text: #14162B;
+  /* Status colours double as text on white all over the app (pay figures,
+     +/- differences, chips). The original brights were only ~2.2–2.5:1 there;
+     these are the same hues a step darker. Dark mode keeps the brights. */
+  --success: #059669;
+  --warning: #D97706;
+  --danger:  #DC2626;
+  --info:    #2563EB;
   /* Shift types. Each has a solid swatch, a tint for fills and an ink that is
      readable on that tint. */
   --st-early: #F59E0B;  --st-early-tint: rgba(245,158,11,0.16);  --st-early-ink: #92400E;
@@ -22,6 +29,10 @@
 }
 [data-theme="dark"] {
   --text: #E8EAF0;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger:  #EF4444;
+  --info:    #3B82F6;
   --st-early-tint: rgba(245,158,11,0.18);  --st-early-ink: #FCD34D;
   --st-day-tint:   rgba(14,165,233,0.18);  --st-day-ink:   #7DD3FC;
   --st-late-tint:  rgba(139,92,246,0.22);  --st-late-ink:  #C4B5FD;
@@ -68,6 +79,41 @@
 .nav-group-header.child-active { color: #C7D2FE; }
 .nav-edit-action { color: rgba(255,255,255,0.8); }
 .nav-edit-action.nav-edit-save { background: #4F46E5; border-color: #4F46E5; color: #fff; }
+
+/* Calmer menu: the emoji icons are greyed back until a row is hovered or
+   active, so the eye lands on the labels and the one highlighted page. */
+.sidebar .nav-icon { filter: grayscale(1); opacity: 0.6; transition: filter var(--transition), opacity var(--transition); }
+.sidebar .nav-link:hover .nav-icon,
+.sidebar .nav-link.active .nav-icon,
+.sidebar .nav-group-header:hover .nav-icon,
+.sidebar .nav-group-header.child-active .nav-icon,
+.sidebar.nav-editing .nav-icon { filter: none; opacity: 1; }
+.nav-links { padding: 10px 0; }
+.nav-links > li { margin: 1px 8px; }
+.nav-link, .nav-group-header { padding: 9px 12px; }
+.nav-links > li:not(.nav-group) + li.nav-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.07); }
+.nav-group.open { background: rgba(255,255,255,0.03); border-radius: 10px; padding-bottom: 4px; }
+.nav-sublinks { border-left: 0; margin-left: 0; padding-left: 0; }
+.nav-sublinks li { margin: 1px 4px; }
+.nav-sublinks .nav-link { padding: 7px 12px 7px 22px; }
+.nav-group.open .nav-sublinks { max-height: 420px; }
+
+/* Footer: one row of icon buttons instead of a stack of full-width rows. */
+.sidebar-footer { padding: 10px 8px calc(10px + env(safe-area-inset-bottom, 0px)); }
+#navEditBar:empty { display: none; }
+.side-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.side-btn, .side-btn.dark-mode-toggle {
+  display: grid; place-items: center;
+  width: auto; height: 38px; padding: 0;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px;
+  color: rgba(255,255,255,0.8); font-size: 16px; line-height: 1; cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.side-btn:hover, .side-btn.dark-mode-toggle:hover { background: rgba(255,255,255,0.12); }
+.side-btn.active { background: #4F46E5; border-color: #4F46E5; }
+.side-btn .nav-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.side-btn .dark-mode-icon, .side-btn .hide-money-icon { width: auto; font-size: 16px; }
+.sidebar-version { padding-top: 8px; }
 
 .topbar { gap: 12px; }
 .topbar-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -209,6 +255,11 @@
   .tabbar-btn.active .tabbar-icon { background: rgba(var(--primary-rgb),0.14); filter: none; opacity: 1; }
   .tabbar-btn:active .tabbar-icon { background: rgba(var(--primary-rgb),0.2); }
 
+  /* The tab bar's Menu button (and a swipe from the left edge) opens the
+     menu, so the burger in the topbar is no longer needed on a phone. */
+  .topbar .topbar-menu-btn { display: none; }
+  .topbar { padding-left: 16px; }
+
   /* Room for the bar under the last thing on every page, and under the menu. */
   .main-content { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
   .toast {
@@ -254,3 +305,34 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 /* Thin, quiet scrollbars where the browser supports styling them. */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text-muted) 45%, transparent) transparent; }
 .sidebar * { scrollbar-color: rgba(255,255,255,0.18) transparent; }
+
+/* Shifts: secondary stat cards fold away behind a toggle (not on phones,
+   where the cards are already a swipeable strip). */
+.stats-more { display: none; }
+@media (min-width: 481px) {
+  .stats-collapsible { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-bottom: 8px; }
+  .stats-collapsible:not(.stats-open) > .stat-extra { display: none; }
+  .stats-more {
+    display: inline-flex; align-items: center; margin: 0 0 16px;
+    background: none; border: 0; padding: 4px 2px; cursor: pointer;
+    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-muted);
+  }
+  .stats-more:hover { color: var(--accent-text); }
+}
+
+/* Chips whose text colour was hard-coded to the old bright status colours. */
+.break-chip.break-full, .badge-success, .cal-wt-chip.cal-wt-worked { color: #047857; }
+.break-chip.break-partial, .cal-wt-chip.cal-wt-break { color: #B45309; }
+.badge-info { color: #1D4ED8; }
+.badge-danger { color: #B91C1C; }
+.cal-wt-chip.cal-wt-leave { color: #BE185D; }
+[data-theme="dark"] .break-chip.break-full, [data-theme="dark"] .badge-success, [data-theme="dark"] .cal-wt-chip.cal-wt-worked { color: #6EE7B7; }
+[data-theme="dark"] .break-chip.break-partial, [data-theme="dark"] .cal-wt-chip.cal-wt-break { color: #FCD34D; }
+[data-theme="dark"] .badge-info { color: #93C5FD; }
+
+.key-kbd {
+  display: inline-block; min-width: 26px; text-align: center;
+  font: inherit; font-size: 12px; font-weight: 700;
+  padding: 3px 7px; border-radius: 7px;
+  background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; color: var(--text);
+}

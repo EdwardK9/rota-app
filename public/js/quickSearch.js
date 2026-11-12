@@ -82,6 +82,51 @@ const QuickSearch = {
     });
 
     this._initTabbar();
+    this._initPageKeys();
+  },
+
+  // ── Page shortcuts ──
+  // On pages that step through time: ← / → for previous / next, T for today,
+  // and N for a new shift. Phones get the same on the Calendar by swiping.
+  PAGE_KEYS: {
+    shifts:          { prev: 'shiftPrevMonth', next: 'shiftNextMonth', today: 'shiftToday', add: 'addShiftBtn' },
+    calendar:        { prev: 'calPrevMonth',   next: 'calNextMonth',   today: 'calToday',   add: 'calAddShiftBtn' },
+    'team-calendar': { prev: 'tcPrevWeek',     next: 'tcNextWeek',     today: 'tcThisWeek' },
+    leave:           { prev: 'lyPrev',         next: 'lyNext' },
+  },
+  _pageAction(action) {
+    const id = (this.PAGE_KEYS[App.currentView] || {})[action];
+    const btn = id && document.getElementById(id);
+    if (!btn || btn.disabled || !btn.offsetParent) return false;
+    btn.click();
+    return true;
+  },
+  _initPageKeys() {
+    document.addEventListener('keydown', e => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+      if (this.isOpen() || Modal.isOpen()) return;
+      const action = { ArrowLeft: 'prev', ArrowRight: 'next', t: 'today', T: 'today', n: 'add', N: 'add' }[e.key];
+      if (action && this._pageAction(action)) e.preventDefault();
+    });
+
+    // Calendar on a phone: swipe left / right to change month. Starts near the
+    // left edge are left to the menu's own swipe-to-open.
+    const cal = document.getElementById('view-calendar');
+    if (!cal) return;
+    let x0 = 0, y0 = 0, on = false;
+    cal.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      on = e.touches.length === 1 && t.clientX > 32 && !e.target.closest('.stats-grid, select, input');
+      x0 = t.clientX; y0 = t.clientY;
+    }, { passive: true });
+    cal.addEventListener('touchend', e => {
+      if (!on || Modal.isOpen()) return;
+      on = false;
+      const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+      this._pageAction(dx < 0 ? 'next' : 'prev');
+    }, { passive: true });
   },
 
   isOpen() { return !this.overlay.classList.contains('hidden'); },

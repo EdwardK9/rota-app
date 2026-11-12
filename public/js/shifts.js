@@ -28,7 +28,8 @@ const ShiftsView = {
         </div>
       </div>
 
-      <div class="stats-grid" id="shiftStats"></div>
+      <div class="stats-grid stats-collapsible" id="shiftStats"></div>
+      <button type="button" class="stats-more" id="shiftStatsMore" aria-controls="shiftStats"></button>
 
       <div id="shiftContractStrip"></div>
 
@@ -82,6 +83,22 @@ const ShiftsView = {
       this.loadShifts();
     });
     document.getElementById('addShiftBtn').addEventListener('click', () => this.openAddModal());
+
+    // Break and distance figures are folded away until asked for, so the six
+    // headline numbers and the shifts themselves fit on the first screen.
+    const statsEl = document.getElementById('shiftStats');
+    const moreBtn = document.getElementById('shiftStatsMore');
+    const setStatsOpen = (open) => {
+      statsEl.classList.toggle('stats-open', open);
+      moreBtn.setAttribute('aria-expanded', open);
+      moreBtn.textContent = open ? 'Hide breaks & distance ▴' : 'Breaks & distance ▾';
+    };
+    setStatsOpen(localStorage.getItem('shiftStatsOpen') === 'true');
+    moreBtn.addEventListener('click', () => {
+      const open = !statsEl.classList.contains('stats-open');
+      localStorage.setItem('shiftStatsOpen', open);
+      setStatsOpen(open);
+    });
 
     document.getElementById('selectAllShifts').addEventListener('change', e => {
       document.querySelectorAll('.shift-row-cb').forEach(cb => { cb.checked = e.target.checked; });
@@ -355,33 +372,33 @@ const ShiftsView = {
         <div class="stat-value" style="color:var(--text-muted)">${fmtCurrency(workedPay)}</div>
         <div class="stat-hint">Completed shifts only</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card stat-extra">
         <div class="stat-label">Distance</div>
         <div class="stat-value">${fmtMiles(totalDist)}</div>
         <div class="stat-hint">Every shift this month (done or not)</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card stat-extra">
         <div class="stat-label">Breaks (count)</div>
         <div class="stat-value">${shiftsWithBreak.length}</div>
         <div class="stat-hint">Shifts this month with a scheduled break</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card stat-extra">
         <div class="stat-label">Break Scheduled</div>
         <div class="stat-value">${fmtMins(totalBreakSched)}</div>
         <div class="stat-hint">Total scheduled, every shift this month</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card stat-extra">
         <div class="stat-label">Break Taken</div>
         <div class="stat-value warning">${fmtMins(totalBreakTaken)}</div>
         <div class="stat-hint">Completed shifts only</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card stat-extra">
         <div class="stat-label">Break Unused</div>
         <div class="stat-value ${totalBreakUnused > 0 ? 'success' : ''}">${fmtMins(totalBreakUnused)}</div>
         <div class="stat-hint">Scheduled minus taken, completed shifts</div>
       </div>
       ${breakUnusedPay > 0 ? `
-      <div class="stat-card">
+      <div class="stat-card stat-extra">
         <div class="stat-label">Unused Break Pay</div>
         <div class="stat-value success">${fmtCurrency(breakUnusedPay)}</div>
         <div class="stat-hint">Unused break time &times; each shift's hourly rate</div>

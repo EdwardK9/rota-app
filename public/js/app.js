@@ -72,6 +72,7 @@ const App = {
       document.documentElement.setAttribute('data-theme', dark ? 'dark' : '');
       document.querySelector('#darkModeToggle .dark-mode-icon').textContent = dark ? '☀️' : '🌙';
       document.querySelector('#darkModeToggle .nav-label').textContent = dark ? 'Light Mode' : 'Dark Mode';
+      document.getElementById('darkModeToggle').title = dark ? 'Switch to light mode' : 'Switch to dark mode';
       // Browser / status-bar colour follows the topbar.
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0E1016' : '#16182D');
     };
@@ -175,6 +176,13 @@ const App = {
       }, { passive: true });
     })();
 
+    // Footer icon row: plain page shortcuts (Settings). Not .nav-link, so the
+    // menu editor doesn't treat them as rows that can be dragged about.
+    document.querySelectorAll('.side-btn[data-goto]').forEach(b => b.addEventListener('click', () => {
+      this.navigate(b.dataset.goto);
+      if (window.innerWidth <= 768) closeSidebar();
+    }));
+
     // Nav wiring, kept re-runnable: NavCustomise rebuilds the sidebar markup
     // whenever the layout is edited, which throws these listeners away with the
     // old DOM, so it calls back into this after every render.
@@ -195,12 +203,13 @@ const App = {
         if (savedGroups[key]) g.classList.add('open');
         g.querySelector('.nav-group-header').addEventListener('click', () => {
           if (NavCustomise._editing) return;
-          const open = g.classList.toggle('open');
-          const s = JSON.parse(localStorage.getItem('navGroups') || '{}');
-          s[key] = open;
-          localStorage.setItem('navGroups', JSON.stringify(s));
+          this._openNavGroup(g, !g.classList.contains('open'));
         });
       });
+      // One open at a time (an older saved state could have several).
+      if (!NavCustomise._editing) {
+        document.querySelectorAll('.nav-group.open').forEach((g, i) => { if (i > 0) g.classList.remove('open'); });
+      }
     };
 
     // Renders the saved sidebar layout (or the default markup's own order) and
@@ -232,6 +241,19 @@ const App = {
     // it's on screen (navigate() fetches it first if the view needs it).
     const hash = window.location.hash.replace('#', '') || 'dashboard';
     this.navigate(hash).finally(() => this.loadRest().catch(() => {}));
+  },
+
+  // Open or close one sidebar group. One group is open at a time — opening
+  // one folds the others away — so the menu never grows past a screenful.
+  _openNavGroup(group, open) {
+    const state = {};
+    document.querySelectorAll('.nav-group').forEach(g => {
+      const on = g === group ? open : false;
+      g.classList.toggle('open', on);
+      g.querySelector('.nav-group-header')?.setAttribute('aria-expanded', on);
+      state[g.dataset.group] = on;
+    });
+    localStorage.setItem('navGroups', JSON.stringify(state));
   },
 
   async navigate(view) {
@@ -290,13 +312,9 @@ const App = {
     document.querySelectorAll('.nav-group').forEach(g => {
       const hasActive = !!g.querySelector('.nav-link.active');
       g.querySelector('.nav-group-header').classList.toggle('child-active', hasActive);
-      if (hasActive && !g.classList.contains('open')) {
-        g.classList.add('open');
-        const s = JSON.parse(localStorage.getItem('navGroups') || '{}');
-        s[g.dataset.group] = true;
-        localStorage.setItem('navGroups', JSON.stringify(s));
-      }
+      if (hasActive && !g.classList.contains('open')) this._openNavGroup(g, true);
     });
+    document.querySelectorAll('.side-btn[data-goto]').forEach(b => b.classList.toggle('active', b.dataset.goto === view));
 
     // Show target view
     const viewEl = document.getElementById(`view-${view}`);

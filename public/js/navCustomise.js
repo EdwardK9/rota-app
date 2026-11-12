@@ -165,9 +165,14 @@ const NavCustomise = {
          <button type="button" class="nav-edit-action nav-edit-save" data-nav-save>Save</button>
          <button type="button" class="nav-edit-action" data-nav-cancel>Cancel</button>
          <button type="button" class="nav-edit-action" data-nav-reset>Reset</button>`
-      : `<button type="button" class="nav-edit-action" data-nav-edit>✏️ Edit menu</button>`;
+      : '';   // not editing: the ✏️ in the footer's icon row starts it
+    const toggle = document.getElementById('navEditToggle');
+    if (toggle && !toggle._wired) {
+      toggle._wired = true;
+      toggle.addEventListener('click', () => (this._editing ? this.cancel() : this.startEditing()));
+    }
+    toggle?.classList.toggle('active', this._editing);
 
-    bar.querySelector('[data-nav-edit]')  ?.addEventListener('click', () => this.startEditing());
     bar.querySelector('[data-nav-new]')   ?.addEventListener('click', () => this.newGroup());
     bar.querySelector('[data-nav-save]')  ?.addEventListener('click', () => this.save());
     bar.querySelector('[data-nav-cancel]')?.addEventListener('click', () => this.cancel());

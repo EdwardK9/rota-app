@@ -82,6 +82,31 @@ const { startServer } = require('./helpers/server');
       const s = await page.evaluate(() => ({ view: App.currentView, closed: document.getElementById('qsOverlay').classList.contains('hidden') }));
       return s.view === 'money-clock' && s.closed ? '' : JSON.stringify(s);
     });
+    await ui('the menu opens from the tab bar, short, with one group open at a time', async () => {
+      await page.click('.tabbar-btn[data-action="menu"]');
+      await page.waitForTimeout(300);
+      if (!(await page.evaluate(() => document.getElementById('sidebar').classList.contains('open')))) return 'menu did not open';
+      const rows = await page.evaluate(() => document.querySelectorAll('.nav-links > li').length);
+      if (rows > 9) return `default menu has ${rows} top-level rows`;
+      for (const g of ['team', 'tools']) await page.click(`.nav-group[data-group="${g}"] .nav-group-header`);
+      const open = await page.evaluate(() => [...document.querySelectorAll('.nav-group.open')].map(g => g.dataset.group));
+      await page.click('.side-btn[data-goto="settings"]');
+      await page.waitForTimeout(400);
+      const s = await page.evaluate(() => ({ view: App.currentView, menuOpen: document.getElementById('sidebar').classList.contains('open') }));
+      return open.join() === 'tools' && s.view === 'settings' && !s.menuOpen ? '' : JSON.stringify({ open, ...s });
+    });
+    await ui('→ and T step the Shifts month', async () => {
+      await page.evaluate(() => App.navigate('shifts'));
+      await page.waitForTimeout(400);
+      const month = () => page.evaluate(() => ShiftsView.currentMonth);
+      const start = await month();
+      await page.keyboard.press('ArrowRight');
+      await page.waitForTimeout(300);
+      const next = await month();
+      await page.keyboard.press('t');
+      await page.waitForTimeout(300);
+      return next !== start && (await month()) === start ? '' : JSON.stringify({ start, next, back: await month() });
+    });
     await ui('Esc closes a dialog', async () => {
       await page.evaluate(() => Modal.open('Test', '<p>hello</p>'));
       await page.keyboard.press('Escape');

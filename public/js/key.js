@@ -146,6 +146,18 @@ const KeyView = {
         'Click any stat box at the top of the Audit page to filter the log to that action type; click again to clear.'),
     ];
 
+    // ── Shortcuts ──
+    const k = t => `<kbd class="key-kbd">${t}</kbd>`;
+    const shortcuts = [
+      this._row(`${k('Ctrl')} ${k('K')} &nbsp;or&nbsp; ${k('/')}`, 'Quick search',
+        'Jump to any page by name, including the ones inside Features, Extras and Analytics. Also the 🔎 button at the top of every page. On a Mac it is ⌘K.'),
+      this._row(`${k('←')} ${k('→')}`, 'Previous / next',
+        'Month on Shifts and Calendar, week on Team Calendar, leave year on Leave. On a phone, swipe the Calendar left or right.'),
+      this._row(k('T'), 'Today', 'Back to the current month or week on Shifts, Calendar and Team Calendar.'),
+      this._row(k('N'), 'New shift', 'Opens Add Shift on Shifts and Calendar.'),
+      this._row(k('Esc'), 'Close', 'Closes a dialog, the search box or the phone menu.'),
+    ];
+
     el.innerHTML = `
       <div class="page-header"><h1>🔑 Key</h1>
         <p style="color:var(--text-muted);margin-top:4px">What every colour, badge and symbol across the app means.</p>
@@ -157,6 +169,7 @@ const KeyView = {
       ${this._section('🗓️ Team Calendar', team)}
       ${this._section('📊 Reports', reports)}
       ${this._section('🔍 Audit Log', audit)}
+      ${this._section('⌨️ Shortcuts', shortcuts)}
     `;
   },
 };
