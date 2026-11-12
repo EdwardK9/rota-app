@@ -6,7 +6,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which the pinned Playwright (1.56)
+    # can't install Chromium on. Move back to -latest when Playwright is bumped.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         # 22 is what the Dockerfile uses; 18 is kept working for setups that
