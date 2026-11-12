@@ -481,14 +481,14 @@ const ShiftsView = {
              ${s.completed ? '✓' : ''}
            </button>`;
       return `
-        <tr class="${s.completed ? 'completed-row' : ''}${isBankHol ? ' bh-row' : ''}${isSick ? ' sick-row' : ''}" data-id="${s.id}">
+        <tr class="${s.completed ? 'completed-row' : ''}${isBankHol ? ' bh-row' : ''}${isSick ? ' sick-row' : ''} st-row st-${shiftType(s.start_time)}" data-id="${s.id}">
           <td style="width:36px">
             <input type="checkbox" class="shift-row-cb shift-cb-large" data-id="${s.id}" />
           </td>
           <td>${statusCell}</td>
           <td>
             <div class="shift-date">${fmtDate(s.date)}${isBankHol ? ' <span class="bh-badge" title="Bank Holiday">BH</span>' : ''}${isSick ? ' <span class="sick-tag">SICK</span>' : ''}</div>
-            <div class="shift-day">${fmtDayShort(s.date)}</div>
+            <div class="shift-day">${fmtDayShort(s.date)} ${shiftTypePill(s.start_time)}</div>
           </td>
           <td class="shift-time">${s.start_time}</td>
           <td class="shift-time">${s.end_time}</td>

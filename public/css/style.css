@@ -2,12 +2,16 @@
    CSS Variables & Reset
    ───────────────────────────────────────── */
 :root {
-  --primary: #FFD600;
-  --primary-dark: #E5B800;
-  --primary-text: #1A1A2E;
-  --sidebar-bg: #1B2A4A;
-  --sidebar-active: #FFD600;
-  --sidebar-hover: rgba(255,214,0,0.12);
+  /* Accent. --primary is a fill; --primary-text is the ink that sits ON that
+     fill. For accent-coloured text on the page itself use --accent-text.
+     --primary-rgb is the same colour as bare channels, for rgba() tints. */
+  --primary: #4F46E5;
+  --primary-dark: #4338CA;
+  --primary-text: #FFFFFF;
+  --primary-rgb: 79,70,229;
+  --sidebar-bg: #16182D;
+  --sidebar-active: var(--primary);
+  --sidebar-hover: rgba(255,255,255,0.07);
   --bg: #F0F2F5;
   --card-bg: #FFFFFF;
   --card-shadow: 0 1px 4px rgba(0,0,0,0.08);
@@ -276,7 +280,7 @@ td.actions { white-space: nowrap; }
 .btn-success { background: var(--success); color: #fff; }
 .btn-success:hover { opacity: 0.9; }
 
-.btn-warning { background: var(--warning); color: #1B2A4A; }
+.btn-warning { background: var(--warning); color: #1A1A2E; }
 .btn-warning:hover { opacity: 0.9; }
 
 .btn-danger { background: var(--danger); color: #fff; }
@@ -333,7 +337,7 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   outline: none; border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(255,214,0,0.15);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb),0.15);
 }
 
 textarea { resize: vertical; min-height: 72px; }
@@ -353,7 +357,7 @@ textarea { resize: vertical; min-height: 72px; }
 }
 .radio-label input { width: auto; }
 .radio-label:has(input:checked) {
-  border-color: var(--primary); background: rgba(255,214,0,0.1); font-weight: 600;
+  border-color: var(--primary); background: rgba(var(--primary-rgb),0.1); font-weight: 600;
 }
 
 /* ─────────────────────────────────────────
@@ -486,7 +490,7 @@ textarea { resize: vertical; min-height: 72px; }
   transition: all var(--transition); background: var(--bg);
 }
 .drop-zone:hover, .drop-zone.dragover {
-  border-color: var(--primary); background: rgba(255,214,0,0.05);
+  border-color: var(--primary); background: rgba(var(--primary-rgb),0.05);
 }
 .drop-zone-icon { font-size: 36px; margin-bottom: 10px; }
 .drop-zone-text { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
@@ -592,7 +596,7 @@ textarea { resize: vertical; min-height: 72px; }
   border-left: 3px solid var(--primary);
   padding-left: 10px;
   margin-left: -13px;
-  background: rgba(255,214,0,0.08);
+  background: rgba(var(--primary-rgb),0.08);
   border-radius: 0 6px 6px 0;
 }
 
@@ -912,9 +916,9 @@ textarea { resize: vertical; min-height: 72px; }
 }
 .import-tab:hover { color: var(--text); }
 .import-tab.active {
-  color: var(--primary-text);
+  color: var(--accent-text);
   border-bottom-color: var(--primary);
-  background: rgba(255,214,0,0.08);
+  background: rgba(var(--primary-rgb),0.08);
   font-weight: 600;
 }
 
@@ -970,15 +974,15 @@ textarea { resize: vertical; min-height: 72px; }
 
 .break-btn-label:hover {
   border-color: var(--primary);
-  background: rgba(255, 214, 0, 0.08);
+  background: rgba(var(--primary-rgb),0.08);
 }
 
 .break-btn-label.active,
 .break-btn-label:has(input:checked) {
   border-color: var(--primary);
-  background: rgba(255, 214, 0, 0.18);
+  background: rgba(var(--primary-rgb),0.18);
   font-weight: 700;
-  color: var(--primary-text);
+  color: var(--accent-text);
 }
 
 /* keyboard focus ring on the label when its radio is focused */
@@ -1087,7 +1091,7 @@ textarea { resize: vertical; min-height: 72px; }
 }
 
 .cal-cell:nth-child(7n) { border-right: none; }
-.cal-cell:hover { background: rgba(255,214,0,0.06); }
+.cal-cell:hover { background: rgba(var(--primary-rgb),0.06); }
 
 .cal-cell-empty {
   background: var(--bg);
@@ -1097,7 +1101,7 @@ textarea { resize: vertical; min-height: 72px; }
 .cal-cell-empty:hover { background: var(--bg); }
 
 .cal-cell-weekend { background: #F8FAFC; }
-.cal-cell-today   { background: rgba(255,214,0,0.07); }
+.cal-cell-today   { background: rgba(var(--primary-rgb),0.07); }
 
 .cal-cell-worked   { border-top: 3px solid var(--success); }
 .cal-cell-upcoming { border-top: 3px solid var(--info); }
@@ -1205,10 +1209,13 @@ textarea { resize: vertical; min-height: 72px; }
   --border: #2D3140;
   --text: #E8EAF0;
   --text-muted: #8B92A5;
-  --sidebar-bg: #111420;
-  --sidebar-hover: rgba(255,214,0,0.10);
+  --sidebar-bg: #0B0D14;
+  --sidebar-hover: rgba(255,255,255,0.06);
   --card-shadow: 0 1px 4px rgba(0,0,0,0.3);
-  --primary-text: #111420;
+  --primary: #818CF8;
+  --primary-dark: #6366F1;
+  --primary-text: #0E1016;
+  --primary-rgb: 129,140,248;
 }
 
 [data-theme="dark"] thead th { background: #1E2130; }
@@ -1229,7 +1236,7 @@ textarea { resize: vertical; min-height: 72px; }
 [data-theme="dark"] tbody tr.completed-row { background: rgba(16,185,129,0.06); }
 [data-theme="dark"] .cal-cell-weekend { background: rgba(255,255,255,0.02); }
 [data-theme="dark"] .cal-cell-empty   { background: rgba(255,255,255,0.01); }
-[data-theme="dark"] .cal-cell-today   { background: rgba(255,214,0,0.06); }
+[data-theme="dark"] .cal-cell-today   { background: rgba(var(--primary-rgb),0.06); }
 [data-theme="dark"] .cal-shift-done     { background: rgba(16,185,129,0.15); color: #6ee7b7; }
 [data-theme="dark"] .cal-shift-upcoming { background: rgba(59,130,246,0.15); color: #93c5fd; }
 [data-theme="dark"] .cal-day-num { color: #8B92A5; }
@@ -1305,10 +1312,10 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
   background: var(--primary);
 }
 
-.badge-primary { background: rgba(255,214,0,0.18); color: #92700a; }
+.badge-primary { background: rgba(var(--primary-rgb),0.12); color: var(--primary-dark); }
 .badge-default { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 
-[data-theme="dark"] .badge-primary { background: rgba(255,214,0,0.12); color: #FFD600; }
+[data-theme="dark"] .badge-primary { background: rgba(var(--primary-rgb),0.16); color: var(--primary); }
 
 /* ─────────────────────────────────────────
    Bulk action bar (multi-select shifts)

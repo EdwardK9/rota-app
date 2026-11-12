@@ -814,7 +814,7 @@ const ImportView = {
           const isHeader = r.rowNum === this.headerRow + 1;
           const isEnd    = this.endRow != null && r.rowNum === this.endRow;
           let rowStyle = '';
-          if (isHeader) rowStyle = 'background:rgba(255,214,0,0.15);font-weight:600';
+          if (isHeader) rowStyle = 'background:rgba(var(--primary-rgb),0.15);font-weight:600';
           if (isEnd)    rowStyle += ';border-bottom:2px solid var(--danger)';
           return `<tr data-rownum="${r.rowNum}" style="${rowStyle}">
             <td style="text-align:center;font-size:11px;color:var(--text-muted);${isHeader ? 'color:var(--accent-text);font-weight:700' : ''}">

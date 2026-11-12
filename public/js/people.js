@@ -142,7 +142,7 @@ const PeopleView = {
         { weekday:'long', day:'numeric', month:'long' });
 
       const cards = shifts.map((s, i) => `
-        <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;${i===0?'border-color:var(--primary);background:rgba(255,214,0,0.06)':''}">
+        <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;${i===0?'border-color:var(--primary);background:rgba(var(--primary-rgb),0.06)':''}">
           ${i===0 ? '<div style="font-size:11px;font-weight:700;color:var(--accent-text);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Next up</div>' : ''}
           <div style="font-weight:600;margin-bottom:6px">${fmtDate(s.date)}</div>
           <div style="display:flex;gap:20px;font-size:13px;color:var(--text-muted)">

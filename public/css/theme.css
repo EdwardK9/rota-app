@@ -1,0 +1,256 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Theme — loaded last.
+
+   The accent tokens themselves (--primary and friends) live at the top of
+   style.css; this file is everything built on top of them:
+     1. surfaces that are always dark (sidebar, calendar header, hero)
+     2. sidebar + topbar polish
+     3. shift-type colours (early / day / late)
+     4. quick search palette
+     5. phone tab bar
+     6. small motion + component polish
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --text: #14162B;
+  /* Shift types. Each has a solid swatch, a tint for fills and an ink that is
+     readable on that tint. */
+  --st-early: #F59E0B;  --st-early-tint: rgba(245,158,11,0.16);  --st-early-ink: #92400E;
+  --st-day:   #0EA5E9;  --st-day-tint:   rgba(14,165,233,0.14);  --st-day-ink:   #075985;
+  --st-late:  #8B5CF6;  --st-late-tint:  rgba(139,92,246,0.15);  --st-late-ink:  #5B21B6;
+  --tabbar-h: 58px;
+}
+[data-theme="dark"] {
+  --text: #E8EAF0;
+  --st-early-tint: rgba(245,158,11,0.18);  --st-early-ink: #FCD34D;
+  --st-day-tint:   rgba(14,165,233,0.18);  --st-day-ink:   #7DD3FC;
+  --st-late-tint:  rgba(139,92,246,0.22);  --st-late-ink:  #C4B5FD;
+}
+
+/* ── 1. Always-dark surfaces ─────────────────────────────────────────────────
+   These stay dark in light mode, so accent-coloured text inside them needs the
+   light tint of the accent rather than the fill colour. Re-pointing the tokens
+   here fixes every descendant at once. */
+.cal-day-headers,
+.dash-hero-top,
+.bulk-bar {
+  --primary: #C7D2FE;
+  --primary-dark: #A5B4FC;
+  --primary-text: #1E1B4B;
+  --primary-rgb: 199,210,254;
+}
+.dash-hero-top {
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(165,180,252,0.28), transparent 55%),
+    linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+}
+[data-theme="dark"] .dash-hero-top {
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(129,140,248,0.22), transparent 55%),
+    linear-gradient(135deg, #17163A 0%, #2A2772 100%);
+}
+
+/* ── 2. Sidebar + topbar ─────────────────────────────────────────────────── */
+.sidebar { border-right: 1px solid rgba(255,255,255,0.05); }
+.logo-icon {
+  width: 34px; height: 34px; border-radius: 10px;
+  display: grid; place-items: center; font-size: 17px;
+  background: linear-gradient(135deg, #6366F1, #4338CA);
+  box-shadow: 0 4px 12px rgba(79,70,229,0.4);
+}
+.logo-text { color: #fff; letter-spacing: 0.01em; }
+.nav-link, .nav-group-header { color: rgba(255,255,255,0.72); }
+.nav-link.active {
+  background: #4F46E5; color: #fff;
+  box-shadow: 0 4px 14px rgba(79,70,229,0.35);
+}
+[data-theme="dark"] .nav-link.active { background: #4F46E5; color: #fff; }
+.nav-group-header.child-active { color: #C7D2FE; }
+.nav-edit-action { color: rgba(255,255,255,0.8); }
+.nav-edit-action.nav-edit-save { background: #4F46E5; border-color: #4F46E5; color: #fff; }
+
+.topbar { gap: 12px; }
+.topbar-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar-search {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 10px 0 12px;
+  background: var(--surface-2); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 10px;
+  font: inherit; font-size: 13.5px; cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+}
+.topbar-search:hover { border-color: rgba(var(--primary-rgb),0.6); color: var(--text); }
+.topbar-search-icon { font-size: 13px; }
+.topbar-search-text { min-width: 110px; text-align: left; }
+.topbar-search-kbd, .qs-hint kbd {
+  font: inherit; font-size: 11px; font-weight: 600;
+  padding: 1px 6px; border-radius: 6px;
+  background: var(--card-bg); border: 1px solid var(--border); color: var(--text-muted);
+}
+@media (max-width: 768px) {
+  .topbar-search { width: 40px; height: 40px; padding: 0; justify-content: center; background: none; border-color: transparent; }
+  .topbar-search-text, .topbar-search-kbd { display: none; }
+  .topbar-search-icon { font-size: 17px; }
+}
+
+/* ── 3. Shift-type colours ───────────────────────────────────────────────── */
+.st-early { --st: var(--st-early); --st-tint: var(--st-early-tint); --st-ink: var(--st-early-ink); }
+.st-day   { --st: var(--st-day);   --st-tint: var(--st-day-tint);   --st-ink: var(--st-day-ink); }
+.st-late  { --st: var(--st-late);  --st-tint: var(--st-late-tint);  --st-ink: var(--st-late-ink); }
+
+.st-pill {
+  display: inline-block; vertical-align: 1px;
+  padding: 0 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; line-height: 16px;
+  background: var(--st-tint); color: var(--st-ink);
+}
+
+/* Calendar: upcoming shifts take their type colour; completed ones stay green
+   and keep the type as a stripe down the left edge. */
+.cal-shift-block { box-shadow: inset 3px 0 0 var(--st, transparent); }
+.cal-shift-upcoming[class*="st-"],
+[data-theme="dark"] .cal-shift-upcoming[class*="st-"] { background: var(--st-tint); color: var(--st-ink); }
+.cal-cell-upcoming { border-top-color: var(--primary); }
+.cal-cell-today { box-shadow: inset 0 0 0 2px rgba(var(--primary-rgb),0.45); }
+@media (max-width: 600px) {
+  .cal-shift-block { box-shadow: inset 2px 0 0 var(--st, transparent); }
+}
+
+/* Shifts list: stripe on the row (desktop table) or the card (phone). */
+#shiftsTable tbody tr.st-row > td:first-child { box-shadow: inset 3px 0 0 var(--st); }
+@media (max-width: 640px) {
+  #shiftsTable tbody tr.st-row { box-shadow: inset 4px 0 0 var(--st); padding-left: 12px; }
+  #shiftsTable tbody tr.st-row > td:first-child { box-shadow: none; }
+}
+
+/* Dashboard "Coming up": the date badge carries the colour. */
+.dash-date-badge[class*="st-"] { background: var(--st-tint); border-color: transparent; box-shadow: inset 0 3px 0 var(--st); }
+.dash-date-badge[class*="st-"] .dash-date-badge-dow { color: var(--st-ink); }
+
+/* ── 4. Quick search palette ─────────────────────────────────────────────── */
+.qs-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 12vh 16px 16px;
+  background: rgba(10,12,28,0.5);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+}
+.qs-panel {
+  width: 100%; max-width: 560px; max-height: min(70vh, 560px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--card-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.35);
+  animation: qsIn 0.14s ease;
+}
+@keyframes qsIn { from { transform: translateY(-8px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.qs-input, [data-theme="dark"] input.qs-input {
+  width: 100%; border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+  padding: 16px 18px; font: inherit; font-size: 16px;
+  background: transparent; color: var(--text); outline: none; box-shadow: none;
+}
+.qs-input:focus, .qs-input:focus-visible { box-shadow: none; border-color: var(--border); }
+.qs-list { overflow-y: auto; padding: 6px; overscroll-behavior: contain; }
+.qs-heading {
+  padding: 8px 12px 4px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+}
+.qs-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 12px; border-radius: 10px; cursor: pointer; font-size: 14.5px;
+}
+.qs-item.active { background: rgba(var(--primary-rgb),0.12); }
+.qs-icon { width: 22px; text-align: center; flex-shrink: 0; }
+.qs-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.qs-tag {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 1px 7px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+}
+.qs-empty { padding: 28px 16px; text-align: center; color: var(--text-muted); }
+.qs-hint {
+  display: flex; gap: 16px; padding: 8px 14px;
+  border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted);
+}
+.qs-hint kbd { margin-right: 3px; }
+@media (max-width: 600px) {
+  .qs-overlay { padding: calc(8px + env(safe-area-inset-top, 0px)) 8px 8px; }
+  .qs-panel { max-height: 70dvh; }
+  .qs-hint { display: none; }
+  .qs-item { padding: 11px 12px; }
+}
+
+/* ── 5. Phone tab bar ────────────────────────────────────────────────────── */
+.tabbar { display: none; }
+@media (max-width: 768px) {
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+    -webkit-backdrop-filter: saturate(160%) blur(12px); backdrop-filter: saturate(160%) blur(12px);
+    border-top: 1px solid var(--border);
+  }
+  .tabbar-btn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font: inherit; color: var(--text-muted);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tabbar-icon {
+    font-size: 19px; line-height: 1;
+    padding: 4px 16px; border-radius: 999px;
+    filter: grayscale(0.7); opacity: 0.75;
+    transition: background var(--transition), filter var(--transition), opacity var(--transition);
+  }
+  .tabbar-label { font-size: 10.5px; font-weight: 600; }
+  .tabbar-btn.active { color: var(--accent-text); }
+  .tabbar-btn.active .tabbar-icon { background: rgba(var(--primary-rgb),0.14); filter: none; opacity: 1; }
+  .tabbar-btn:active .tabbar-icon { background: rgba(var(--primary-rgb),0.2); }
+
+  /* Room for the bar under the last thing on every page, and under the menu. */
+  .main-content { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  .toast {
+    left: 12px; right: 12px; max-width: none; text-align: center;
+    bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+/* Nothing to navigate to while printing. */
+@media print { .tabbar, .topbar-search, .qs-overlay { display: none !important; } }
+
+/* ── 6. Motion + component polish ────────────────────────────────────────── */
+body.modal-open { overflow: hidden; }
+.modal-overlay { -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); background: rgba(10,12,28,0.5); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .view:not(.hidden) { animation: viewIn 0.18s ease both; }
+}
+/* Opacity only: a transform here would turn .view into the containing block
+   for any position:fixed element a page draws inside itself. */
+@keyframes viewIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+.btn-primary { box-shadow: 0 1px 2px rgba(var(--primary-rgb),0.35); }
+.btn-primary:hover { background: var(--primary-dark); }
+[data-theme="dark"] .btn-primary:hover { background: #A5B4FC; }
+.btn-ghost:hover { border-color: rgba(var(--primary-rgb),0.45); }
+
+.stat-card { border-radius: 14px; transition: border-color var(--transition), box-shadow var(--transition); }
+@media (hover: hover) {
+  .stat-card:hover { border-color: rgba(var(--primary-rgb),0.35); box-shadow: var(--shadow-md); }
+}
+.stat-value { letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stat-label { font-weight: 600; letter-spacing: 0.05em; font-size: 11.5px; }
+
+input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--primary); }
+::selection { background: rgba(var(--primary-rgb),0.25); }
+
+.toast { border-radius: 12px; background: #14162B; }
+[data-theme="dark"] .toast { background: #2A2E3F; }
+
+/* Thin, quiet scrollbars where the browser supports styling them. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text-muted) 45%, transparent) transparent; }
+.sidebar * { scrollbar-color: rgba(255,255,255,0.18) transparent; }

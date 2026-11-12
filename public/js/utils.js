@@ -95,6 +95,27 @@ function fmtMiles(val) {
   return Number(val).toFixed(1) + ' mi';
 }
 
+// Which part of the day a shift belongs to, from its start time — drives the
+// colour coding on the Calendar, Shifts list and Dashboard (amber / blue /
+// violet; the swatches are --st-early/-day/-late in theme.css).
+//   early: starts before 09:00 · day: starts 09:00–11:59 · late: starts 12:00+
+const SHIFT_TYPES = {
+  early: { label: 'Early', icon: '🌅' },
+  day:   { label: 'Day',   icon: '☀️' },
+  late:  { label: 'Late',  icon: '🌙' },
+};
+function shiftType(startTime) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(startTime || '');
+  if (!m) return 'day';
+  const mins = Number(m[1]) * 60 + Number(m[2]);
+  return mins < 9 * 60 ? 'early' : mins < 12 * 60 ? 'day' : 'late';
+}
+// Small coloured "Early / Day / Late" tag for a shift.
+function shiftTypePill(startTime) {
+  const t = shiftType(startTime);
+  return `<span class="st-pill st-${t}" title="${SHIFT_TYPES[t].label} shift">${SHIFT_TYPES[t].label}</span>`;
+}
+
 function diffClass(diff) {
   if (diff > 0.01) return 'diff-pos';
   if (diff < -0.01) return 'diff-neg';
@@ -180,14 +201,25 @@ function getCurrentYear() {
 
 // Modal helpers
 const Modal = {
+  _returnFocus: null,
+  isOpen() { return !document.getElementById('modalOverlay').classList.contains('hidden'); },
   open(title, bodyHtml) {
+    // Remember what was focused so keyboard users land back where they were.
+    if (!this.isOpen()) this._returnFocus = document.activeElement;
     document.getElementById('modalTitle').textContent = title;
     document.getElementById('modalBody').innerHTML = bodyHtml;
     document.getElementById('modalOverlay').classList.remove('hidden');
+    // The page behind shouldn't scroll while a dialog is up.
+    document.body.classList.add('modal-open');
+    document.getElementById('modal').scrollTop = 0;
   },
   close() {
     document.getElementById('modalOverlay').classList.add('hidden');
     document.getElementById('modalBody').innerHTML = '';
+    document.body.classList.remove('modal-open');
+    const el = this._returnFocus;
+    this._returnFocus = null;
+    if (el && el.isConnected && typeof el.focus === 'function') el.focus({ preventScroll: true });
   }
 };
 

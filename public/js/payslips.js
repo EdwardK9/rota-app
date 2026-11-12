@@ -1101,7 +1101,7 @@ const PayslipsView = {
 </div>
 
 <!-- ══════════════════════════════════════════════ PAYMENTS ══ -->
-<div class="section-label" style="margin:12px -20px 0;padding:6px 20px;background:var(--primary);color:#1B2A4A;font-weight:700;font-size:13px;letter-spacing:.05em">
+<div class="section-label" style="margin:12px -20px 0;padding:6px 20px;background:var(--primary);color:var(--primary-text);font-weight:700;font-size:13px;letter-spacing:.05em">
   PAYMENTS
 </div>
 
@@ -1285,7 +1285,7 @@ const PayslipsView = {
 </div>
 
 <!-- ══════════════════════════════════════════════ DEDUCTIONS ══ -->
-<div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:#1B2A4A;font-weight:700;font-size:13px;letter-spacing:.05em">
+<div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:var(--primary-text);font-weight:700;font-size:13px;letter-spacing:.05em">
   DEDUCTIONS
 </div>
 
@@ -1342,7 +1342,7 @@ const PayslipsView = {
 </div>
 
 <!-- ══════════════════════════════════════════════ TOTALS ══ -->
-<div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:#1B2A4A;font-weight:700;font-size:13px;letter-spacing:.05em">
+<div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:var(--primary-text);font-weight:700;font-size:13px;letter-spacing:.05em">
   TOTALS <span style="font-weight:400;font-size:11px;opacity:.8">(kept in step with the figures above until you type your own)</span>
 </div>
 <div style="padding:10px 0 0">
@@ -1375,7 +1375,7 @@ const PayslipsView = {
 </div>
 
 <!-- ══════════════════════════════════════════════ YTD ══ -->
-<div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:#1B2A4A;font-weight:700;font-size:13px;letter-spacing:.05em">
+<div class="section-label" style="margin:14px -20px 0;padding:6px 20px;background:var(--primary);color:var(--primary-text);font-weight:700;font-size:13px;letter-spacing:.05em">
   YEAR TO DATE (from payslip) <span style="font-weight:400;font-size:11px;opacity:.8">(kept in step until you type your own)</span>
 </div>
 <div style="padding:10px 0 0">
