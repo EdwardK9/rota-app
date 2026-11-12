@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-11-12T21:08:04.522Z",
-  "commit": "36993d5",
+  "generated_at": "2026-11-12T21:16:27.605Z",
+  "commit": "6ef7ab8",
   "entries": [
+    {
+      "version": "8.1.0",
+      "date": "2026-11-12",
+      "summary": "Phone layout pass: stats, both calendars, settings and date boxes",
+      "details": "Stat squares\n- On a phone the stat squares are all on screen, three across, instead of\n  a strip you had to scroll sideways to see the rest of. The Shifts page's\n  \"Breaks & distance\" fold works on phones too.\n\nCalendar\n- Under the month grid there is now a list of the month's shifts with the\n  time, hours, pay, early/day/late tag and any note. It starts at today,\n  with earlier shifts one tap away. Tap a row to edit that shift.\n- Add Shift is a floating button above the tab bar on Shifts and Calendar,\n  and the month and year pickers get the whole row.\n\nTeam Calendar\n- The toolbar is one tidy row: previous / next week, Today, Add Shift.\n  The year and month jumps, refresh, export and bulk deletes are behind\n  \"More\".\n- On a phone each person is one line (name, hours, time, edit, delete)\n  rather than wrapping onto two or three, and a row of day chips at the\n  top jumps straight to a day. A dot on a chip marks a coverage gap.\n- On a computer the small edit / delete buttons no longer sit on top of\n  the shift's end time; they appear when you hover the cell.\n\nSettings and forms\n- Settings: \"+ Add Schedule\" and \"+ Add Rate\" no longer cover the section\n  title on a phone. They show once the section is opened.\n- Date boxes: the calendar icon is inside the box at its right-hand end,\n  so it can no longer drop onto its own line underneath. Tap it to pick a\n  date.\n- Radio buttons and tick boxes that had ballooned into large blobs (for\n  example Export's date range) are normal size; Export's date-range\n  choices are tappable chips.\n- The grey \"secondary\" buttons (Copy, Generate token, Prev / Next and\n  others) were unstyled and showed as bright white in dark mode."
+    },
     {
       "version": "8.0.0",
       "date": "2026-11-12",
