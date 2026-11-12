@@ -31,6 +31,31 @@ const App = {
     return this._restReady;
   },
 
+  // Every view's display title: the fixed set below plus whatever the V3/V5
+  // views registered. Used for the topbar and by the quick-search palette.
+  titles() {
+    const titles = {
+      dashboard: '🏠 Dashboard', shifts: '📋 Shifts', calendar: '📅 Calendar', payslips: '💰 Payslips',
+      reports: '📊 Reports', import: '📥 Import Data', export: '📤 Export', leave: '🏖️ Leave Tracker',
+      notes: '📝 Notes', settings: '⚙️ Settings',
+      leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
+      notifications: '🔔 Notifications',
+      'team-calendar': '🗓️ Team Calendar', 'v2-hub': '🚀 V2.0 Features', 'changelog': '📜 What\'s New', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
+      'shift-heatmap': '🔥 Shift Heatmap', 'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
+      'streaks': '🏅 Streaks & Badges', 'wrapped': '🎁 Rota Wrapped',
+      'manage-people': '👤 Manage People',
+      'photo-library': '📷 Photo Library',
+      'insights': '🔍 Insights',
+      'whos-in': '🏪 Who\'s In Store',
+      'clock': '🕐 Clock In/Out',
+      'key': '🔑 Key'
+    };
+    // V3 / V5 views supply their own titles at registration time
+    if (typeof V3 !== 'undefined') Object.assign(titles, V3.titles);
+    if (typeof V5 !== 'undefined') Object.assign(titles, V5.titles);
+    return titles;
+  },
+
   async start() {
     // Start the opening view's data loading alongside settings rather than
     // after them — on a phone that's a whole round trip off the first paint.
@@ -41,16 +66,24 @@ const App = {
 
     // Dark mode — the saved preference is applied by an inline script in
     // <head> before first paint; this just wires the toggle.
+    // With no saved choice it follows the phone/computer's own light-dark
+    // setting (and keeps following it); tapping the toggle pins a choice.
+    const applyTheme = (dark) => {
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : '');
+      document.querySelector('#darkModeToggle .dark-mode-icon').textContent = dark ? '☀️' : '🌙';
+      document.querySelector('#darkModeToggle .nav-label').textContent = dark ? 'Light Mode' : 'Dark Mode';
+      // Browser / status-bar colour follows the topbar.
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0E1016' : '#16182D');
+    };
+    const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+    const savedDark = () => { try { return localStorage.getItem('darkMode'); } catch (e) { return null; } };
+    applyTheme(savedDark() === null ? systemDark.matches : savedDark() === 'true');
+    systemDark.addEventListener?.('change', e => { if (savedDark() === null) applyTheme(e.matches); });
     document.getElementById('darkModeToggle').addEventListener('click', () => {
-      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      document.documentElement.setAttribute('data-theme', isDark ? '' : 'dark');
-      localStorage.setItem('darkMode', !isDark);
-      document.querySelector('#darkModeToggle .dark-mode-icon').textContent = isDark ? '🌙' : '☀️';
+      const dark = document.documentElement.getAttribute('data-theme') !== 'dark';
+      applyTheme(dark);
+      localStorage.setItem('darkMode', dark);
     });
-    // Set correct icon on load
-    if (localStorage.getItem('darkMode') === 'true') {
-      document.querySelector('#darkModeToggle .dark-mode-icon').textContent = '☀️';
-    }
 
     // Hide Money — blurs every amount on screen until switched back off. The
     // attribute goes on <html> so it survives any view re-render: money is
@@ -180,6 +213,13 @@ const App = {
       if (e.target === document.getElementById('modalOverlay')) Modal.close();
     });
 
+    // Esc closes whatever is on top: the dialog first, then the phone menu.
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (Modal.isOpen()) { Modal.close(); return; }
+      if (document.getElementById('sidebar').classList.contains('open')) closeSidebar();
+    });
+
     // Keep the visible view in sync with browser Back/Forward. Those buttons
     // change window.location.hash directly (no navigate() call), so without
     // this listener the URL updates but the on-screen view never does.
@@ -264,27 +304,14 @@ const App = {
     viewEl.classList.remove('hidden');
 
     // Update topbar title
-    const titles = {
-      dashboard: '🏠 Dashboard', shifts: 'Shifts', calendar: 'Calendar', payslips: 'Payslips',
-      reports: 'Reports', import: 'Import Data', leave: 'Leave Tracker',
-      notes: 'Notes', settings: 'Settings',
-      leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
-      notifications: '🔔 Notifications',
-      'team-calendar': '🗓️ Team Calendar', 'v2-hub': '🚀 V2.0 Features', 'changelog': '📜 What\'s New', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
-      'shift-heatmap': '🔥 Shift Heatmap', 'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
-      'streaks': '🏅 Streaks & Badges', 'wrapped': '🎁 Rota Wrapped',
-      'manage-people': '👤 Manage People',
-      'photo-library': '📷 Photo Library',
-      'insights': '🔍 Insights',
-      'whos-in': '🏪 Who\'s In Store',
-      'clock': '🕐 Clock In/Out',
-      'key': '🔑 Key'
-    };
-    // V3 views supply their own titles at registration time
-    if (typeof V3 !== 'undefined') Object.assign(titles, V3.titles);
-    if (typeof V5 !== 'undefined') Object.assign(titles, V5.titles);
+    const titles = this.titles();
     document.getElementById('topbarTitle').textContent = titles[view] || view;
+    document.title = (titles[view] || view).replace(/^[^\w]+/, '') + ' · Rota Tracker';
+    // A different page starts at the top, not wherever the last one was
+    // scrolled to (a page refreshing itself keeps its place).
+    if (view !== this.currentView) window.scrollTo(0, 0);
     this.currentView = view;
+    document.dispatchEvent(new CustomEvent('app:navigate', { detail: { view } }));
 
     // Update URL hash
     window.location.hash = view;

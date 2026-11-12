@@ -63,7 +63,33 @@ function mountAssets(app) {
       return null;
     }
   })();
+  // Stylesheets get the same treatment: index.html links six of them, each one
+  // a render-blocking request before anything can paint. They're joined in
+  // their listed order (so the cascade is unchanged) into one file, with
+  // comments and indentation stripped. RAW_ASSETS=1 keeps them separate.
+  const CSS_TAG_RE = /[ \t]*<link rel="stylesheet" href="(\/css\/[^"?]+)(?:\?[^"]*)?"[^>]*>\r?\n?/g;
+  const CSS_BUNDLE_URL = '/css/app.css';
+  const _cssBundle = (() => {
+    if (process.env.RAW_ASSETS === '1') return null;
+    try {
+      const html = fs.readFileSync(INDEX_HTML, 'utf8');
+      const files = [...html.matchAll(CSS_TAG_RE)].map(m => m[1]);
+      if (files.length < 2) return null;
+      const css = files.map(f => {
+        const text = fs.readFileSync(path.join(__dirname, 'public', f), 'utf8');
+        // url(...) paths would need rebasing if a sheet ever used one; none do,
+        // and every sheet lives in /css/ alongside the bundle anyway.
+        return `/* ${f} */\n` + text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]+/gm, '').replace(/\n{2,}/g, '\n');
+      }).join('\n');
+      return { ...packBundle(css), count: files.length };
+    } catch (e) {
+      console.warn('[bundle] serving stylesheets unbundled:', e.message);
+      return null;
+    }
+  })();
+
   const kb = n => Math.round(n / 1024) + 'KB';
+  if (_cssBundle) console.log(`[bundle] css: ${_cssBundle.count} stylesheets → ${kb(_cssBundle.raw.length)} (${kb(_cssBundle.gz.length)} gzipped)`);
   if (_bundles) for (const [name, b] of Object.entries(_bundles)) {
     console.log(`[bundle] ${name}: ${b.count} scripts → ${kb(b.raw.length)} (${kb(b.gz.length)} gzipped)`);
   }
@@ -133,6 +159,7 @@ function mountAssets(app) {
     if (_bundles) for (const [name, url] of Object.entries(BUNDLE_URL)) {
       if (urlPath === url) return packageJson.version + '-' + _bundles[name].etag.slice(1, 9);
     }
+    if (_cssBundle && urlPath === CSS_BUNDLE_URL) return packageJson.version + '-' + _cssBundle.etag.slice(1, 9);
     const file = path.join(__dirname, 'public', urlPath);
     try {
       const mtime = fs.statSync(file).mtimeMs;
@@ -147,12 +174,13 @@ function mountAssets(app) {
     }
   }
 
-  app.get(Object.values(BUNDLE_URL), (req, res, next) => {
+  app.get([...Object.values(BUNDLE_URL), CSS_BUNDLE_URL], (req, res, next) => {
+    const isCss = req.path === CSS_BUNDLE_URL;
     const name = Object.keys(BUNDLE_URL).find(k => BUNDLE_URL[k] === req.path);
-    const bundle = _bundles && _bundles[name];
+    const bundle = isCss ? _cssBundle : (_bundles && _bundles[name]);
     if (!bundle) return next();
     res.set({
-      'Content-Type': 'application/javascript; charset=utf-8',
+      'Content-Type': isCss ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8',
       'Cache-Control': 'public, max-age=31536000, immutable',
       ETag: bundle.etag,
       Vary: 'Accept-Encoding',
@@ -179,6 +207,15 @@ function mountAssets(app) {
           return `  <script src="${BUNDLE_URL.core}?v=0" defer></script>\n`;
         });
         html = html.replace('</head>', `  <meta name="app-rest-bundle" content="${BUNDLE_URL.rest}?v=0" />\n</head>`);
+      }
+      if (_cssBundle) {
+        // One stylesheet link in place of the first; the others are dropped.
+        let firstCss = true;
+        html = html.replace(CSS_TAG_RE, () => {
+          if (!firstCss) return '';
+          firstCss = false;
+          return `  <link rel="stylesheet" href="${CSS_BUNDLE_URL}?v=0" />\n`;
+        });
       }
       res.set('Cache-Control', 'no-cache');
       res.type('html').send(html.replace(/(["'])(\/[^"'?]+)\?v=[\w.]+/g,

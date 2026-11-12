@@ -174,7 +174,7 @@
 .v3-bingo-cell.ticked .text { color: var(--text); font-weight: 600; }
 .v3-bingo-cell.winning {
   background: var(--primary); border-color: var(--primary-dark);
-  box-shadow: 0 0 0 2px rgba(255,214,0,0.35);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb),0.35);
 }
 .v3-bingo-cell.winning .text { color: var(--primary-text); }
 .v3-bingo-cell.free { background: rgba(59,130,246,0.12); border-color: var(--info); }

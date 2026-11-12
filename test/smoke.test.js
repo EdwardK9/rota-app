@@ -15,10 +15,12 @@ const { startServer } = require('./helpers/server');
   const server = await startServer();
   // The server minifies in the background; test what a phone would get.
   const deadline = Date.now() + 60000;
-  while (!/\[bundle\] minified/.test(server.log()) && Date.now() < deadline) {
+  // (one "[bundle] core minified" / "[bundle] rest minified" line each)
+  const bothMinified = () => /\[bundle\] core minified/.test(server.log()) && /\[bundle\] rest minified/.test(server.log());
+  while (!bothMinified() && Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 500));
   }
-  const minified = /\[bundle\] minified/.test(server.log());
+  const minified = bothMinified();
   console.log(minified ? '\nUsing the minified bundle.' : '\n(minified bundle not ready — testing the plain one)');
 
   let failures = 0;
@@ -55,6 +57,37 @@ const { startServer } = require('./helpers/server');
       if (problems.length) failures++;
       console.log(`  ${problems.length ? 'FAIL' : 'PASS'}  ${view}${problems.length ? '\n        ' + problems.join('\n        ') : ''}`);
     }
+    // The phone tab bar and the quick-search palette.
+    console.log('\nTab bar and quick search:\n');
+    const ui = async (label, fn) => {
+      let problem = '';
+      try { problem = (await fn()) || ''; } catch (e) { problem = e.message; }
+      if (problem) failures++;
+      console.log(`  ${problem ? 'FAIL' : 'PASS'}  ${label}${problem ? '\n        ' + problem : ''}`);
+    };
+    await ui('tab bar switches page and marks the tab', async () => {
+      await page.click('.tabbar-btn[data-view="calendar"]');
+      await page.waitForTimeout(400);
+      const s = await page.evaluate(() => ({ view: App.currentView, active: document.querySelector('.tabbar-btn.active')?.dataset.view }));
+      return s.view === 'calendar' && s.active === 'calendar' ? '' : JSON.stringify(s);
+    });
+    await ui('search finds a hub-only page and opens it', async () => {
+      await page.click('#topbarSearch');
+      await page.fill('#qsInput', 'money clock');
+      await page.waitForTimeout(300);
+      const first = await page.evaluate(() => document.querySelector('.qs-item.active .qs-name')?.textContent);
+      if (first !== 'Money Clock') return 'top result was ' + first;
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(400);
+      const s = await page.evaluate(() => ({ view: App.currentView, closed: document.getElementById('qsOverlay').classList.contains('hidden') }));
+      return s.view === 'money-clock' && s.closed ? '' : JSON.stringify(s);
+    });
+    await ui('Esc closes a dialog', async () => {
+      await page.evaluate(() => Modal.open('Test', '<p>hello</p>'));
+      await page.keyboard.press('Escape');
+      return (await page.evaluate(() => Modal.isOpen())) ? 'dialog still open' : '';
+    });
+
     // Opening a page other than the dashboard directly (a bookmark, a link, or
     // the back button after a reload): its code is in the second bundle, which
     // has to be fetched before the page can draw.

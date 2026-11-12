@@ -75,8 +75,16 @@ const fakeGemini = http.createServer((rq, rs) => {
       check(`${label} bundle loads`, b.status === 200 && b.body.includes(marker));
       check(`${label} bundle is cached as immutable`, /immutable/.test(b.headers.get('cache-control') || ''));
     }
-    const css = (page.body.match(/href="(\/css\/style\.css\?v=[^"]+)"/) || [])[1];
-    check('css carries a content-hash token', !!css && /\?v=[\w.]+-[0-9a-f]{8}$/.test(css), css);
+    const css = (page.body.match(/href="(\/css\/app\.css\?v=[^"]+)"/) || [])[1];
+    check('stylesheets are served as one bundle with a content-hash token',
+      !!css && /\?v=[\w.]+-[0-9a-f]{8}$/.test(css) && (page.body.match(/rel="stylesheet"/g) || []).length === 1, css);
+    if (css) {
+      const sheet = await req('GET', css);
+      check('css bundle loads, base rules first and the theme last',
+        sheet.status === 200 && /text\/css/.test(sheet.headers.get('content-type') || '')
+        && sheet.body.indexOf('/* /css/style.css */') === 0 && sheet.body.indexOf('/* /css/theme.css */') > sheet.body.indexOf('/* /css/mobile.css */'));
+      check('css bundle is cached as immutable', /immutable/.test(sheet.headers.get('cache-control') || ''));
+    }
     check('security headers set', page.headers.get('x-content-type-options') === 'nosniff');
 
     console.log('\nErrors come back as JSON:');

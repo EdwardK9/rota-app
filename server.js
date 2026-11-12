@@ -3182,7 +3182,7 @@ app.all(`${RG_PROXY_BASE}*`, (req, res) => {
           background:#1B2A4A;color:#fff;font-family:sans-serif;font-size:13px;
           padding:8px 16px;display:flex;align-items:center;gap:10px">
           <span>🔧 <strong>Rota App proxy</strong> — Log in below. Your session will be saved automatically.</span>
-          <a href="/" style="margin-left:auto;color:#FFD600;text-decoration:none;font-weight:700">← Back to Rota App</a>
+          <a href="/" style="margin-left:auto;color:#C7D2FE;text-decoration:none;font-weight:700">← Back to Rota App</a>
         </div>
         <div style="height:38px"></div>`;
         body = body.replace('<body', '<body').replace(/(<body[^>]*>)/i, `\$1${banner}`);

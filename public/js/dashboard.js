@@ -692,10 +692,10 @@ const DashboardView = {
       const dur = this._duration(s.start_time, s.end_time);
       return `
         <button type="button" class="dash-upcoming-row dash-upcoming-clickable" data-shift-id="${s.id ?? i}" title="Tap to see who you're working with">
-          <span class="dash-date-badge"><span class="dash-date-badge-dow">${dayShort}</span><span class="dash-date-badge-num">${d.getDate()}</span></span>
+          <span class="dash-date-badge st-${shiftType(s.start_time)}"><span class="dash-date-badge-dow">${dayShort}</span><span class="dash-date-badge-num">${d.getDate()}</span></span>
           <span class="dash-upcoming-main">
             <span class="dash-upcoming-time">${s.start_time} – ${s.end_time}</span>
-            <span class="dash-upcoming-date">${dateStr} · ${dur}</span>
+            <span class="dash-upcoming-date">${dateStr} · ${dur} ${shiftTypePill(s.start_time)}</span>
           </span>
           <span class="dash-upcoming-who" aria-hidden="true">👥 ›</span>
         </button>

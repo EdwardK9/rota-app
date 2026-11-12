@@ -2,19 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Screwfix Rota Tracker</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <!-- PWA: installable to a phone home screen -->
   <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="theme-color" content="#1B2A4A" />
+  <meta name="theme-color" content="#16182D" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Rota" />
   <script>
     // Applied before first paint so dark mode doesn't flash white while the app loads.
-    try { if (localStorage.getItem('darkMode') === 'true') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+    // No saved choice yet = follow the device's own light/dark setting.
+    try {
+      var dm = localStorage.getItem('darkMode');
+      if (dm === 'true' || (dm === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (e) {}
   </script>
   <link rel="stylesheet" href="/css/style.css?v=20260821a" />
   <!-- V3.0 feature styles — separate file so the whole feature set stays liftable -->
@@ -25,13 +29,15 @@
   <link rel="stylesheet" href="/css/refresh.css?v=1" />
   <!-- Phone layout pass (tables → cards, stat strips, timelines) -->
   <link rel="stylesheet" href="/css/mobile.css?v=1" />
+  <!-- Theme (indigo palette, shift-type colours, phone tab bar, quick search) — last, so it wins -->
+  <link rel="stylesheet" href="/css/theme.css?v=1" />
 </head>
 <body>
   <!-- Sidebar -->
   <nav class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo">
-        <span class="logo-icon">🔧</span>
+        <span class="logo-icon" aria-hidden="true">🔧</span>
         <span class="logo-text">Rota Tracker</span>
       </div>
       <button class="sidebar-toggle" id="sidebarToggle">&#9776;</button>
@@ -146,8 +152,14 @@
   <main class="main-content" id="mainContent">
     <!-- Top bar -->
     <div class="topbar">
-      <button class="topbar-menu-btn" id="topbarMenuBtn">&#9776;</button>
-      <h1 class="topbar-title" id="topbarTitle">Shifts</h1>
+      <button class="topbar-menu-btn" id="topbarMenuBtn" aria-label="Open menu">&#9776;</button>
+      <h1 class="topbar-title" id="topbarTitle">Dashboard</h1>
+      <!-- Quick search: jump to any page or action (also Ctrl/⌘+K, or "/") -->
+      <button class="topbar-search" id="topbarSearch" type="button" aria-label="Search pages and actions">
+        <span class="topbar-search-icon" aria-hidden="true">🔎</span>
+        <span class="topbar-search-text">Search…</span>
+        <kbd class="topbar-search-kbd">Ctrl K</kbd>
+      </button>
     </div>
 
     <!-- Views -->
@@ -224,17 +236,35 @@
 
   <!-- Modal -->
   <div class="modal-overlay hidden" id="modalOverlay">
-    <div class="modal" id="modal">
+    <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <h2 class="modal-title" id="modalTitle">Modal</h2>
-        <button class="modal-close" id="modalClose">&times;</button>
+        <button class="modal-close" id="modalClose" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body" id="modalBody"></div>
     </div>
   </div>
 
+  <!-- Phone tab bar: the four pages used every day, plus the full menu -->
+  <nav class="tabbar" id="tabbar" aria-label="Main">
+    <button type="button" class="tabbar-btn" data-view="dashboard"><span class="tabbar-icon" aria-hidden="true">🏠</span><span class="tabbar-label">Home</span></button>
+    <button type="button" class="tabbar-btn" data-view="shifts"><span class="tabbar-icon" aria-hidden="true">📋</span><span class="tabbar-label">Shifts</span></button>
+    <button type="button" class="tabbar-btn" data-view="calendar"><span class="tabbar-icon" aria-hidden="true">📅</span><span class="tabbar-label">Calendar</span></button>
+    <button type="button" class="tabbar-btn" data-view="clock"><span class="tabbar-icon" aria-hidden="true">🕐</span><span class="tabbar-label">Clock</span></button>
+    <button type="button" class="tabbar-btn" data-action="menu"><span class="tabbar-icon" aria-hidden="true">☰</span><span class="tabbar-label">Menu</span></button>
+  </nav>
+
+  <!-- Quick search palette (filled in by quickSearch.js) -->
+  <div class="qs-overlay hidden" id="qsOverlay">
+    <div class="qs-panel" role="dialog" aria-label="Search pages and actions">
+      <input type="search" class="qs-input" id="qsInput" placeholder="Jump to a page or action…" autocomplete="off" spellcheck="false" aria-controls="qsList" />
+      <div class="qs-list" id="qsList" role="listbox"></div>
+      <div class="qs-hint"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></div>
+    </div>
+  </div>
+
   <!-- Toast -->
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <!-- SheetJS (xlsx) is loaded lazily by utils.js's loadXlsxLib() only when the Import
        view actually needs to read a .xlsx file — it's 700KB+ and was previously fetched
@@ -331,6 +361,7 @@
 
   <script src="/js/navCustomise.js?v=20260902a" defer data-core></script>
   <script src="/js/dateInputs.js?v=20261106a" defer data-core></script>
+  <script src="/js/quickSearch.js?v=1" defer data-core></script>
   <script src="/js/app.js?v=20260821d" defer data-core></script>
 </body>
 </html>

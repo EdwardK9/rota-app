@@ -87,6 +87,18 @@
       el.dispatchEvent(new Event('change', { bubbles: true }));
     });
     el.after(btn, picker);
+
+    // A full-width input leaves no room beside it, so the button used to drop
+    // onto a line of its own underneath. When that happens, tuck it inside the
+    // input's right-hand end instead. (Inputs sitting in a row are left alone.)
+    requestAnimationFrame(() => {
+      if (!btn.isConnected || !el.offsetHeight) return;
+      if (btn.offsetTop < el.offsetTop + el.offsetHeight - 4) return;
+      btn.style.cssText += ';float:right;margin-right:6px;position:relative';
+      const wanted = el.offsetTop + (el.offsetHeight - btn.offsetHeight) / 2;
+      btn.style.marginTop = (wanted - btn.offsetTop) + 'px';
+      el.style.paddingRight = '36px';
+    });
   }
 
   function scan(root) {

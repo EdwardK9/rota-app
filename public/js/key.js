@@ -34,13 +34,21 @@ const KeyView = {
     // ── Calendar tab ──
     const calendar = [
       this._row(
-        `<div class="cal-shift-block cal-shift-done" style="width:120px"><div class="cal-shift-times">06:45 – 14:45</div><div class="cal-shift-meta"><span>8h</span><span class="cal-shift-pay">£80</span></div></div>`,
-        'Green shift — completed',
-        'A shift you have already worked (marked complete). The cell also gets a green top border.'),
+        `<div class="cal-shift-block cal-shift-upcoming st-early" style="width:120px"><div class="cal-shift-times">06:45 – 14:45</div><div class="cal-shift-meta"><span>8h</span></div></div>`,
+        'Amber shift — early',
+        'An upcoming shift that starts before 09:00. The same amber marks early shifts on the Shifts list and the Dashboard.'),
       this._row(
-        `<div class="cal-shift-block cal-shift-upcoming" style="width:120px"><div class="cal-shift-times">06:45 – 14:45</div><div class="cal-shift-meta"><span>8h</span></div></div>`,
-        'Blue shift — upcoming',
-        'A scheduled shift you have not worked yet. The cell gets a blue top border.'),
+        `<div class="cal-shift-block cal-shift-upcoming st-day" style="width:120px"><div class="cal-shift-times">09:00 – 18:00</div><div class="cal-shift-meta"><span>8.5h</span></div></div>`,
+        'Blue shift — day',
+        'An upcoming shift that starts between 09:00 and 11:59.'),
+      this._row(
+        `<div class="cal-shift-block cal-shift-upcoming st-late" style="width:120px"><div class="cal-shift-times">12:00 – 20:00</div><div class="cal-shift-meta"><span>7.5h</span></div></div>`,
+        'Violet shift — late',
+        'An upcoming shift that starts at 12:00 or later.'),
+      this._row(
+        `<div class="cal-shift-block cal-shift-done st-early" style="width:120px"><div class="cal-shift-times">06:45 – 14:45</div><div class="cal-shift-meta"><span>8h</span><span class="cal-shift-pay">£80</span></div></div>`,
+        'Green shift — completed',
+        'A shift you have already worked (marked complete). The cell also gets a green top border; the stripe on the left still shows whether it was an early, day or late.'),
       this._row(
         `<div style="background:#10B981;color:#111420;border-radius:5px;padding:4px 6px;font-size:11px;font-weight:600;display:inline-block">🌴 Annual Leave</div>`,
         'Green — annual leave',

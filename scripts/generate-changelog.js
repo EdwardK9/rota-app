@@ -44,7 +44,7 @@ const entries = raw.split('\x00')
     const m = lines[0].match(/^v(\d+\.\d+\.\d+):\s*(.+)$/);
     if (!m) return null;
     const details = lines.slice(1).join('\n')
-      .replace(/^Co-Authored-By:.*$/gim, '')
+      .replace(/^(Co-Authored-By|Claude-Session):.*$/gim, '')
       .trim();
     return { version: m[1], date, summary: m[2], details };
   })
