@@ -70,7 +70,10 @@ const V5Tracker = {
       };
     } catch (_) { /* keep the defaults — the server is the real gate anyway */ }
 
-    if (!this.config.analytics) return;
+    // The usage pages this used to feed (App Usage, Screen Time, Check Habits)
+    // are gone, so there is nothing to record visits for unless location
+    // tracking is on — the Clock Map is the only thing left that reads this.
+    if (!this.config.analytics || !this.config.location) return;
 
     this.event({ type: 'app_open', detail: this._launchMode() });
     if (this.config.location && this.config.locationOnOpen) {

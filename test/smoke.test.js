@@ -113,11 +113,23 @@ const { startServer } = require('./helpers/server');
       return (await page.evaluate(() => Modal.isOpen())) ? 'dialog still open' : '';
     });
 
+    await ui('an old link to a removed page lands on Features', async () => {
+      await page.evaluate(() => App.navigate('bingo'));
+      await page.waitForTimeout(400);
+      const s = await page.evaluate(() => ({ view: App.currentView, cards: document.querySelectorAll('#view-v3-hub .v3-hub-card').length }));
+      return s.view === 'v3-hub' && s.cards === 21 ? '' : JSON.stringify(s);
+    });
+    await ui('every Features card opens a page that exists', async () => {
+      const views = await page.evaluate(() => [...document.querySelectorAll('#view-v3-hub .v3-hub-card')].map(c => c.dataset.goto));
+      const missing = await page.evaluate(vs => vs.filter(v => !document.getElementById('view-' + v)), views);
+      return missing.length ? 'no page for: ' + missing.join(', ') : '';
+    });
+
     // Opening a page other than the dashboard directly (a bookmark, a link, or
     // the back button after a reload): its code is in the second bundle, which
     // has to be fetched before the page can draw.
     console.log('\nOpening pages directly, on a fresh load:\n');
-    for (const view of ['shifts', 'clock', 'money-clock', 'v5-hub']) {
+    for (const view of ['shifts', 'clock', 'money-clock', 'v3-hub', 'v5-locations']) {
       const fresh = await (await browser.newContext({ ...devices['Pixel 7'], timezoneId: 'Europe/London' })).newPage();
       const errs = [];
       fresh.on('pageerror', e => errs.push(e.message));

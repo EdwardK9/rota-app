@@ -73,51 +73,6 @@
 .v3-tile-value { font-size: 24px; font-weight: 800; margin-top: 5px; font-variant-numeric: tabular-nums; }
 .v3-tile-sub   { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
-/* ── Trophy Cabinet ─────────────────────────────────────────────────────── */
-.v3-trophy {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 12px; padding: 16px; position: relative; overflow: hidden;
-  transition: transform var(--transition), box-shadow var(--transition);
-}
-.v3-trophy:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
-.v3-trophy-icon { font-size: 34px; line-height: 1; }
-.v3-trophy-name { font-weight: 700; font-size: 14.5px; margin: 8px 0 4px; }
-.v3-trophy-desc { font-size: 12px; color: var(--text-muted); line-height: 1.45; min-height: 34px; }
-.v3-trophy-foot { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; display: flex; justify-content: space-between; gap: 8px; }
-
-.v3-trophy.locked { opacity: 0.62; }
-.v3-trophy.locked .v3-trophy-icon { filter: grayscale(1); }
-.v3-trophy.earned::before {
-  content: ''; position: absolute; inset: 0 auto 0 0; width: 4px;
-}
-.v3-trophy.earned.bronze::before   { background: #C2803B; }
-.v3-trophy.earned.silver::before   { background: #9CA3AF; }
-.v3-trophy.earned.gold::before     { background: #E0B012; }
-.v3-trophy.earned.platinum::before { background: linear-gradient(180deg, #7DD3FC, #C084FC); }
-
-/* Tier medals inside a trophy card — four across, so the whole ladder is
-   visible at a glance and it is obvious which rung you are on. */
-.v3-medals {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 2px;
-}
-.v3-medal {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 7px 2px; border-radius: 8px;
-  border: 1px solid var(--border); background: var(--bg);
-}
-.v3-medal-icon { font-size: 16px; line-height: 1; }
-.v3-medal-need {
-  font-size: 9.5px; font-weight: 600; color: var(--text-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
-}
-.v3-medal.locked  { opacity: 0.55; }
-.v3-medal.locked .v3-medal-icon { filter: grayscale(1); }
-.v3-medal.earned.bronze   { background: rgba(194,128,59,0.14); border-color: rgba(194,128,59,0.55); }
-.v3-medal.earned.silver   { background: rgba(148,163,184,0.16); border-color: rgba(148,163,184,0.6); }
-.v3-medal.earned.gold     { background: rgba(224,176,18,0.16);  border-color: rgba(224,176,18,0.6); }
-.v3-medal.earned.platinum { background: rgba(168,132,252,0.16); border-color: rgba(168,132,252,0.6); }
-.v3-medal.earned .v3-medal-need { color: var(--text); }
-
 /* ── Record Book ────────────────────────────────────────────────────────── */
 .v3-record {
   display: flex; align-items: center; gap: 14px; padding: 13px 16px;
@@ -133,71 +88,6 @@
 /* Tied records expand to show every date sharing the best score */
 .v3-record.expandable { cursor: pointer; }
 .v3-record.expandable:hover { background: var(--bg); }
-.v3-record-chev { color: var(--text-muted); font-size: 12px; width: 14px; text-align: center; flex-shrink: 0; }
-.v3-count-badge {
-  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
-  font-size: 10.5px; font-weight: 700;
-  background: var(--primary); color: var(--primary-text);
-}
-.v3-record-list { background: var(--bg); border-bottom: 1px solid var(--border); }
-.v3-record-list-item {
-  display: flex; justify-content: space-between; gap: 12px;
-  padding: 7px 16px 7px 62px; font-size: 12.5px;
-  border-bottom: 1px solid var(--border);
-}
-.v3-record-list-item:last-child { border-bottom: none; }
-
-/* ── Shift DNA traits ───────────────────────────────────────────────────── */
-.v3-trait { margin-bottom: 14px; }
-.v3-trait-head {
-  display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 13px; margin-bottom: 5px;
-}
-.v3-trait-score { font-weight: 700; font-variant-numeric: tabular-nums; }
-
-/* ── Rota Bingo ─────────────────────────────────────────────────────────── */
-.v3-bingo {
-  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
-  max-width: 620px;
-}
-.v3-bingo-cell {
-  aspect-ratio: 1; border: 1px solid var(--border); border-radius: 10px;
-  background: var(--card-bg); padding: 6px 4px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; gap: 3px; transition: all var(--transition);
-}
-.v3-bingo-cell .icon { font-size: 19px; line-height: 1; }
-.v3-bingo-cell .text { font-size: 9.5px; line-height: 1.2; color: var(--text-muted); }
-.v3-bingo-cell.ticked {
-  background: rgba(16,185,129,0.12); border-color: var(--success);
-}
-.v3-bingo-cell.ticked .text { color: var(--text); font-weight: 600; }
-.v3-bingo-cell.winning {
-  background: var(--primary); border-color: var(--primary-dark);
-  box-shadow: 0 0 0 2px rgba(var(--primary-rgb),0.35);
-}
-.v3-bingo-cell.winning .text { color: var(--primary-text); }
-.v3-bingo-cell.free { background: rgba(59,130,246,0.12); border-color: var(--info); }
-/* Squares that need pay/clock/leave data this app doesn't track for
-   colleagues — shown, not hidden, so it's visible that they genuinely can't
-   tick rather than looking like an unlucky week. */
-.v3-bingo-cell.v3-bingo-blind { opacity: 0.4; }
-.v3-bingo-cell.v3-bingo-blind .text { text-decoration: line-through; text-decoration-color: var(--text-muted); }
-
-/* ── Countdown Board ────────────────────────────────────────────────────── */
-.v3-countdown {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 12px; padding: 16px; display: flex; gap: 14px; align-items: flex-start;
-}
-.v3-countdown-icon  { font-size: 26px; line-height: 1; flex-shrink: 0; }
-.v3-countdown-title { font-weight: 700; font-size: 14px; }
-.v3-countdown-clock {
-  font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
-  margin: 4px 0 2px; color: var(--primary-dark);
-}
-.v3-countdown-detail { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
-.v3-countdown.imminent .v3-countdown-clock { color: var(--success); }
-.v3-countdown.past .v3-countdown-clock { color: var(--text-muted); }
 
 /* ── Bar chart (Commute Cost, Break Debt, Balance trend) ────────────────── */
 .v3-chart {
@@ -251,29 +141,6 @@
   height: 22px; pointer-events: none;
   background: linear-gradient(to top, var(--sidebar-bg), rgba(0, 0, 0, 0));
 }
-
-/* ── Head to Head ───────────────────────────────────────────────────────── */
-.v3-h2h-row { margin-bottom: 12px; }
-.v3-h2h-label { font-size: 12.5px; color: var(--text-muted); margin-bottom: 4px; }
-.v3-h2h-bars { display: flex; align-items: center; gap: 8px; }
-.v3-h2h-value {
-  font-size: 13px; font-weight: 600; min-width: 56px; font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-.v3-h2h-value:first-child { text-align: right; }
-.v3-h2h-value.winner { color: var(--text); font-weight: 800; }
-.v3-h2h-track {
-  flex: 1; display: flex; height: 10px; border-radius: 999px; overflow: hidden;
-  border: 1px solid var(--border); background: var(--bg);
-}
-.v3-h2h-fill { height: 100%; transition: width 0.5s ease; }
-.v3-h2h-fill.mine   { background: var(--primary); }
-.v3-h2h-fill.theirs { background: var(--info); }
-
-/* ── Hour histogram (Shift DNA) ─────────────────────────────────────────── */
-.v3-hours { display: flex; align-items: flex-end; gap: 2px; height: 90px; }
-.v3-hour-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
-.v3-hour-bar { width: 100%; background: var(--primary); border-radius: 3px 3px 0 0; min-height: 2px; }
 
 /* ── Day strip (Leave Optimiser, Rota Crystal Ball) ─────────────────────────
    One small box per date. Colour carries the meaning, a dashed border marks a
@@ -335,20 +202,5 @@
   .v3-person { padding: 11px 12px; gap: 10px; }
   .v3-person-score { width: 40px; height: 40px; font-size: 13.5px; }
   .v3-hero-value { font-size: 34px; }
-  .v3-bingo { gap: 5px; }
-  .v3-bingo-cell { border-radius: 8px; padding: 3px 2px; }
-  .v3-bingo-cell .icon { font-size: 15px; }
-  .v3-bingo-cell .text { font-size: 7.5px; }
   .v3-record { padding: 11px 12px; gap: 10px; }
 }
-
-/* ── Dark mode touch-ups ────────────────────────────────────────────────── */
-[data-theme="dark"] .v3-bingo-cell.ticked { background: rgba(16,185,129,0.16); }
-[data-theme="dark"] .v3-bingo-cell.free   { background: rgba(59,130,246,0.16); }
-[data-theme="dark"] .v3-countdown-clock   { color: var(--primary); }
-[data-theme="dark"] .v3-medal { background: rgba(255,255,255,0.03); }
-[data-theme="dark"] .v3-medal.earned.bronze   { background: rgba(194,128,59,0.2); }
-[data-theme="dark"] .v3-medal.earned.silver   { background: rgba(148,163,184,0.22); }
-[data-theme="dark"] .v3-medal.earned.gold     { background: rgba(224,176,18,0.22); }
-[data-theme="dark"] .v3-medal.earned.platinum { background: rgba(168,132,252,0.22); }
-[data-theme="dark"] .v3-trophy:hover      { box-shadow: 0 6px 16px rgba(0,0,0,0.4); }

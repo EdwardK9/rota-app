@@ -1,31 +1,43 @@
-/* ─── ✨ All V3 Features (V3.0) ────────────────────────────────────────────
-   A landing page listing every V3 feature as a card you can click straight
-   into, driven by /api/v3/features so it can never drift from what actually
-   exists.
-
-   It earns its place because the sidebar cannot show eighteen items at once on
-   a normal screen — the group scrolls, and everything past the tenth or so is
-   invisible unless you know to look for it. This is the index that makes the
-   whole set discoverable in one glance.
+/* ─── ✨ Features ──────────────────────────────────────────────────────────
+   The one index page for everything that isn't in the sidebar: the /api/v3
+   feature list (so it can't drift from what the server actually has) plus the
+   handful of older pages listed in EXTRAS below. Each card opens its page.
    ───────────────────────────────────────────────────────────────────────── */
 
-V3.register('v3-hub', '✨ All V3 Features', {
+V3.register('v3-hub', '✨ Features', {
   features: null,
   filter: '',
 
+  /* Pages that have no /api/v3/features entry of their own: the older extras
+     and the Clock Map. Listed here so there is one Features page rather than a
+     hub per generation of the app. */
+  EXTRAS: [
+    { view: 'what-if',       icon: '🧮', name: 'What If?',
+      blurb: 'Try a different rate, hours or shift pattern and see what it does to your pay.' },
+    { view: 'weather',       icon: '🌤️', name: 'Weather',
+      blurb: 'The forecast for your commute and upcoming shifts.' },
+    { view: 'team-metrics',  icon: '💷', name: 'Team Metrics',
+      blurb: 'Hours and estimated pay across the team, week by week.' },
+    { view: 'fatigue-audit', icon: '🩺', name: 'Fatigue Audit',
+      blurb: 'Close-then-open turnarounds, long runs without a day off and overtime alerts for the team.' },
+    { view: 'v5-locations',  icon: '📍', name: 'Clock Map',
+      blurb: 'Where you were when you clocked in and out — off by default.' },
+    { view: 'v5-privacy',    icon: '🔒', name: 'Data & Privacy',
+      blurb: 'What location data is stored, the switches to stop it, and a button to delete it.' },
+  ],
+
   /* Grouping is presentational only — the server list stays a flat registry. */
   GROUPS: [
-    { key: 'money',  label: '💷 Money',        views: ['money-clock', 'forecast', 'pay-audit', 'tax-check', 'overtime', 'pay-rises', 'goals', 'savings', 'commute-cost', 'break-debt'] },
-    { key: 'stats',  label: '📊 Stats & records', views: ['records', 'trophies', 'shift-dna', 'annoying-shifts', 'balance', 'year-numbers', 'head-to-head'] },
-    { key: 'daily',  label: '🗓️ Day to day',   views: ['briefing', 'countdowns', 'crystal-ball', 'leave-planner', 'cover-finder'] },
-    { key: 'fun',    label: '🎉 For fun',      views: ['on-this-day', 'bingo', 'did-you-know'] },
-    { key: 'upkeep', label: '🔧 Upkeep',       views: ['health-check'] },
+    { key: 'money',  label: '💷 Money',      views: ['money-clock', 'forecast', 'pay-audit', 'tax-check', 'overtime', 'pay-rises', 'what-if', 'goals', 'savings', 'commute-cost', 'break-debt'] },
+    { key: 'rota',   label: '🗓️ Rota',       views: ['annoying-shifts', 'year-numbers', 'leave-planner', 'cover-finder', 'weather'] },
+    { key: 'team',   label: '👥 Team',       views: ['team-metrics', 'fatigue-audit'] },
+    { key: 'upkeep', label: '🔧 Upkeep',     views: ['health-check', 'v5-locations', 'v5-privacy'] },
   ],
 
   async init() {
     document.getElementById('view-v3-hub').innerHTML = V3.loading('Gathering the features…');
     try {
-      this.features = (await V3.api.features()).features;
+      this.features = [...(await V3.api.features()).features, ...this.EXTRAS];
       this.render();
     } catch (e) {
       document.getElementById('view-v3-hub').innerHTML = V3.error(e);
@@ -50,17 +62,8 @@ V3.register('v3-hub', '✨ All V3 Features', {
     const visible = this.features.filter(matches).length;
 
     el.innerHTML = `
-      <div class="v3-hero" style="background:linear-gradient(135deg,#8B5CF6,#4C1D95)">
-        <div class="v3-hero-label">V3.0 FEATURES</div>
-        <div class="v3-hero-value">${this.features.length}</div>
-        <div class="v3-hero-sub">
-          extra views, all built from data the app already holds. Tap any card to jump straight in,
-          and use <strong>✨ V3.0 Features</strong> in the sidebar to come back here.
-        </div>
-      </div>
-
       <div class="toolbar">
-        <input type="search" id="hubSearch" placeholder="Search features…"
+        <input type="search" id="hubSearch" placeholder="Search features…" aria-label="Search features"
                value="${esc(this.filter)}" style="max-width:280px" />
         ${q ? `<span class="v3-muted" style="align-self:center">${visible} of ${this.features.length}</span>` : ''}
       </div>

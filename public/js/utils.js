@@ -295,7 +295,7 @@ const BankHols = {
 // Link back to the V2.0 hub, meant to sit at the top of every V2.0 feature
 // page — same idea as V3.backButton() in v3core.js, just for the older set.
 function v2BackButton() {
-  return `<button class="btn btn-ghost btn-sm v3-back-btn" onclick="App.navigate('v2-hub')">← All V2.0 Features</button>`;
+  return `<button class="btn btn-ghost btn-sm v3-back-btn" onclick="App.navigate('v3-hub')">← All features</button>`;
 }
 
 // Escape HTML

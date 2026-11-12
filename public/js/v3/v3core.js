@@ -24,47 +24,24 @@ const V3 = {
   api: {
     features:     ()          => API.get('/api/v3/features'),
     moneyClock:   ()          => API.get('/api/v3/money-clock'),
-    trophies:     ()          => API.get('/api/v3/trophies'),
-    records:      (person)    => API.get('/api/v3/records' + (person && person !== 'me' ? '?person=' + encodeURIComponent(person) : '')),
     forecast:     (taxYear, basis) => API.get('/api/v3/forecast?' + new URLSearchParams({
                                        ...(taxYear ? { tax_year: taxYear } : {}),
                                        ...(basis ? { basis } : {}),
                                      })),
-    shiftDna:     (year, person) => API.get('/api/v3/shift-dna?' + new URLSearchParams({
-                                      year: year || 'all', person: person || 'me',
-                                    })),
-    dnaPeople:    ()          => API.get('/api/v3/shift-dna/people'),
     annoyingShifts: (year, person) => API.get('/api/v3/annoying-shifts?' + new URLSearchParams({
                                         year: year || 'all', person: person || 'me',
                                       })),
-    balance:      (weeks)     => API.get('/api/v3/balance?weeks=' + encodeURIComponent(weeks || 12)),
     commuteCost:  (year)      => API.get('/api/v3/commute-cost?year=' + encodeURIComponent(year || 'all')),
     saveCommuteSettings: (d)  => API.post('/api/v3/commute-cost/settings', d),
-    onThisDay:    (date, match) => API.get('/api/v3/on-this-day?' + new URLSearchParams({
-                                     ...(date ? { date } : {}),
-                                     ...(match ? { match } : {}),
-                                   })),
     breakDebt:    (year)      => API.get('/api/v3/break-debt?year=' + encodeURIComponent(year || 'all')),
-    bingo:        (week, person) => API.get('/api/v3/bingo?' + new URLSearchParams({
-                                     ...(week ? { week } : {}), ...(person && person !== 'me' ? { person } : {}),
-                                   })),
-    bingoAllTime: ()          => API.get('/api/v3/bingo/all-time'),
-    countdowns:   ()          => API.get('/api/v3/countdowns'),
-    briefing:     (date)      => API.get('/api/v3/briefing' + (date ? '?date=' + date : '')),
     overtime:     (year)      => API.get('/api/v3/overtime?year=' + encodeURIComponent(year || 'all')),
     payRises:     ()          => API.get('/api/v3/pay-rises'),
-    headToHead:   (colleague, year) => API.get('/api/v3/head-to-head?' + new URLSearchParams({
-                                        colleague, year: year || 'all',
-                                      })),
     yearInNumbers:()          => API.get('/api/v3/year-in-numbers'),
-    didYouKnow:   (seed)      => API.get('/api/v3/did-you-know' + (seed ? '?seed=' + seed : '')),
-    didYouKnowAI: (not)       => API.get('/api/v3/did-you-know/ai' + (not ? '?not=' + encodeURIComponent(not) : '')),
     leavePlanner: (to, maxSpan) => API.get('/api/v3/leave-planner?' + new URLSearchParams({
                                      ...(to ? { to } : {}),
                                      ...(maxSpan ? { max_span: maxSpan } : {}),
                                    })),
     coverFinder:  (date)      => API.get('/api/v3/cover-finder' + (date ? '?date=' + date : '')),
-    crystalBall:  (week)      => API.get('/api/v3/crystal-ball' + (week ? '?week=' + week : '')),
     payAudit:     (taxYear)   => API.get('/api/v3/pay-audit' + (taxYear ? '?tax_year=' + taxYear : '')),
     taxCheck:     (taxYear)   => API.get('/api/v3/tax-check' + (taxYear ? '?tax_year=' + taxYear : '')),
     healthCheck:  ()          => API.get('/api/v3/health-check'),
@@ -82,7 +59,7 @@ const V3 = {
 
   /** Link back to the V3 hub, meant to sit at the top of every feature page. */
   backButton() {
-    return `<button class="btn btn-ghost btn-sm v3-back-btn" onclick="App.navigate('v3-hub')">← All V3 Features</button>`;
+    return `<button class="btn btn-ghost btn-sm v3-back-btn" onclick="App.navigate('v3-hub')">← All features</button>`;
   },
 
   loading(text = 'Loading…') {

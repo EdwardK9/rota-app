@@ -23,12 +23,6 @@ require('./schema');   // create V5-owned tables before any route can hit them
 const router = express.Router();
 
 const FEATURES = [
-  { view: 'v5-usage',     icon: '📈', name: 'App Usage',       module: './usage',
-    blurb: 'Opens, session lengths, the hours you reach for it and the days you skip.' },
-  { view: 'v5-screens',   icon: '🧭', name: 'Screen Time',     module: './screens',
-    blurb: 'Which screens you actually use, how long you linger, and the paths between them.' },
-  { view: 'v5-habits',    icon: '🔁', name: 'Check Habits',    module: './habits',
-    blurb: 'How far ahead you check your shifts, and whether you look on the morning.' },
   { view: 'v5-locations', icon: '📍', name: 'Clock Map',       module: './locations',
     blurb: 'Where you were when you clocked in and out — off by default.' },
   { view: 'v5-privacy',   icon: '🔒', name: 'Data & Privacy',  module: './privacy',

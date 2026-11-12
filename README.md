@@ -488,36 +488,35 @@ The app can send push notifications to your phone using [ntfy](https://ntfy.sh) 
 
 ### V3.0 Features
 
-Twenty-four extra views under the **✨ V3.0 Features** section of the sidebar. They are all
-read-only lenses on data the app already holds — apart from the Goal Tracker, none of
-them ask you to enter anything new, and nothing here changes an existing shift.
+Extra views on the **✨ Features** page (in the sidebar, or find any of them with quick
+search — Ctrl/⌘+K). They are read-only lenses on data the app already holds — apart from
+the Goal Tracker and Savings, none of them ask you to enter anything new, and nothing here
+changes an existing shift.
+
+The Features page also lists the older extras that are still around (What If?, Weather,
+Team Metrics, Fatigue Audit) and the Clock Map with its Data & Privacy page.
+
+> **Trimmed in 8.0.** The novelty and self-analytics pages were removed: Trophy Cabinet,
+> Record Book, Shift DNA, Work-Life Balance, On This Day, Rota Bingo, Countdown Board,
+> Shift Briefing, Head to Head, Did You Know, Rota Crystal Ball, Synergy Score, Shift
+> Heatmap, Streaks & Badges, Rota Wrapped, and the App Usage / Screen Time / Check Habits
+> analytics. Their database tables are left in place, so nothing you entered is deleted.
 
 | Feature | What it does |
 |---------|--------------|
 | 💸 **Money Clock** | Live earnings ticker for the shift you're currently on, plus today/week/month/year/lifetime totals and a countdown to payday (inferred from your real payslip dates). |
-| ⏳ **Countdown Board** | Next shift, home time, next day off, payday, booked leave, bank holiday, birthdays and work anniversary — all ticking live on one board. |
 | 🎯 **Goal Tracker** | Set a money, hours or shifts target. Tracks progress from real shifts, projects a finish date from your actual pace, and tells you whether the rota you've already got booked gets you there. |
 | 🔮 **Pay Forecast** | Projects the tax year to 5 April — gross, income tax, NI and take-home — built from banked payslips, worked-but-unpaid shifts, booked rota and a contracted-hours estimate for the rest. Includes your "tax freedom day". |
-| 🏆 **Trophy Cabinet** | 31 achievements that unlock automatically from your history, across four rarity tiers, with progress bars on the locked ones. |
-| 📖 **Record Book** | Personal bests: longest shift, earliest start, latest finish, biggest week, biggest payslip, longest run of days worked, and lifetime totals. |
-| 🧬 **Shift DNA** | Six traits scored from the shape of your rota (Early Bird, Night Owl, Endurance, Consistency, Variety, Sociability) resolving to an archetype like "The Closer" or "The Weekend Warrior". |
-| ⚖️ **Work-Life Balance** | A 0–100 sustainability score over the last N weeks, broken into rest days, weekends off, turnaround time, breaks and longest run — plus an hours-vs-contract trend. |
 | ☕ **Break Debt** | Pay always deducts the *scheduled* break, so any break you skipped is unpaid time. This totals those minutes, prices them, and tracks whether it's getting better or worse. |
 | ⛽ **Commute Cost** | Fuel, wear and parking for the drive to work, and how many minutes of every shift you work purely to cover it. Car settings live in the view itself. |
-| 📼 **On This Day** | What you were doing on this date in previous years — the shift, the crew, the pay, any note — plus milestones landing today. |
-| 🎒 **Shift Briefing** | Your next shift on one card: who's on with you, what it pays, the turnaround from your last shift, whether it's a delivery day, and how that exact slot has usually gone. |
 | ⏰ **Overtime Tracker** | Hours above (or below) contract per week, what the extra is worth, and what share of your pay depends on shifts you were never contracted to do. |
 | 📈 **Pay Rise History** | Every rate change with its percentage, the gap since the last one, what each was worth per week, and how you sit against the National Living Wage. |
-| 🥊 **Head to Head** | Your rota against one colleague's, measured like for like, plus how much time you've actually spent on the floor together. |
 | 📊 **Year in Numbers** | Every year side by side with the change on the year before. The current year is compared on its projection, not its part-year total. |
-| 💡 **Did You Know** | Oddball facts dug out of your own data — the day you've never worked, who you've only ever shared a Tuesday with, your mileage in laps of the M25. |
-| 🎲 **Rota Bingo** | A 5×5 card for the week whose squares tick themselves from real shifts. The card is dealt from the week's date, so it's the same card every time you look at that week. |
 | 🏖️ **Leave Optimiser** | Ranks possible leave bookings by how many days off each one actually buys — a day that bridges two rest weekends is worth several. Reads the published rota where it exists and your own weekday pattern past that, labelling which is which, and flags a bank holiday you'd be giving up double pay on. |
 | 🔁 **Cover Finder** | Pick a shift and see who could realistically take it, in the order worth asking: free that day, works that slot anyway, has room under their contract, still active on the rota. Every score shows its reasoning, and it also finds shifts of theirs you could take in exchange. |
 | 🧾 **Pay Audit** | Hours worked against hours paid, as running totals from the start of the tax year so the month-in-arrears timing can't hide a gap. Models the real pay rules — fixed monthly basic, extra hours counted per week — and carries a margin, so only a shortfall that clears it is called one. |
 | 💷 **Tax Check** | Every payslip against what cumulative PAYE should have deducted, plus NI checked per period. Works the allowance back out of the deductions to say what tax code they imply, which is how an emergency code shows itself. Not tax advice. |
 | 🩺 **Data Doctor** | Thirteen integrity checks in one pass: duplicate shifts, bank holidays left unflagged and paying single time, weeks that never imported, hours left stale by an edit, clock records that don't match the rota. Read-only — it points, the existing tools fix. |
-| 🔮 **Rota Crystal Ball** | Projects a week the rota hasn't reached yet — which days, which half of the day, roughly what hours and pay. Backtested on six months of real weeks and reported next to what you'd score by just assuming you work every day (70% vs 58% on the author's data). |
 
 **Where the code lives.** V3 is deliberately self-contained so it can be changed or removed
 without disturbing the rest of the app:
@@ -526,7 +525,6 @@ without disturbing the rest of the app:
 v3/                    server: one router per feature, mounted at /api/v3
   index.js             mounts every feature; the FEATURES list is the single source of truth
   helpers.js           shared date/pay/number helpers
-  stats.js             one-pass career stats shared by trophies/records/DNA
   schema.js            V3-owned tables only, all prefixed v3_
 public/js/v3/          client: one view per feature
   v3core.js            V3 namespace, API surface, shared render helpers, view registry
@@ -814,38 +812,19 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 |--------|---------|-------------|
 | GET | `/api/v3/features` | List the V3 feature set |
 | GET | `/api/v3/money-clock` | Live earnings state, totals and payday countdown |
-| GET | `/api/v3/countdowns` | Every upcoming date with a live ISO target |
 | GET | `/api/v3/goals` | Goals with live progress |
 | POST | `/api/v3/goals` | Create a goal |
 | PUT | `/api/v3/goals/:id` | Update a goal |
 | DELETE | `/api/v3/goals/:id` | Delete a goal |
 | GET | `/api/v3/forecast` | Tax-year projection — optional `?tax_year=YYYY` |
-| GET | `/api/v3/trophies` | Achievements with progress and unlock dates |
-| GET | `/api/v3/records` | Personal bests and lifetime totals |
-| GET | `/api/v3/shift-dna` | Trait scores and archetype — optional `?year=YYYY\|all` |
-| GET | `/api/v3/balance` | Work-life balance score — optional `?weeks=N` |
 | GET | `/api/v3/break-debt` | Unpaid break time — optional `?year=YYYY\|all` |
 | GET | `/api/v3/commute-cost` | Commute cost — optional `?year=YYYY\|all` |
 | POST | `/api/v3/commute-cost/settings` | Save MPG / fuel price / parking / wear |
-| GET | `/api/v3/on-this-day` | Same date in previous years — optional `?date=YYYY-MM-DD` |
-| GET |  | Next shift briefing — optional  |
-| GET |  | Hours beyond contract — optional  |
-| GET |  | Rate change history with NLW comparison |
-| GET |  | You vs a colleague —  |
-| GET |  | Every year side by side |
-| GET |  | Derived fun facts — optional  |
-| GET |  | Who can be profiled or compared |
-| GET | `/api/v3/bingo` | Weekly bingo card — optional `?week=YYYY-MM-DD` |
-| GET | `/api/v3/briefing` | Next shift briefing — optional `?date=YYYY-MM-DD` |
 | GET | `/api/v3/overtime` | Hours beyond contract — optional `?year=YYYY\|all` |
 | GET | `/api/v3/pay-rises` | Rate change history with National Living Wage comparison |
-| GET | `/api/v3/head-to-head` | You vs a colleague — `?colleague=<id>` and optional `&year=` |
 | GET | `/api/v3/year-in-numbers` | Every year side by side with year-on-year change |
-| GET | `/api/v3/did-you-know` | Derived fun facts — optional `?seed=N` |
-| GET | `/api/v3/shift-dna/people` | Who can be profiled or compared |
 | GET | `/api/v3/leave-planner` | Leave bookings ranked by days off per day booked — optional `?from=`, `?to=`, `?max_span=N` |
 | GET | `/api/v3/cover-finder` | Who could cover a shift, plus swap options — optional `?date=YYYY-MM-DD` |
-| GET | `/api/v3/crystal-ball` | Projected week with backtested accuracy — optional `?week=YYYY-MM-DD` |
 | GET | `/api/v3/pay-audit` | Hours owed vs hours paid, cumulative — optional `?tax_year=YYYY` (the April it starts in) |
 | GET | `/api/v3/tax-check` | PAYE and NI checked against the standard bands — optional `?tax_year=YYYY` |
 | GET | `/api/v3/health-check` | Data integrity findings, with the offending rows attached |
