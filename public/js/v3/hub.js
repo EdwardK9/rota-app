@@ -13,11 +13,11 @@ V3.register('v3-hub', '✨ Features', {
      hub per generation of the app. */
   EXTRAS: [
     { view: 'what-if',       icon: '🧮', name: 'What If?',
-      blurb: 'Try a different rate, hours or shift pattern and see what it does to your pay.' },
+      blurb: '“If my hourly rate were £X instead” — applied to your actual logged hours.' },
     { view: 'weather',       icon: '🌤️', name: 'Weather',
-      blurb: 'The forecast for your commute and upcoming shifts.' },
+      blurb: 'A fuller forecast for home and work, with your logged shifts overlaid.' },
     { view: 'team-metrics',  icon: '💷', name: 'Team Metrics',
-      blurb: 'Hours and estimated pay across the team, week by week.' },
+      blurb: 'Weekly store spend, your share of it, average wage, and a cost coverage heatmap.' },
     { view: 'fatigue-audit', icon: '🩺', name: 'Fatigue Audit',
       blurb: 'Close-then-open turnarounds, long runs without a day off and overtime alerts for the team.' },
     { view: 'v5-locations',  icon: '📍', name: 'Clock Map',
