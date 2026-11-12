@@ -107,6 +107,37 @@ const { startServer } = require('./helpers/server');
       await page.waitForTimeout(300);
       return next !== start && (await month()) === start ? '' : JSON.stringify({ start, next, back: await month() });
     });
+    await ui('date boxes keep their calendar icon inside the box', async () => {
+      await page.evaluate(() => App.navigate('export'));
+      await page.waitForTimeout(500);
+      const r = await page.evaluate(() => {
+        const el = [...document.querySelectorAll('#view-export input.date-ui')].find(e => e.offsetParent);
+        if (!el) return 'no date box found';
+        const stray = el.nextElementSibling && el.nextElementSibling.tagName === 'BUTTON';
+        return stray ? 'a separate calendar button is back' : (getComputedStyle(el).backgroundImage.includes('svg') ? '' : 'no icon drawn in the box');
+      });
+      return r;
+    });
+    await ui('stat squares all fit on screen (no sideways strip)', async () => {
+      await page.evaluate(() => App.navigate('shifts'));
+      await page.waitForTimeout(500);
+      return page.evaluate(() => {
+        const g = document.getElementById('shiftStats');
+        const off = [...g.children].filter(c => c.offsetParent && c.getBoundingClientRect().right > window.innerWidth + 1).length;
+        return g.scrollWidth > g.clientWidth + 1 || off ? `${off} card(s) off screen` : '';
+      });
+    });
+    await ui('team calendar: day chips jump to a day', async () => {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+      await fetch(server.base + '/api/colleagues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Chip Tester' }) });
+      await fetch(server.base + '/api/team-shifts/import', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shifts: [{ name: 'Chip Tester', date: today, start_time: '09:00', end_time: '17:00' }] }) });
+      await page.evaluate(() => App.navigate('team-calendar'));
+      await page.waitForTimeout(700);
+      const n = await page.evaluate(() => ({ chips: document.querySelectorAll('.tc-m-daychip').length, rows: document.querySelectorAll('.tc-m-row').length,
+        over: document.documentElement.scrollWidth - window.innerWidth }));
+      return n.chips === 7 && n.rows >= 1 && n.over <= 1 ? '' : JSON.stringify(n);
+    });
     await ui('Esc closes a dialog', async () => {
       await page.evaluate(() => Modal.open('Test', '<p>hello</p>'));
       await page.keyboard.press('Escape');

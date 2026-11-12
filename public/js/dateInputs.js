@@ -2,7 +2,8 @@
    <input type="date"> shows dates in the *browser's* locale, so a US-locale
    browser renders mm/dd/yyyy no matter what the page says. This app is UK-only,
    so every date input is upgraded here into a text box that always reads and
-   writes dd/mm/yyyy, with a small calendar button that opens the native picker.
+   writes dd/mm/yyyy, with a calendar icon at its right-hand end that opens the
+   native picker.
 
    Nothing else has to change: each upgraded input's `.value` still reads and
    writes ISO 'YYYY-MM-DD' (and reads '' while the text is incomplete or not a
@@ -69,16 +70,22 @@
     picker.tabIndex = -1;
     picker.setAttribute('aria-hidden', 'true');
     picker.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none;border:0;padding:0';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = '📅';
-    btn.title = 'Pick a date';
-    btn.setAttribute('aria-label', 'Pick a date');
-    btn.style.cssText = 'background:none;border:0;cursor:pointer;font-size:16px;padding:0 6px;line-height:1';
-    btn.addEventListener('click', () => {
+    // The calendar icon is drawn inside the right-hand end of the box itself
+    // (a background image) rather than being a button next to it: a separate
+    // button had nowhere to go beside a full-width box and dropped onto its
+    // own line underneath. Tapping that end of the box opens the picker; so
+    // does Alt+↓ from the keyboard.
+    const ZONE = 36;   // px at the right-hand end that count as "the icon"
+    el.classList.add('date-ui');
+    el.title = el.title || 'dd/mm/yyyy — tap the calendar to pick a date';
+    const openPicker = () => {
       picker.value = el.value || '';
       try { picker.showPicker(); } catch (_) { picker.focus(); picker.click(); }
-    });
+    };
+    const inZone = e => e.clientX >= el.getBoundingClientRect().right - ZONE;
+    el.addEventListener('click', e => { if (inZone(e)) { e.preventDefault(); el.blur(); openPicker(); } });
+    el.addEventListener('mousemove', e => { el.style.cursor = inZone(e) ? 'pointer' : ''; });
+    el.addEventListener('keydown', e => { if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); openPicker(); } });
     picker.addEventListener('change', () => {
       if (!picker.value) return;
       el.value = picker.value;
@@ -86,19 +93,7 @@
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    el.after(btn, picker);
-
-    // A full-width input leaves no room beside it, so the button used to drop
-    // onto a line of its own underneath. When that happens, tuck it inside the
-    // input's right-hand end instead. (Inputs sitting in a row are left alone.)
-    requestAnimationFrame(() => {
-      if (!btn.isConnected || !el.offsetHeight) return;
-      if (btn.offsetTop < el.offsetTop + el.offsetHeight - 4) return;
-      btn.style.cssText += ';float:right;margin-right:6px;position:relative';
-      const wanted = el.offsetTop + (el.offsetHeight - btn.offsetHeight) / 2;
-      btn.style.marginTop = (wanted - btn.offsetTop) + 'px';
-      el.style.paddingRight = '36px';
-    });
+    el.after(picker);
   }
 
   function scan(root) {

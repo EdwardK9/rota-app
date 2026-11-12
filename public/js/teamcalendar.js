@@ -590,23 +590,37 @@ const TeamCalendarView = {
   async loadWeek() {
     const wrap = document.getElementById('tcTabContent');
     wrap.innerHTML = `
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+      <!-- Week stepper and Add Shift up front; the rarely-used jumps, export
+           and bulk deletes sit behind "More" so the bar is one row on a phone. -->
+      <div class="tc-bar">
+        <div class="tc-bar-step">
+          <button class="btn btn-ghost btn-sm" id="tcPrevWeek" title="Back 1 week" aria-label="Previous week">&#8249;</button>
+          <strong id="tcWeekLabel">${this._fmtWeekRange(this._currentWeek)}</strong>
+          <button class="btn btn-ghost btn-sm" id="tcNextWeek" title="Forward 1 week" aria-label="Next week">&#8250;</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="tcThisWeek">Today</button>
+        <button class="btn btn-primary btn-sm" id="tcWkAddBtn">+ Add Shift</button>
+        <button class="btn btn-ghost btn-sm" id="tcMoreBtn" aria-expanded="false" aria-controls="tcMoreRow">More ▾</button>
+      </div>
+      <div class="tc-bar tc-bar-more" id="tcMoreRow" hidden>
         <button class="btn btn-ghost btn-sm" id="tcPrevYear"  title="Back 1 year">&#171; Year</button>
         <button class="btn btn-ghost btn-sm" id="tcPrevMonth" title="Back 1 month">&#8592; Month</button>
-        <button class="btn btn-ghost btn-sm" id="tcPrevWeek"  title="Back 1 week">&#8592; Week</button>
-        <strong id="tcWeekLabel" style="min-width:200px;text-align:center;font-size:13px">${this._fmtWeekRange(this._currentWeek)}</strong>
-        <button class="btn btn-ghost btn-sm" id="tcNextWeek"  title="Forward 1 week">Week &#8594;</button>
         <button class="btn btn-ghost btn-sm" id="tcNextMonth" title="Forward 1 month">Month &#8594;</button>
         <button class="btn btn-ghost btn-sm" id="tcNextYear"  title="Forward 1 year">Year &#187;</button>
-        <button class="btn btn-ghost btn-sm" id="tcThisWeek">Today</button>
-        <button class="btn btn-primary btn-sm" id="tcWkAddBtn" style="margin-left:auto">+ Add Shift</button>
+        <button class="btn btn-ghost btn-sm" id="tcWkRefresh" title="Reload">↻ Refresh</button>
         <button class="btn btn-ghost btn-sm" id="tcWkExportCSV">⬇ Export All CSV</button>
         <button class="btn btn-ghost btn-sm" id="tcWkDelMonth" style="color:var(--danger)">🗑 Month</button>
         <button class="btn btn-ghost btn-sm" id="tcWkDelAll" style="color:var(--danger)">🗑 All</button>
-        <button class="btn btn-ghost btn-sm" id="tcWkRefresh">↻</button>
       </div>
       <div id="tcWeekGrid" style="overflow-x:auto"><p style="color:var(--text-muted)">Loading…</p></div>
     `;
+
+    document.getElementById('tcMoreBtn').addEventListener('click', e => {
+      const row = document.getElementById('tcMoreRow');
+      row.hidden = !row.hidden;
+      e.currentTarget.setAttribute('aria-expanded', !row.hidden);
+      e.currentTarget.textContent = row.hidden ? 'More ▾' : 'Less ▴';
+    });
 
     const jumpMonths = n => {
       const d = new Date(this._currentWeek + 'T00:00:00');
@@ -668,7 +682,7 @@ const TeamCalendarView = {
       if (!myDayMap[s.date]) myDayMap[s.date] = [];
       myDayMap[s.date].push(s);
     }
-    rows.push({ label: myName + ' ★', colour: '#1B2A4A', isMe: true, dayMap: myDayMap, contractHours: data.myContractHours || 0 });
+    rows.push({ label: myName + ' ★', colour: '#4F46E5', isMe: true, dayMap: myDayMap, contractHours: data.myContractHours || 0 });
 
     // — Colleague rows —
     colleagues.forEach((c, ci) => {
@@ -725,13 +739,13 @@ const TeamCalendarView = {
         const blocks = shifts.map(s => {
           const delBtn = row.isMe ? '' :
             `<button onclick="TeamCalendarView._deleteShift(${s.id})"
-              style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.25);
+              class="tc-chip-btn" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.25);
               border:none;color:#fff;border-radius:50%;width:16px;height:16px;
               font-size:10px;line-height:1;cursor:pointer;padding:0"
               title="Delete">×</button>`;
           const editBtn = row.isMe ? '' :
             `<button onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type||'shift'}','${_jsStr(s.store||'')}')"
-              style="position:absolute;top:2px;right:20px;background:rgba(0,0,0,0.25);
+              class="tc-chip-btn" style="position:absolute;top:2px;right:20px;background:rgba(0,0,0,0.25);
               border:none;color:#fff;border-radius:50%;width:16px;height:16px;
               font-size:10px;line-height:1;cursor:pointer;padding:0"
               title="Edit">✎</button>`;
@@ -901,25 +915,24 @@ const TeamCalendarView = {
         const shifts = row.dayMap[d] || [];
         if (!shifts.length) return '';
         return shifts.map(s => {
-          let label;
-          if (s.shift_type === 'leave')        label = '🌴 Annual Leave';
-          else if (s.shift_type === 'all_day') label = '🏪 All Day';
-          else label = `<strong>${s.start_time}–${s.end_time}</strong> <span style="opacity:.7;font-size:11px">${this._fmtDuration(s.start_time, s.end_time)}</span>`;
           const storeBadge = s.store
             ? `<span style="font-size:11px;color:#b45309;background:rgba(245,158,11,0.12);border-radius:8px;padding:1px 7px;white-space:nowrap"
                 title="At a different store — not counted for this store's working-with/coverage">📍 ${esc(s.store)}</span>` : '';
+          const sub = (s.shift_type === 'leave' || s.shift_type === 'all_day') ? '' : this._fmtDuration(s.start_time, s.end_time);
+          const time = s.shift_type === 'leave' ? '🌴 Leave' : s.shift_type === 'all_day' ? '🏪 All day' : `${s.start_time}–${s.end_time}`;
           const editDel = row.isMe ? '' :
-            `<span style="margin-left:auto;display:inline-flex;gap:6px;flex-shrink:0">
-               <button onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type||'shift'}','${_jsStr(s.store||'')}')"
-                 style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);font-size:13px;padding:2px 8px;cursor:pointer">✎</button>
-               <button onclick="TeamCalendarView._deleteShift(${s.id})"
-                 style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--danger);font-size:13px;padding:2px 8px;cursor:pointer">×</button>
+            `<span class="tc-m-actions">
+               <button aria-label="Edit shift" onclick="TeamCalendarView._openEditShiftModal(${s.id},'${s.start_time}','${s.end_time}','${s.shift_type||'shift'}','${_jsStr(s.store||'')}')">✎</button>
+               <button aria-label="Delete shift" class="tc-m-del" onclick="TeamCalendarView._deleteShift(${s.id})">×</button>
              </span>`;
-          return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border);${s.store ? 'opacity:0.75' : ''}">
-                    <span style="width:10px;height:10px;border-radius:50%;background:${row.colour};flex-shrink:0"></span>
-                    <span style="font-weight:${row.isMe?700:500};font-size:13px">${esc(row.label.replace(' ★',''))}${row.isMe?' ★':''}</span>
-                    <span style="font-size:13px">${label}</span>
-                    ${storeBadge}
+          // One line per person: dot · name (and hours underneath) · time · edit/delete.
+          return `<div class="tc-m-row${row.isMe ? ' tc-m-me' : ''}"${s.store ? ' style="opacity:0.75"' : ''}>
+                    <span class="tc-m-dot" style="background:${row.colour}"></span>
+                    <span class="tc-m-who">
+                      <span class="tc-m-name">${esc(row.label.replace(' ★',''))}${row.isMe?' ★':''}</span>
+                      <span class="tc-m-sub">${sub}${storeBadge ? ' ' + storeBadge : ''}</span>
+                    </span>
+                    <span class="tc-m-time">${time}</span>
                     ${editDel}
                   </div>`;
         }).join('');
@@ -930,7 +943,7 @@ const TeamCalendarView = {
         color:var(--text-muted);font-size:13px;padding:9px;cursor:pointer">+ add shift</button>`;
 
       return `
-        <div style="border:1px solid ${hasEmpty?'#EF4444':hasLow?'#F59E0B':'var(--border)'};border-radius:10px;margin-bottom:10px;overflow:hidden">
+        <div id="tcDay-${d}" class="tc-m-day" style="border:1px solid ${hasEmpty?'#EF4444':hasLow?'#F59E0B':'var(--border)'};border-radius:12px;margin-bottom:10px;overflow:hidden">
           <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;
                       background:${isToday?'var(--primary)':'var(--bg)'};
                       color:${isToday?'var(--primary-text)':'var(--text)'};font-weight:700;font-size:13px">
@@ -943,7 +956,21 @@ const TeamCalendarView = {
         </div>`;
     }).join('');
 
-    grid.innerHTML = dayBlocks + (coveragePanel || '');
+    // A row of day chips to jump straight to a day rather than scrolling
+    // through the whole week; a dot marks days with a coverage gap.
+    const chips = `<div class="tc-m-days">${days.map(d => {
+      const gaps = coverageByDay[d] || [];
+      const dt = new Date(d + 'T12:00:00');
+      return `<button type="button" class="tc-m-daychip${d === today ? ' is-today' : ''}" data-day="${d}">
+                <span>${DAYS[dt.getDay()].slice(0, 3)}</span><strong>${dt.getDate()}</strong>
+                ${gaps.length ? `<i class="${gaps.some(g => g.minCount === 0) ? 'gap' : 'low'}"></i>` : ''}
+              </button>`;
+    }).join('')}</div>`;
+
+    grid.innerHTML = chips + dayBlocks + (coveragePanel || '');
+    grid.querySelectorAll('.tc-m-daychip').forEach(c => c.addEventListener('click', () => {
+      document.getElementById('tcDay-' + c.dataset.day)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
   },
 
   // ── Person View ────────────────────────────────────────────────────────────
@@ -951,7 +978,7 @@ const TeamCalendarView = {
   async loadPerson() {
     const wrap = document.getElementById('tcTabContent');
     wrap.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <div class="tc-person-bar" style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
         <select id="tcColleagueSelect" style="min-width:160px">
           <option value="">— Select a person —</option>
         </select>
