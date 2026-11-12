@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-11-12T10:21:44.038Z",
-  "commit": "5a742df",
+  "generated_at": "2026-11-12T20:54:39.938Z",
+  "commit": "2c998cf",
   "entries": [
+    {
+      "version": "7.1.0",
+      "date": "2026-11-12",
+      "summary": "Shorter menu, folded-away stats, readable status colours, shortcuts",
+      "details": "Menu\n- The sidebar is down to the four pages used every day (Dashboard, Shifts,\n  Calendar, Clock In/Out) and four groups: Pay & Leave, Team, More and\n  Tools. Only one group is open at a time.\n- Settings, dark mode, Hide Money and Edit menu are now a row of four icon\n  buttons at the bottom instead of four full-width rows.\n- The three feature hubs sit together under More as Features, Extras and\n  Analytics. Weather moved into Extras.\n- Menu icons are greyed back until hovered or selected, so the labels and\n  the current page stand out.\n- On a phone the burger button in the top bar is gone; the tab bar's Menu\n  button (or a swipe from the left edge) opens the menu.\n- If you have saved your own menu layout it is kept as it is. Use the\n  pencil button, then Reset, to switch to the new layout.\n\nShifts\n- The six headline numbers stay at the top; the break and distance figures\n  fold away behind \"Breaks & distance\", so the shifts themselves are on the\n  first screen. The choice is remembered.\n\nColours\n- Green, amber, red and blue used as text on white (pay figures, plus and\n  minus differences, break chips, badges) were too pale to read easily.\n  They are a step darker in light mode. Dark mode is unchanged.\n\nShortcuts\n- Left and right arrows step the month on Shifts and Calendar, the week on\n  Team Calendar and the leave year on Leave. T goes to today, N adds a\n  shift. On a phone, swipe the Calendar left or right to change month.\n- The Key page lists all the shortcuts."
+    },
     {
       "version": "7.0.0",
       "date": "2026-11-12",
