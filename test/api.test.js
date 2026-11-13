@@ -103,6 +103,19 @@ const fakeGemini = http.createServer((rq, rs) => {
       .prepare("SELECT value FROM settings WHERE key = 'gemini_api_key'").get();
     check('saving the placeholder back keeps the real key', stored && stored.value === 'AIza-real-test-key', stored);
 
+    console.log('\nFeatures:');
+    const feats = (await req('GET', '/api/v3/features')).body.features.map(f => f.view);
+    check('the feature list is the trimmed set', feats.length === 15 && feats.includes('money-clock') && !feats.includes('bingo') && !feats.includes('did-you-know'), feats);
+    for (const f of feats) {
+      const api = { 'year-numbers': 'year-in-numbers' }[f] || f;
+      const r = await req('GET', '/api/v3/' + api);
+      check(`${f} still answers`, r.status === 200, { status: r.status, body: r.body });
+    }
+    for (const gone of ['/api/v3/did-you-know', '/api/v3/bingo', '/api/v3/trophies', '/api/streaks', '/api/wrapped', '/api/v5/usage']) {
+      check(`${gone} is gone`, (await req('GET', gone)).status === 404);
+    }
+    check('the Clock Map and privacy endpoints remain', (await req('GET', '/api/v5/locations')).status === 200 && (await req('GET', '/api/v5/privacy')).status === 200);
+
     console.log('\nShifts:');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
     const created = await req('POST', '/api/shifts', { date: today, start_time: '09:00', end_time: '17:30' });
@@ -229,42 +242,6 @@ const fakeGemini = http.createServer((rq, rs) => {
     const inQueue = q => [...q.pending, ...q.waiting, ...q.failed].some(x => x.id === fbId);
     const fbDone = await waitFor(async () => !inQueue(await queueState()));
     check('when the main model is out of quota, another model reads it', fbDone && fake.modelsUsed.includes('gemini-fallback'), { state: await queueState(), used: fake.modelsUsed });
-
-    // The fun fact is plain text, not a screenshot — same "try another model" rule.
-    fake.mode = 'quota-then-fallback';
-    fake.modelsUsed = [];
-    const fact = await req('GET', '/api/v3/did-you-know/ai');
-    check('fun fact: when the main model is out of quota, another model answers', fact.status === 200 && !!fact.body.fact && fake.modelsUsed.includes('gemini-fallback'), { status: fact.status, body: fact.body, used: fake.modelsUsed });
-    fake.modelsUsed = [];
-    await req('GET', '/api/v3/did-you-know/ai');
-    check('fun fact: …and the used-up model is not asked again straight away', !fake.modelsUsed.includes('gemini-main'), fake.modelsUsed);
-
-    // The card says "driven N miles to work" (round trip); the AI fact must use that same N.
-    await req('PATCH', '/api/shifts/bulk-mileage', { ids: [created.body.id], distance_miles: 12.5 });
-    const cards = (await req('GET', '/api/v3/did-you-know')).body.facts;
-    const milesCard = cards.find(f => /miles to work/.test(f.text));
-    await req('GET', '/api/v3/did-you-know/ai?theme=commute');
-    check('the "driven to work" card counts the round trip', milesCard && /25 miles/.test(milesCard.text), milesCard);
-    const promptText = (() => { try { return JSON.parse(fake.lastPrompt).contents[0].parts[0].text; } catch (_) { return ''; } })();
-    check('the AI fact is given that same round-trip figure', /"total_commute_miles_round_trip":25[,}]/.test(promptText), promptText.slice(-300));
-
-    const rec = (await req('GET', '/api/v3/records')).body;
-    check('Records "Miles driven" counts the round trip too', rec.lifetime && rec.lifetime.miles === 25, rec.lifetime);
-    const trophies = await req('GET', '/api/v3/trophies');
-    const road = JSON.stringify(trophies.body).match(/"code":"miles"[^}]*?"value":([\d.]+)/);
-    check('the Road Warrior trophy counts the round trip', !road || Number(road[1]) === 25, road && road[0]);
-
-    // Fun facts rotate topics instead of always reaching for the miles.
-    const themes = new Set();
-    let sawNot = false;
-    for (let i = 0; i < 12; i++) {
-      const r = await req('GET', '/api/v3/did-you-know/ai?not=commute');
-      themes.add(r.body.theme);
-      if (r.body.theme === 'commute') sawNot = true;
-    }
-    check('the AI fact varies its topic', themes.size >= 3, [...themes]);
-    check('…and ?not= keeps it off the topic it just showed', !sawNot, [...themes]);
-    check('the deck has more than miles and hours', (await req('GET', '/api/v3/did-you-know')).body.count >= 10, (await req('GET', '/api/v3/did-you-know')).body.count);
 
     // Auto-pick: the best everyday model for the key, not a text-only or pro one.
     fake.models = ['gemini-2.0-flash', 'gemini-3.1-pro', 'gemini-3.0-flash', 'gemini-3.0-flash-lite', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-image'];

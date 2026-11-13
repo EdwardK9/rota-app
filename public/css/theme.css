@@ -306,33 +306,178 @@ input[type="checkbox"], input[type="radio"], input[type="range"], progress { acc
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text-muted) 45%, transparent) transparent; }
 .sidebar * { scrollbar-color: rgba(255,255,255,0.18) transparent; }
 
-/* Shifts: secondary stat cards fold away behind a toggle (not on phones,
-   where the cards are already a swipeable strip). */
-.stats-more { display: none; }
-@media (min-width: 481px) {
-  .stats-collapsible { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-bottom: 8px; }
-  .stats-collapsible:not(.stats-open) > .stat-extra { display: none; }
-  .stats-more {
-    display: inline-flex; align-items: center; margin: 0 0 16px;
-    background: none; border: 0; padding: 4px 2px; cursor: pointer;
-    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-muted);
-  }
-  .stats-more:hover { color: var(--accent-text); }
+/* Shifts: secondary stat cards fold away behind a toggle. */
+.stats-collapsible { margin-bottom: 8px; }
+.stats-collapsible:not(.stats-open) > .stat-extra { display: none; }
+.stats-more {
+  display: inline-flex; align-items: center; margin: 0 0 16px;
+  background: none; border: 0; padding: 4px 2px; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-muted);
 }
-
-/* Chips whose text colour was hard-coded to the old bright status colours. */
-.break-chip.break-full, .badge-success, .cal-wt-chip.cal-wt-worked { color: #047857; }
-.break-chip.break-partial, .cal-wt-chip.cal-wt-break { color: #B45309; }
-.badge-info { color: #1D4ED8; }
-.badge-danger { color: #B91C1C; }
-.cal-wt-chip.cal-wt-leave { color: #BE185D; }
-[data-theme="dark"] .break-chip.break-full, [data-theme="dark"] .badge-success, [data-theme="dark"] .cal-wt-chip.cal-wt-worked { color: #6EE7B7; }
-[data-theme="dark"] .break-chip.break-partial, [data-theme="dark"] .cal-wt-chip.cal-wt-break { color: #FCD34D; }
-[data-theme="dark"] .badge-info { color: #93C5FD; }
+.stats-more:hover { color: var(--accent-text); }
+@media (min-width: 481px) {
+  .stats-collapsible { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
 
 .key-kbd {
   display: inline-block; min-width: 26px; text-align: center;
   font: inherit; font-size: 12px; font-weight: 700;
   padding: 3px 7px; border-radius: 7px;
   background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; color: var(--text);
+}
+
+/* Date boxes: the calendar icon lives inside the right-hand end of the box
+   (see dateInputs.js), so there is no separate button to wrap underneath. */
+input.date-ui, [data-theme="dark"] input.date-ui {
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%238B92A5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='3'/%3E%3Cpath d='M3 10h18M8 3v4M16 3v4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+
+/* ── Team calendar bar ───────────────────────────────────────────────────── */
+.tc-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.tc-bar[hidden] { display: none; }
+.tc-bar-step { display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.tc-bar-step strong { font-size: 13.5px; text-align: center; white-space: nowrap; padding: 0 6px; min-width: 150px; }
+.tc-bar-more { padding: 10px; border: 1px dashed var(--border); border-radius: 12px; }
+
+/* Phone day cards */
+.tc-m-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 10px; }
+.tc-m-daychip {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 5px 0; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-muted); font: inherit; font-size: 10.5px; cursor: pointer;
+}
+.tc-m-daychip strong { font-size: 15px; color: var(--text); }
+.tc-m-daychip.is-today { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.tc-m-daychip.is-today strong { color: var(--primary-text); }
+.tc-m-daychip i { position: absolute; top: 4px; right: 5px; width: 6px; height: 6px; border-radius: 50%; }
+.tc-m-daychip i.gap { background: #EF4444; }
+.tc-m-daychip i.low { background: #F59E0B; }
+.tc-m-day { scroll-margin-top: calc(var(--topbar-height) + 12px); }
+.tc-m-row {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; column-gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.tc-m-dot { width: 10px; height: 10px; border-radius: 50%; }
+.tc-m-who { display: flex; flex-direction: column; min-width: 0; }
+.tc-m-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc-m-me .tc-m-name { font-weight: 700; }
+.tc-m-sub { font-size: 11.5px; color: var(--text-muted); }
+.tc-m-time { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tc-m-actions { display: inline-flex; gap: 4px; }
+.tc-m-actions button {
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  background: none; border: 1px solid var(--border); color: var(--text-muted);
+}
+.tc-m-actions .tc-m-del { color: var(--danger); }
+
+/* ── Calendar: month as a list (phones) ──────────────────────────────────── */
+.cal-agenda { display: none; }
+.cal-agenda-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+  margin: 18px 2px 8px;
+}
+.cal-agenda-list { display: flex; flex-direction: column; gap: 8px; }
+.cal-agenda-list[hidden] { display: none; }
+.cal-agenda-list + .cal-agenda-list { margin-top: 8px; }
+.cal-agenda-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
+}
+.cal-agenda-row.is-today { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.cal-agenda-row.is-done { background: color-mix(in srgb, var(--success) 6%, var(--card-bg)); }
+.cal-agenda-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cal-agenda-time { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-agenda-sub { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-agenda-pay { font-weight: 700; font-size: 14px; color: var(--success); }
+.cal-agenda-empty { padding: 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* ── Phones ──────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .cal-agenda { display: block; }
+}
+@media (max-width: 480px) {
+  /* Stat squares: all on screen, three across, instead of a strip that
+     scrolled sideways and hid half of them. Hints are dropped to keep each
+     square two lines tall. */
+  .stats-grid, .stats-grid:not(:has(> :nth-child(5))) {
+    display: grid; grid-auto-flow: row; grid-template-rows: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px; overflow: visible; margin-bottom: 12px;
+  }
+  .stats-grid:has(> :nth-child(4)):not(:has(> :nth-child(5))),
+  .stats-grid:not(:has(> :nth-child(3))) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .stats-grid .stat-card { padding: 9px 10px; border-radius: 12px; min-width: 0; }
+  .stats-grid .stat-label { font-size: 9.5px; letter-spacing: 0.03em; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stats-grid .stat-value { font-size: 15.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stats-grid .stat-hint { display: none; }
+  .stats-collapsible { margin-bottom: 4px; }
+  .stats-more { margin-bottom: 10px; }
+
+  /* A button in a card's title bar keeps its own width (a global phone rule
+     stretches primary buttons to full width, which laid them over the title),
+     and is hidden while a Settings section is folded shut. */
+  .card-header .btn-primary { width: auto; flex: 0 0 auto; }
+  .card-header h2 { min-width: 0; }
+  .settings-section.collapsed .card-header .btn { display: none; }
+
+  /* Shifts / Calendar: the month stepper gets the whole row, and Add Shift
+     becomes a floating button above the tab bar, in reach of a thumb. */
+  #view-shifts .toolbar, #view-calendar .toolbar { margin-bottom: 10px; }
+  #view-shifts .month-nav, #view-calendar .month-nav,
+  #view-shifts .toolbar > div:first-child, #view-calendar .toolbar > div:first-child { display: flex; width: 100%; gap: 6px !important; }
+  #view-shifts .my-picker, #view-calendar .my-picker { display: flex; gap: 6px; flex: 1; min-width: 0; }
+  .my-picker .my-month-sel { flex: 1 1 auto; min-width: 0; }
+  .my-picker .my-year-sel { flex: 0 0 auto; }
+  #view-shifts .toolbar-right, #view-calendar .toolbar-right { width: 0; height: 0; margin: 0; }
+  #addShiftBtn, #calAddShiftBtn {
+    position: fixed; z-index: 80; right: 14px;
+    bottom: calc(var(--tabbar-h) + 14px + env(safe-area-inset-bottom, 0px));
+    width: auto; padding: 13px 18px; border-radius: 999px; font-size: 14.5px;
+    box-shadow: 0 8px 22px rgba(var(--primary-rgb), 0.45), 0 2px 6px rgba(0,0,0,0.25);
+  }
+  /* so the last row of a page isn't hidden behind the floating button */
+  #view-shifts, #view-calendar { padding-bottom: 76px; }
+
+  /* Team calendar */
+  .tc-bar-step strong { min-width: 0; flex: 1; font-size: 13px; }
+  .tc-bar > .btn { flex: 0 0 auto; }
+  .tc-person-bar > * { flex: 1 1 40%; min-width: 0 !important; width: auto !important; }
+  .tc-person-bar > span { flex: 0 0 auto; }
+  .tc-person-bar > select { flex-basis: 100%; }
+}
+@media (max-width: 480px) {
+  .tc-bar .btn-primary { width: auto; }
+}
+
+/* ── Loose ends ──────────────────────────────────────────────────────────── */
+/* The base `input { width:100%; padding }` rule also hit bare radios and
+   checkboxes, blowing them up into large blobs. :where() keeps this at the
+   same weight as that rule, so any class that sizes its own box still wins. */
+input:where([type="radio"], [type="checkbox"]):where(:not([class])) {
+  width: 18px; height: 18px; padding: 0; margin: 0; flex: 0 0 auto; vertical-align: middle;
+}
+/* .btn-secondary was used in a dozen places but never defined, so those
+   buttons fell back to the browser's own white ones. */
+.btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: rgba(var(--primary-rgb),0.45); }
+.btn:disabled, .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+/* Export: the date-range choices as tappable chips. */
+.export-mode-label {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-2); font-size: 13.5px; font-weight: 500;
+}
+.export-mode-label:has(input:checked) { border-color: var(--primary); background: rgba(var(--primary-rgb),0.12); color: var(--accent-text); }
+
+/* Team week grid: the tiny edit / delete buttons sat on top of each shift's
+   end time. With a mouse they now appear only while the cell is hovered (or
+   focused from the keyboard), on a solid backing so they read clearly. */
+@media (hover: hover) {
+  .tc-week-table .tc-chip-btn { opacity: 0; background: rgba(0,0,0,0.6) !important; transition: opacity 0.12s; }
+  .tc-week-table td:hover .tc-chip-btn, .tc-week-table .tc-chip-btn:focus-visible { opacity: 1; }
 }

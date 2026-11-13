@@ -43,16 +43,17 @@
       <button class="sidebar-toggle" id="sidebarToggle">&#9776;</button>
     </div>
     <!-- The default menu. Kept short on purpose: the four pages used every
-         day at the top level, everything else in four groups (one open at a
-         time). Settings, dark mode, Hide Money and Edit menu are the icon row
-         in the footer. Every other page is reachable through the hub pages
-         under "More" and through quick search (Ctrl/⌘+K).
+         day and the Features index at the top level, everything else in three
+         groups (one open at a time). Settings, dark mode, Hide Money and Edit menu are the icon row
+         in the footer. Every other page is reachable through the Features page
+         and through quick search (Ctrl/⌘+K).
          NavCustomise reads this markup as the default layout. -->
     <ul class="nav-links">
       <li><a href="#" class="nav-link" data-view="dashboard"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a></li>
       <li><a href="#" class="nav-link" data-view="shifts"><span class="nav-icon">📋</span><span class="nav-label">Shifts</span></a></li>
       <li><a href="#" class="nav-link" data-view="calendar"><span class="nav-icon">📅</span><span class="nav-label">Calendar</span></a></li>
       <li><a href="#" class="nav-link" data-view="clock"><span class="nav-icon">🕐</span><span class="nav-label">Clock In/Out</span></a></li>
+      <li><a href="#" class="nav-link" data-view="v3-hub"><span class="nav-icon">✨</span><span class="nav-label">Features</span></a></li>
 
       <li class="nav-group" data-group="pay">
         <button class="nav-group-header" type="button">
@@ -83,17 +84,6 @@
         </ul>
       </li>
 
-      <li class="nav-group" data-group="more">
-        <button class="nav-group-header" type="button">
-          <span class="nav-icon">✨</span><span class="nav-label">More</span>
-          <span class="nav-chevron">▸</span>
-        </button>
-        <ul class="nav-sublinks">
-          <li><a href="#" class="nav-link" data-view="v3-hub"><span class="nav-icon">✨</span><span class="nav-label">Features</span></a></li>
-          <li><a href="#" class="nav-link" data-view="v2-hub"><span class="nav-icon">🚀</span><span class="nav-label">Extras</span></a></li>
-          <li><a href="#" class="nav-link" data-view="v5-hub"><span class="nav-icon">📈</span><span class="nav-label">Analytics</span></a></li>
-        </ul>
-      </li>
 
       <li class="nav-group" data-group="tools">
         <button class="nav-group-header" type="button">
@@ -159,15 +149,10 @@
     <div id="view-people" class="view hidden"></div>
     <div id="view-team-calendar" class="view hidden"></div>
     <div id="view-changelog" class="view hidden"></div>
-    <div id="view-v2-hub" class="view hidden"></div>
-    <div id="view-synergy" class="view hidden"></div>
     <div id="view-team-metrics" class="view hidden"></div>
     <div id="view-fatigue-audit" class="view hidden"></div>
-    <div id="view-shift-heatmap" class="view hidden"></div>
     <div id="view-weather" class="view hidden"></div>
     <div id="view-what-if" class="view hidden"></div>
-    <div id="view-streaks" class="view hidden"></div>
-    <div id="view-wrapped" class="view hidden"></div>
     <div id="view-team-upload" class="view hidden"></div>
       <div id="view-manage-people" class="view hidden"></div>
       <div id="view-photo-library" class="view hidden"></div>
@@ -176,40 +161,25 @@
       <div id="view-clock" class="view hidden"></div>
       <div id="view-key" class="view hidden"></div>
 
-      <!-- V3.0 Features -->
+      <!-- Features (the pages listed on the Features page) -->
       <div id="view-money-clock" class="view hidden"></div>
-      <div id="view-countdowns" class="view hidden"></div>
       <div id="view-goals" class="view hidden"></div>
       <div id="view-savings" class="view hidden"></div>
       <div id="view-forecast" class="view hidden"></div>
-      <div id="view-trophies" class="view hidden"></div>
-      <div id="view-records" class="view hidden"></div>
-      <div id="view-shift-dna" class="view hidden"></div>
-      <div id="view-balance" class="view hidden"></div>
       <div id="view-break-debt" class="view hidden"></div>
       <div id="view-annoying-shifts" class="view hidden"></div>
       <div id="view-commute-cost" class="view hidden"></div>
-      <div id="view-on-this-day" class="view hidden"></div>
-      <div id="view-bingo" class="view hidden"></div>
       <div id="view-v3-hub" class="view hidden"></div>
-      <div id="view-briefing" class="view hidden"></div>
       <div id="view-overtime" class="view hidden"></div>
       <div id="view-pay-rises" class="view hidden"></div>
-      <div id="view-head-to-head" class="view hidden"></div>
       <div id="view-year-numbers" class="view hidden"></div>
-      <div id="view-did-you-know" class="view hidden"></div>
       <div id="view-leave-planner" class="view hidden"></div>
       <div id="view-cover-finder" class="view hidden"></div>
-      <div id="view-crystal-ball" class="view hidden"></div>
       <div id="view-pay-audit" class="view hidden"></div>
       <div id="view-tax-check" class="view hidden"></div>
       <div id="view-health-check" class="view hidden"></div>
 
-      <!-- V5.0 Features -->
-      <div id="view-v5-hub" class="view hidden"></div>
-      <div id="view-v5-usage" class="view hidden"></div>
-      <div id="view-v5-screens" class="view hidden"></div>
-      <div id="view-v5-habits" class="view hidden"></div>
+      <!-- Clock Map and its privacy page -->
       <div id="view-v5-locations" class="view hidden"></div>
       <div id="view-v5-privacy" class="view hidden"></div>
   </main>
@@ -272,16 +242,11 @@
   <script src="/js/leaderboard.js?v=20260624d" defer></script>
   <script src="/js/people.js?v=20260624d" defer></script>
   <script src="/js/teamcalendar.js?v=20260821b" defer></script>
-  <script src="/js/v2hub.js?v=20260821a" defer></script>
   <script src="/js/changelog.js?v=20260821a" defer></script>
-  <script src="/js/synergyScore.js?v=20260821a" defer></script>
   <script src="/js/teamMetrics.js?v=20260821a" defer></script>
   <script src="/js/fatigueAudit.js?v=20260821a" defer></script>
-  <script src="/js/shiftHeatmap.js?v=20260821a" defer></script>
   <script src="/js/weather.js?v=20260821a" defer></script>
   <script src="/js/whatIf.js?v=20260821a" defer></script>
-  <script src="/js/streaks.js?v=20260821a" defer></script>
-  <script src="/js/wrapped.js?v=20260821a" defer></script>
   <script src="/js/teamupload.js?v=20260821a" defer></script>
   <script src="/js/managePeople.js?v=20260727a" defer></script>
   <script src="/js/photoLibrary.js?v=20260624d" defer></script>
@@ -299,28 +264,17 @@
   <script src="/js/v3/v3core.js?v=20260821f" defer data-core></script>
   <script src="/js/v3/hub.js?v=20260821c" defer></script>
   <script src="/js/v3/moneyClock.js?v=20261106a" defer></script>
-  <script src="/js/v3/countdowns.js?v=20260821d" defer></script>
   <script src="/js/v3/goals.js?v=20260821d" defer></script>
   <script src="/js/v3/savings.js?v=20260929a" defer></script>
   <script src="/js/v3/forecast.js?v=20260821e" defer></script>
-  <script src="/js/v3/trophies.js?v=20260821e" defer></script>
-  <script src="/js/v3/records.js?v=20260821d" defer></script>
-  <script src="/js/v3/shiftDna.js?v=20260821d" defer></script>
-  <script src="/js/v3/balance.js?v=20260821d" defer></script>
   <script src="/js/v3/breakDebt.js?v=20260821d" defer></script>
   <script src="/js/v3/annoyingShifts.js?v=20260821d" defer></script>
   <script src="/js/v3/commuteCost.js?v=20260821d" defer></script>
-  <script src="/js/v3/onThisDay.js?v=20260821e" defer></script>
-  <script src="/js/v3/bingo.js?v=20260821e" defer></script>
-  <script src="/js/v3/briefing.js?v=20260821d" defer></script>
   <script src="/js/v3/overtime.js?v=20260821d" defer></script>
   <script src="/js/v3/payRises.js?v=20260821d" defer></script>
-  <script src="/js/v3/headToHead.js?v=20260821d" defer></script>
   <script src="/js/v3/yearInNumbers.js?v=20260821d" defer></script>
-  <script src="/js/v3/didYouKnow.js?v=20260821f" defer></script>
   <script src="/js/v3/leavePlanner.js?v=20260826a" defer></script>
   <script src="/js/v3/coverFinder.js?v=20260826a" defer></script>
-  <script src="/js/v3/crystalBall.js?v=20260826a" defer></script>
   <script src="/js/v3/payAudit.js?v=20260826a" defer></script>
   <script src="/js/v3/taxCheck.js?v=20260826a" defer></script>
   <script src="/js/v3/healthCheck.js?v=20260826a" defer></script>
@@ -331,10 +285,6 @@
        rather than only when a V5 view is open; it wraps App.navigate, so it is
        started from a DOMContentLoaded handler after app.js has routed. -->
   <script src="/js/v5/v5core.js?v=20260903a" defer data-core></script>
-  <script src="/js/v5/hub.js?v=20260903a" defer></script>
-  <script src="/js/v5/usage.js?v=20260903a" defer></script>
-  <script src="/js/v5/screens.js?v=20260903a" defer></script>
-  <script src="/js/v5/habits.js?v=20260903a" defer></script>
   <script src="/js/v5/locations.js?v=20260903a" defer></script>
   <script src="/js/v5/privacy.js?v=20260903a" defer></script>
   <script src="/js/v5/tracker.js?v=20260903a" defer data-core></script>

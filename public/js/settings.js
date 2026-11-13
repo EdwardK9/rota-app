@@ -162,19 +162,19 @@ const SettingsView = {
         <!-- V5.0 Usage & Location Analytics -->
         <div class="settings-section" data-search="usage analytics location gps tracking privacy v5 telemetry clock map habits screen time data retention">
           <div class="card">
-            <div class="card-header"><h2>📈 Usage &amp; Location</h2></div>
+            <div class="card-header"><h2>📍 Location</h2></div>
             <div class="card-body" id="v5SettingsBlock">
               <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
-                Controls what the app records about how you use it — the data behind
-                <a href="#" id="v5SettingsHubLink">V5.0 Analytics</a>. All of it stays in your own
-                database on your own server and is never sent anywhere else.
+                Controls the GPS fixes behind the <a href="#" id="v5SettingsHubLink">Clock Map</a>.
+                Nothing is recorded unless location tracking is switched on, and all of it stays in
+                your own database on your own server.
               </p>
 
               <label class="v5-switch-row">
                 <input type="checkbox" id="setV5Analytics" />
                 <span class="v5-switch-body">
-                  <span class="v5-switch-label">Usage analytics</span>
-                  <span class="v5-switch-hint">App opens, how long each visit lasts, and which screens you open for how long. Turning this off stops all recording, location included.</span>
+                  <span class="v5-switch-label">Recording allowed</span>
+                  <span class="v5-switch-hint">The master switch. Off stops all recording, location included. On its own it records nothing: visits are only logged alongside location fixes, while location tracking is on.</span>
                 </span>
               </label>
 
@@ -554,7 +554,7 @@ const SettingsView = {
                   <div class="form-hint" style="margin-top:8px;line-height:1.5">
                     <strong>Not sure? Leave it on Auto.</strong> It uses the newest everyday ("flash") model your key
                     can use, and quietly switches to another if one runs out of free allowance or can't read images.
-                    The same model is used for screenshot import, renaming photos and fun facts.<br>
+                    The same model is used for screenshot import and renaming photos.<br>
                     ⚡ <em>Fastest</em> suits quick jobs and stretches the free allowance furthest.
                     🎯 <em>Most accurate</em> reads messy screenshots best, but free keys often get a tiny or zero
                     allowance on it.
@@ -664,7 +664,7 @@ const SettingsView = {
     // V5.0 usage & location
     document.getElementById('saveV5AnalyticsBtn')?.addEventListener('click', () => this.saveV5Analytics());
     document.getElementById('v5ManageDataBtn')?.addEventListener('click', () => App.navigate('v5-privacy'));
-    document.getElementById('v5SettingsHubLink')?.addEventListener('click', e => { e.preventDefault(); App.navigate('v5-hub'); });
+    document.getElementById('v5SettingsHubLink')?.addEventListener('click', e => { e.preventDefault(); App.navigate('v5-locations'); });
     document.getElementById('setV5Analytics')?.addEventListener('change', () => this._syncV5Switches());
     document.getElementById('setV5Location')?.addEventListener('change', () => this._syncV5Switches());
 

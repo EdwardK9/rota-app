@@ -24,9 +24,6 @@ const V5 = {
   /* ── API ──────────────────────────────────────────────────────────────── */
   api: {
     features:  ()      => API.get('/api/v5/features'),
-    usage:     (days)  => API.get('/api/v5/usage?days=' + encodeURIComponent(days || 90)),
-    screens:   (days)  => API.get('/api/v5/screens?days=' + encodeURIComponent(days || 90)),
-    habits:    (days)  => API.get('/api/v5/habits?days=' + encodeURIComponent(days || 90)),
     locations: (days, kind) => API.get('/api/v5/locations?' + new URLSearchParams({
                             days: days || 90, ...(kind && kind !== 'all' ? { kind } : {}),
                           })),
@@ -42,7 +39,7 @@ const V5 = {
   /* ── Render helpers ───────────────────────────────────────────────────── */
 
   backButton() {
-    return `<button class="btn btn-ghost btn-sm v3-back-btn" onclick="App.navigate('v5-hub')">← All V5 Features</button>`;
+    return `<button class="btn btn-ghost btn-sm v3-back-btn" onclick="App.navigate('v3-hub')">← All features</button>`;
   },
 
   loading(text = 'Loading…') {
