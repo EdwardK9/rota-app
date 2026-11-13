@@ -63,8 +63,8 @@ const AuditView = {
               <label style="display:block;font-size:.75rem;color:var(--text-muted);margin-bottom:3px">To date</label>
               <input type="date" id="auditTo" class="form-input" style="width:160px" />
             </div>
-            <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;padding-bottom:6px">
-              <input type="checkbox" id="auditFlagged" /> Only “wasn’t told”
+            <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;margin:0;padding-bottom:8px;white-space:nowrap">
+              <input type="checkbox" id="auditFlagged" style="width:auto;min-height:0;flex:none;margin:0;padding:0" /> Only “wasn’t told”
             </label>
             <button class="btn btn-ghost btn-sm" id="auditClearDates" style="margin-bottom:2px">Clear dates</button>
           </div>
@@ -275,11 +275,11 @@ const AuditView = {
                 <td>${actionBadge[r.action] || `<span class="badge">${r.action}</span>`}</td>
                 <td style="font-size:.85rem">${formatChange(r)}${r.note ? `<br><span style="color:var(--text-muted);font-size:.75rem">${esc(r.note)}</span>` : ''}</td>
                 <td>
-                  <label style="display:flex;align-items:center;gap:5px;font-size:.75rem;margin-bottom:5px;cursor:pointer;color:${r.not_notified ? 'var(--danger)' : 'var(--text-muted)'}">
-                    <input type="checkbox" data-audit-flag="${r.id}" ${r.not_notified ? 'checked' : ''} /> Wasn’t told
+                  <label style="display:inline-flex;align-items:center;gap:5px;font-size:.75rem;margin-bottom:5px;cursor:pointer;white-space:nowrap;color:${r.not_notified ? 'var(--danger)' : 'var(--text-muted)'}">
+                    <input type="checkbox" data-audit-flag="${r.id}" ${r.not_notified ? 'checked' : ''} style="width:auto;min-height:0;flex:none;margin:0;padding:0" /> Wasn’t told
                   </label>
                   <input type="text" class="form-input" data-audit-note="${r.id}" value="${esc(r.user_note || '')}"
-                    placeholder="Add a note…" style="width:100%;font-size:.8rem;padding:4px 6px" />
+                    placeholder="Add a note…" style="display:block;width:100%;font-size:.8rem;padding:4px 6px" />
                 </td>
                 <td style="font-size:.75rem;color:var(--text-muted)">${esc(r.source||'')}</td>
               </tr>
