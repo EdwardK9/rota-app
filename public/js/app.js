@@ -3,7 +3,12 @@
 const App = {
   currentView: 'dashboard',
   settings: {},
-  V2_VIEWS: ['synergy', 'team-metrics', 'fatigue-audit', 'shift-heatmap', 'weather', 'what-if', 'streaks', 'wrapped'],
+  V2_VIEWS: ['team-metrics', 'fatigue-audit', 'weather', 'what-if'],
+  // Pages that no longer exist (removed in 8.0). An old bookmark or home-screen
+  // shortcut to one of them lands on the Features page instead of a blank one.
+  REMOVED_VIEWS: ['v2-hub', 'v5-hub', 'synergy', 'shift-heatmap', 'streaks', 'wrapped',
+    'trophies', 'records', 'shift-dna', 'balance', 'on-this-day', 'bingo', 'countdowns',
+    'briefing', 'head-to-head', 'did-you-know', 'crystal-ball', 'v5-usage', 'v5-screens', 'v5-habits'],
   // Views whose code is in the small first bundle; every other view's code
   // comes in the "rest" bundle (see loadRest).
   CORE_VIEWS: ['dashboard'],
@@ -40,9 +45,8 @@ const App = {
       notes: '📝 Notes', settings: '⚙️ Settings',
       leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
       notifications: '🔔 Notifications',
-      'team-calendar': '🗓️ Team Calendar', 'v2-hub': '🚀 V2.0 Features', 'changelog': '📜 What\'s New', 'synergy': '🤝 Synergy Score', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
-      'shift-heatmap': '🔥 Shift Heatmap', 'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
-      'streaks': '🏅 Streaks & Badges', 'wrapped': '🎁 Rota Wrapped',
+      'team-calendar': '🗓️ Team Calendar', 'changelog': '📜 What\'s New', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
+      'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
       'manage-people': '👤 Manage People',
       'photo-library': '📷 Photo Library',
       'insights': '🔍 Insights',
@@ -257,6 +261,7 @@ const App = {
   },
 
   async navigate(view) {
+    if (this.REMOVED_VIEWS.includes(view)) view = 'v3-hub';
     if (!this.CORE_VIEWS.includes(view)) {
       try {
         await this.loadRest();
@@ -291,22 +296,12 @@ const App = {
       l.classList.toggle('active', l.dataset.view === view);
     });
 
-    // V3 features have no nav link of their own — they're reached through the
-    // V3 hub — so keep that one entry highlighted while you're inside any of them.
-    if (typeof V3 !== 'undefined' && V3.views[view]) {
-      document.querySelector('.nav-link[data-view="v3-hub"]')?.classList.add('active');
-    }
-
-    // Same for V5.0 — its five views are all reached through the V5 hub.
-    if (typeof V5 !== 'undefined' && V5.views[view]) {
-      document.querySelector('.nav-link[data-view="v5-hub"]')?.classList.add('active');
-    }
-
-    // Same idea for V2.0 — those views aren't in a registry the way V3 is, so
-    // the list here is just the fixed set of eight.
-    if (this.V2_VIEWS.includes(view)) {
-      document.querySelector('.nav-link[data-view="v2-hub"]')?.classList.add('active');
-    }
+    // Pages reached through the Features page have no menu row of their own,
+    // so keep Features highlighted while you're inside any of them.
+    const inHub = (typeof V3 !== 'undefined' && V3.views[view])
+      || (typeof V5 !== 'undefined' && V5.views[view])
+      || this.V2_VIEWS.includes(view);
+    if (inHub) document.querySelector('.nav-link[data-view="v3-hub"]')?.classList.add('active');
 
     // Highlight + auto-expand the group containing the active view
     document.querySelectorAll('.nav-group').forEach(g => {
@@ -349,18 +344,13 @@ const App = {
       case 'settings':      await SettingsView.init(); break;
       case 'leaderboard':   await LeaderboardView.init(); break;
       case 'what-if':        await WhatIfView.init(); break;
-      case 'streaks':        await StreaksView.init(); break;
-      case 'wrapped':        await WrappedView.init(); break;
       case 'team-metrics':  await TeamMetricsView.init(); break;
       case 'audit':         await AuditView.init(); break;
       case 'notifications':  await NotificationsView.init(); break;
       case 'people':        await PeopleView.init(); break;
       case 'team-calendar': await TeamCalendarView.init(); break;
-      case 'v2-hub':        V2Hub.init(); break;
       case 'changelog':     await ChangelogView.init(); break;
-      case 'synergy':       await SynergyView.init(); break;
       case 'fatigue-audit': await FatigueAuditView.init(); break;
-      case 'shift-heatmap': await ShiftHeatmapView.init(); break;
       case 'weather':        await WeatherView.init(); break;
       case 'team-upload':    TeamUploadView.init(); break;
       case 'manage-people':  await ManagePeopleView.init(); break;

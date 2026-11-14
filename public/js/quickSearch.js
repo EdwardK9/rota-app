@@ -159,10 +159,10 @@ const QuickSearch = {
       const m = /^([^\w\s]+)\s+(.*)$/u.exec(t);
       return m ? { icon: m[1], name: m[2] } : { icon: '•', name: t };
     };
+    // Pages that live on the Features page rather than in the menu.
     const group = v =>
-      (typeof V3 !== 'undefined' && V3.views[v] && v !== 'v3-hub') ? 'V3'
-      : (typeof V5 !== 'undefined' && V5.views[v] && v !== 'v5-hub') ? 'V5'
-      : App.V2_VIEWS.includes(v) ? 'V2' : '';
+      v !== 'v3-hub' && ((typeof V3 !== 'undefined' && V3.views[v]) || (typeof V5 !== 'undefined' && V5.views[v]) || App.V2_VIEWS.includes(v))
+        ? 'Feature' : '';
     const pages = Object.keys(titles)
       .filter(v => document.getElementById('view-' + v))
       .map(v => ({ ...split(titles[v]), view: v, tag: group(v), words: this.ALIASES[v] || '' }));

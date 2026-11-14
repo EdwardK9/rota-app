@@ -73,15 +73,6 @@ const API = {
   getCommuteWeather:  (date, start, end) => API.get(`/api/commute/weather?${new URLSearchParams({ date, start, end })}`),
   getForecast:        (days) => API.get(`/api/commute/forecast${days ? '?days=' + days : ''}`),
 
-  // Streaks & Badges (V2.0)
-  getStreaks:         () => API.get('/api/streaks'),
-
-  // Rota Wrapped (V2.0)
-  getWrapped:         (year) => API.get(`/api/wrapped${year ? '?year=' + year : ''}`),
-
-  // Synergy score (V2.0 Phase 2.2)
-  getSynergyScore:    (date) => API.get(`/api/working-with/synergy-score/${date}`),
-
   // Team Pay & Analytics (V2.0 Phase 3)
   getTeamMetrics:     (week) => API.get(`/api/team-metrics?${new URLSearchParams({ week })}`),
 
@@ -103,7 +94,6 @@ const API = {
   getWeeklyReport:   (params = {}) => API.get('/api/reports/weekly?' + new URLSearchParams(params)),
   getYearlyReport:   ()             => API.get('/api/reports/yearly'),
   getInsightsReport: (params = {}) => API.get('/api/reports/insights?' + new URLSearchParams(params)),
-  getShiftHeatmap:   (year)         => API.get('/api/insights/heatmap?year=' + year),
 
   // Leave
   getLeave:    (params = {}) => API.get('/api/leave?' + new URLSearchParams(params)),

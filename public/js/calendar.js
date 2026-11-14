@@ -33,6 +33,10 @@ const CalendarView = {
       <div class="card" style="overflow:hidden">
         <div class="cal-grid" id="calGrid"></div>
       </div>
+
+      <!-- Phones only: the same month as a readable list under the grid, where
+           there is room for hours, pay and the note the grid cells can't fit. -->
+      <div class="cal-agenda" id="calAgenda"></div>
     `;
 
     document.getElementById('calMonthPicker').addEventListener('change', () => {
@@ -195,6 +199,53 @@ const CalendarView = {
         bar.style.minHeight = 'unset';
       }
     });
+  },
+
+  // The month as a list (shown on phones, under the grid). Tapping a row does
+  // what tapping its day in the grid does.
+  renderAgenda(today) {
+    const el = document.getElementById('calAgenda');
+    if (!el) return;
+    const rows = [...this.shifts]
+      .filter(s => s.date.startsWith(this.currentMonth))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time));
+    if (!rows.length) { el.innerHTML = ''; return; }
+    // Start the list at today when looking at the current month — earlier
+    // shifts are still there, folded behind one tap.
+    const firstUpcoming = rows.findIndex(s => s.date >= today);
+    const past = firstUpcoming > 0 ? rows.slice(0, firstUpcoming) : (firstUpcoming === -1 ? [] : []);
+    const rest = firstUpcoming > 0 ? rows.slice(firstUpcoming) : rows;
+    const row = s => {
+      const d = new Date(s.date + 'T12:00:00');
+      const t = shiftType(s.start_time);
+      const note = this.notes[s.date];
+      const hours = s.hours_paid != null ? s.hours_paid : s.hours_worked;
+      return `
+        <button type="button" class="cal-agenda-row${s.date === today ? ' is-today' : ''}${s.completed ? ' is-done' : ''}" data-shift-id="${s.id}">
+          <span class="dash-date-badge st-${t}"><span class="dash-date-badge-dow">${DAYS[d.getDay()].slice(0, 3)}</span><span class="dash-date-badge-num">${d.getDate()}</span></span>
+          <span class="cal-agenda-main">
+            <span class="cal-agenda-time">${s.start_time} – ${s.end_time} ${shiftTypePill(s.start_time)}</span>
+            <span class="cal-agenda-sub">${hours ? fmtHours(hours) : ''}${s.completed ? ' · ✓ done' : ''}${note ? ' · 📝 ' + esc(note.note.length > 40 ? note.note.slice(0, 40) + '…' : note.note) : ''}</span>
+          </span>
+          <span class="cal-agenda-pay">${s.calculated_pay ? fmtCurrency(s.calculated_pay) : ''}</span>
+        </button>`;
+    };
+    el.innerHTML = `
+      <div class="cal-agenda-head">
+        <span>${rest === rows ? 'Shifts this month' : 'Coming up this month'}</span>
+        ${past.length ? `<button type="button" class="dash-link" id="calAgendaPast">Show ${past.length} earlier</button>` : ''}
+      </div>
+      <div class="cal-agenda-list" id="calAgendaPastList" hidden>${past.map(row).join('')}</div>
+      <div class="cal-agenda-list">${rest.map(row).join('') || '<div class="cal-agenda-empty">Nothing left this month</div>'}</div>`;
+    el.querySelector('#calAgendaPast')?.addEventListener('click', e => {
+      const list = document.getElementById('calAgendaPastList');
+      list.hidden = !list.hidden;
+      e.target.textContent = list.hidden ? `Show ${past.length} earlier` : 'Hide earlier';
+    });
+    el.querySelectorAll('.cal-agenda-row').forEach(b => b.addEventListener('click', () => {
+      const shift = this.shifts.find(s => s.id === Number(b.dataset.shiftId));
+      if (shift) this.openEdit(shift);
+    }));
   },
 
   _bindResizeSync() {
@@ -397,6 +448,7 @@ const CalendarView = {
     // (cells reflow to new heights when the window width changes).
     requestAnimationFrame(() => this._syncWeekTotalHeights());
     this._bindResizeSync();
+    this.renderAgenda(today);
 
     // Click handler — open shift edit, note modal, or choice modal
     grid.querySelectorAll('.cal-cell[data-date]').forEach(cell => {

@@ -1420,20 +1420,6 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
   border-radius: 8px; padding: 2px 6px; white-space: nowrap;
 }
 
-/* ── Rota Wrapped ────────────────────────────────────────────────────────── */
-.wrapped-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-}
-.wrapped-slide {
-  border-radius: 16px; padding: 28px 22px; color: #fff;
-  min-height: 180px; display: flex; flex-direction: column; justify-content: center;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-}
-.wrapped-big { font-size: 34px; font-weight: 800; line-height: 1.1; word-break: break-word; }
-.wrapped-label { font-size: 15px; font-weight: 500; margin-top: 6px; opacity: 0.95; }
-.wrapped-sub { font-size: 12.5px; margin-top: 12px; opacity: 0.8; line-height: 1.4; }
-
 /* ── Calendar weekly total sidebar ──────────────────────────────────────── */
 .cal-cells-wrap {
   display: flex;
@@ -1877,7 +1863,6 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 .rg-diff-table tbody tr:last-child { border-bottom: none; }
 .rg-diff-table td { vertical-align: middle; line-height: 1.4; }
 .rg-diff-table th { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
-
 
 /* ── Compact month + year picker ───────────────────────────────────────────── */
 .my-picker { display: inline-flex; gap: 6px; }
