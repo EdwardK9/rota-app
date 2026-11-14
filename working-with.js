@@ -299,6 +299,14 @@ router.get('/colleagues/birthdays', (req, res) => {
   res.json(rows);
 });
 
+// DELETE /colleagues/import-aliases — forget a saved reading of a name (?name=).
+router.delete('/colleagues/import-aliases', (req, res) => {
+  const alias = normName(req.query.name);
+  if (!alias) return res.status(400).json({ error: 'name required' });
+  db.prepare('DELETE FROM import_name_aliases WHERE alias = ?').run(alias);
+  res.json({ ok: true, alias });
+});
+
 router.delete('/colleagues/:id', (req, res) => {
   db.prepare('DELETE FROM colleagues WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
@@ -1168,8 +1176,12 @@ router.put('/colleague-shifts/:id', (req, res) => {
 // ─────────────────────────────────────────
 
 router.get('/colleagues/import-batches', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || '10', 10), 50);
-  const batches = db.prepare(`
+  const limit = Math.min(parseInt(req.query.limit || '10', 10), 100);
+  // scope=recent (default): imports that still need attention, plus anything from
+  // the last day (so a fresh import can still be undone). scope=all: every import,
+  // i.e. the history.
+  const history = req.query.scope === 'all';
+  const rows = db.prepare(`
     SELECT id, source, note, inserted_count, undone_at, created_at, pending_conflicts, summary,
       schedule_data IS NOT NULL AS can_rerun,
       (SELECT id FROM photo_files WHERE import_batch_id = import_batches.id ORDER BY id DESC LIMIT 1) AS photo_id,
@@ -1179,28 +1191,57 @@ router.get('/colleagues/import-batches', (req, res) => {
        OR json_array_length(json_extract(summary, '$.unknownNames')) > 0
        OR json_array_length(json_extract(summary, '$.warnings')) > 0
     ORDER BY id DESC
-    LIMIT ?
-  `).all(limit).map(b => {
-    // A batch entirely made of conflicts (nothing auto-inserted) still needs to
-    // surface here — that's exactly the "phone uploaded, PC needs to review"
-    // case. pending_conflicts itself is left out of the list payload (the detail
-    // endpoint returns the full list); only the count is useful here. Same for
-    // a background import that matched nobody: it used to vanish from this list
-    // entirely, so the unknown names it found were never shown anywhere.
+    LIMIT 200
+  `).all();
+
+  const colleagues = db.prepare('SELECT id, name, left_date FROM colleagues').all();
+  const aliasRows = new Map(db.prepare('SELECT alias, colleague_id, ignored FROM import_name_aliases').all()
+    .map(a => [a.alias, a]));
+  // How a name is read *now* — an alias beats fuzzy matching, same as the importer.
+  const readAs = name => {
+    const al = aliasRows.get(normName(name));
+    if (al && al.ignored) return { name, ignored: true, alias: true };
+    const col = (al && colleagues.find(c => c.id === al.colleague_id)) || fuzzyMatch(name, colleagues);
+    return col ? { name, colleague: { id: col.id, name: col.name }, alias: !!al } : null;
+  };
+  const dayAgo = Date.now() - 24 * 3600 * 1000;
+
+  // A batch entirely made of conflicts (nothing auto-inserted) still needs to
+  // surface here — that's exactly the "phone uploaded, PC needs to review" case.
+  // pending_conflicts itself is left out of the list payload (the detail
+  // endpoint returns the full list); only the count is useful here.
+  const all = rows.map(b => {
     const pendingCount = b.pending_conflicts ? JSON.parse(b.pending_conflicts).length : 0;
     let summary = null;
     try { summary = b.summary ? JSON.parse(b.summary) : null; } catch (_) {}
     const { pending_conflicts, summary: _s, ...rest } = b;
+    // Names the import skipped, split by whether they've since been dealt with
+    // (added as a colleague, aliased or ignored) but not yet re-run, vs. still unknown.
+    const skippedNames = summary?.unknownNames || [];
+    const unknown = [], resolved = [];
+    skippedNames.forEach(n => { const r = readAs(n); (r ? resolved : unknown).push(r || n); });
+    // Names the importer already read through a saved alias on its last run —
+    // listed so the mapping can still be changed afterwards.
+    (summary?.aliasedNames || []).forEach(n => {
+      if (skippedNames.includes(n)) return;
+      const r = readAs(n);
+      if (r) resolved.push({ ...r, applied: true });
+    });
     return {
       ...rest,
       can_rerun: !!b.can_rerun,
       pending_conflict_count: pendingCount,
-      unknown_names: summary?.unknownNames || [],
+      unknown_names: unknown,
+      resolved_names: resolved,
       warnings: summary?.warnings || [],
       week: summary?.week || null,
+      needs_attention: !b.undone_at && (pendingCount > 0 || skippedNames.length > 0),
     };
   });
-  res.json({ batches });
+  const batches = (history ? all : all.filter(b =>
+    b.needs_attention || Date.parse(String(b.created_at).replace(' ', 'T') + 'Z') > dayAgo
+  )).slice(0, limit);
+  res.json({ batches, hidden: history ? 0 : all.length - batches.length });
 });
 
 // POST /colleagues/import-aliases — teach the import a name it didn't recognise.
@@ -1395,6 +1436,7 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
 
   let inserted = 0, updated = 0, skipped = 0, reconciled = 0;
   const unknownNames = new Set();
+  const aliasedNames = new Set(); // names read through a saved alias (or ignored)
   const warnings = [];
   const conflicts = []; // shifts that exist in DB with different data
 
@@ -1460,10 +1502,11 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
 
         // A saved alias beats fuzzy matching either way
         const alias = aliases.get(normName(rawName));
-        if (alias && alias.ignored) { skipped++; continue; }
+        if (alias && alias.ignored) { aliasedNames.add(rawName); skipped++; continue; }
 
         // Fuzzy-match against known colleagues
         const col = (alias && colleagues.find(c => c.id === alias.colleague_id)) || fuzzyMatch(rawName, colleagues);
+        if (alias && col) aliasedNames.add(rawName);
         if (!col) { unknownNames.add(rawName); skipped++; continue; }
         if (col.left_date && col.left_date < dayDate) { skipped++; continue; }
 
@@ -1575,7 +1618,7 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
   // screenshot) can still tell you who it didn't recognise — and so it can be
   // re-run once they've been added.
   db.prepare('UPDATE import_batches SET summary = ?, schedule_data = ? WHERE id = ?').run(
-    JSON.stringify({ inserted, updated, skipped, reconciled, warnings, unknownNames: [...unknownNames],
+    JSON.stringify({ inserted, updated, skipped, reconciled, warnings, unknownNames: [...unknownNames], aliasedNames: [...aliasedNames],
       week: [weekDates[0], weekDates[6]] }),
     JSON.stringify(schedule_data), batchId);
   return { inserted, updated, skipped, reconciled, conflicts, warnings, unknownNames: [...unknownNames] };
