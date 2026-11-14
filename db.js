@@ -694,6 +694,160 @@ db.exec(`
 `);
 
 // -----------------------------------------
+// Rota history — "what did the rota look like, and what changed when?"
+// -----------------------------------------
+// Every insert, update and delete on `shifts` (yours) and `colleague_shifts` (the
+// team calendar) is written to rota_history by SQLite triggers. Triggers rather
+// than calls from each route, so it doesn't matter which code path made the
+// change — screenshot import, Rotageek sync, bulk delete, hand edit, restore —
+// it is all recorded. rotaHistoryCore.js replays the events to show the rota as
+// it stood on any past date.
+//   op       insert | update | delete
+//   date     the shift's date after the change (the old date, for a delete)
+//   old_date the shift's date before an update — so a shift moved out of a week
+//            is still found when you look at that week
+//   old_json / new_json  the row before / after (just the columns that matter)
+//   source   where the change came from, from rota_history_ctx.source — set by
+//            db.withHistorySource() around syncs and imports; NULL = edited in the app
+db.exec(`
+  CREATE TABLE IF NOT EXISTS rota_history (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    at       TEXT NOT NULL DEFAULT (datetime('now')),
+    tbl      TEXT NOT NULL,
+    row_id   INTEGER NOT NULL,
+    op       TEXT NOT NULL,
+    date     TEXT,
+    old_date TEXT,
+    old_json TEXT,
+    new_json TEXT,
+    source   TEXT,
+    note     TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_rota_history_row      ON rota_history(tbl, row_id);
+  CREATE INDEX IF NOT EXISTS idx_rota_history_date     ON rota_history(date);
+  CREATE INDEX IF NOT EXISTS idx_rota_history_old_date ON rota_history(old_date);
+  CREATE INDEX IF NOT EXISTS idx_rota_history_at       ON rota_history(at);
+
+  CREATE TABLE IF NOT EXISTS rota_history_ctx (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    source     TEXT,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    started_at TEXT
+  );
+  INSERT OR IGNORE INTO rota_history_ctx (id, source, enabled) VALUES (1, NULL, 1);
+`);
+// A crash mid-import must not leave a stale label on the next boot's changes.
+db.prepare('UPDATE rota_history_ctx SET source = NULL, enabled = 1 WHERE id = 1').run();
+
+// First boot with this feature: remember when recording began, and seed your own
+// shifts' past from the audit log, which has been recording creates / edits /
+// deletes with old and new values for longer than this table has existed.
+// (The team calendar had no log at all, so for that the best that can be known
+// about the past is each row's created_at.)
+{
+  const firstBoot = db.prepare(
+    "UPDATE rota_history_ctx SET started_at = datetime('now') WHERE id = 1 AND started_at IS NULL"
+  ).run().changes > 0;
+  if (firstBoot) {
+    try {
+      const OPS = {
+        created: 'insert', sync_created: 'insert',
+        deleted: 'delete',
+        updated: 'update', sync_changed: 'update',
+        sync_break_updated: 'update', break_corrected: 'update', break_audit_corrected: 'update',
+      };
+      const parse = s => { try { return s ? JSON.parse(s) : null; } catch (_) { return null; } };
+      const audit = db.prepare(`
+        SELECT shift_id, action, old_values, new_values, source, note, created_at
+        FROM shift_audit_log WHERE shift_id IS NOT NULL ORDER BY created_at, id
+      `).all().filter(r => OPS[r.action]);
+
+      // Break-only entries carry no date, so borrow it from any other entry for the
+      // same shift, or from the shift itself if it still exists.
+      const knownDate = {};
+      for (const r of audit) {
+        const d = (parse(r.new_values) || {}).date || (parse(r.old_values) || {}).date;
+        if (d) knownDate[r.shift_id] = d;
+      }
+      const curDate = db.prepare('SELECT date FROM shifts WHERE id = ?');
+      const ins = db.prepare(`
+        INSERT INTO rota_history (at, tbl, row_id, op, date, old_date, old_json, new_json, source, note)
+        VALUES (?, 'shifts', ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction(() => {
+        for (const r of audit) {
+          const oldV = parse(r.old_values), newV = parse(r.new_values);
+          const date = (newV && newV.date) || (oldV && oldV.date) || knownDate[r.shift_id]
+            || (curDate.get(r.shift_id) || {}).date || null;
+          const oldDate = (oldV && oldV.date) || null;
+          ins.run(r.created_at, r.shift_id, OPS[r.action], date, oldDate,
+            oldV ? JSON.stringify(oldV) : null, newV ? JSON.stringify(newV) : null,
+            r.source || null, r.note || null);
+        }
+      })();
+      console.log('[RotaHistory] Seeded ' + audit.length + ' event(s) from the audit log');
+    } catch (e) { console.error('[RotaHistory] audit backfill failed:', e.message); }
+  }
+}
+
+// Triggers are dropped and rebuilt on every boot so their definition always
+// follows this code. Only the columns that make a shift a different shift (or
+// change its hours) fire an UPDATE event — Google Calendar ids, updated_at and
+// the like are not history.
+{
+  const SHIFT_COLS = ['date', 'start_time', 'end_time', 'break_scheduled_minutes', 'break_taken_minutes',
+    'hours_worked', 'hours_paid', 'completed', 'absence_type', 'is_bank_holiday'];
+  const COL_COLS   = ['colleague_id', 'date', 'start_time', 'end_time', 'shift_type', 'store'];
+
+  const rowJson = (which, cols, extra) => 'json_object(' + cols.map(c => `'${c}', ${which}.${c}`)
+    .concat(extra || [], [`'created_at', ${which}.created_at`]).join(', ') + ')';
+  const nameOf = which => `'name', (SELECT name FROM colleagues WHERE id = ${which}.colleague_id)`;
+  const colExtra = which => [nameOf(which), `'import_batch_id', ${which}.import_batch_id`];
+  const src = '(SELECT source FROM rota_history_ctx WHERE id = 1)';
+  const on  = '(SELECT enabled FROM rota_history_ctx WHERE id = 1) = 1';
+  const changed = cols => '(' + cols.map(c => `OLD.${c} IS NOT NEW.${c}`).join(' OR ') + ')';
+
+  const make = (tbl, cols, extra) => `
+    DROP TRIGGER IF EXISTS trg_rh_${tbl}_ins;
+    DROP TRIGGER IF EXISTS trg_rh_${tbl}_upd;
+    DROP TRIGGER IF EXISTS trg_rh_${tbl}_del;
+    CREATE TRIGGER trg_rh_${tbl}_ins AFTER INSERT ON ${tbl} WHEN ${on}
+    BEGIN
+      INSERT INTO rota_history (tbl, row_id, op, date, new_json, source)
+      VALUES ('${tbl}', NEW.id, 'insert', NEW.date, ${rowJson('NEW', cols, extra && extra('NEW'))}, ${src});
+    END;
+    CREATE TRIGGER trg_rh_${tbl}_upd AFTER UPDATE ON ${tbl} WHEN ${on} AND ${changed(cols)}
+    BEGIN
+      INSERT INTO rota_history (tbl, row_id, op, date, old_date, old_json, new_json, source)
+      VALUES ('${tbl}', NEW.id, 'update', NEW.date, OLD.date,
+        ${rowJson('OLD', cols, extra && extra('OLD'))}, ${rowJson('NEW', cols, extra && extra('NEW'))}, ${src});
+    END;
+    CREATE TRIGGER trg_rh_${tbl}_del AFTER DELETE ON ${tbl} WHEN ${on}
+    BEGIN
+      INSERT INTO rota_history (tbl, row_id, op, date, old_json, source)
+      VALUES ('${tbl}', OLD.id, 'delete', OLD.date, ${rowJson('OLD', cols, extra && extra('OLD'))}, ${src});
+    END;
+  `;
+  db.exec(make('shifts', SHIFT_COLS));
+  db.exec(make('colleague_shifts', COL_COLS, colExtra));
+}
+// INSERT OR REPLACE (a manually re-added team shift) only fires the delete
+// trigger for the row it replaces when recursive triggers are on.
+db.pragma('recursive_triggers = ON');
+
+// Label the changes made while fn runs (a sync, an import) so the history can say
+// where they came from. Synchronous only — it is a flag on the connection, so
+// never hold it across an await.
+function setHistorySource(label) {
+  db.prepare('UPDATE rota_history_ctx SET source = ? WHERE id = 1').run(label || null);
+}
+db.setHistorySource = setHistorySource;
+db.withHistorySource = (label, fn) => {
+  setHistorySource(label);
+  try { return fn(); } finally { setHistorySource(null); }
+};
+
+// -----------------------------------------
 // Seed default data (only if tables are empty)
 // -----------------------------------------
 

@@ -43,7 +43,7 @@ const App = {
       dashboard: '🏠 Dashboard', shifts: '📋 Shifts', calendar: '📅 Calendar', payslips: '💰 Payslips',
       reports: '📊 Reports', import: '📥 Import Data', export: '📤 Export', leave: '🏖️ Leave Tracker',
       notes: '📝 Notes', settings: '⚙️ Settings',
-      leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log',
+      leaderboard: '🏆 Leaderboard', 'team-metrics': '💷 Team Metrics', people: '👥 People', audit: '📋 Audit Log', 'rota-history': '🕰️ Past Rota',
       notifications: '🔔 Notifications',
       'team-calendar': '🗓️ Team Calendar', 'changelog': '📜 What\'s New', 'fatigue-audit': '🩺 Fatigue Audit', 'team-upload': '📸 Team Upload',
       'weather': '🌤️ Weather', 'what-if': '🧮 What If?',
@@ -346,6 +346,7 @@ const App = {
       case 'what-if':        await WhatIfView.init(); break;
       case 'team-metrics':  await TeamMetricsView.init(); break;
       case 'audit':         await AuditView.init(); break;
+      case 'rota-history':  await RotaHistoryView.init(); break;
       case 'notifications':  await NotificationsView.init(); break;
       case 'people':        await PeopleView.init(); break;
       case 'team-calendar': await TeamCalendarView.init(); break;

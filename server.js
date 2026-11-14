@@ -17,6 +17,7 @@ const { DEFAULT_DELIVERY_TIME, normaliseDeliveryTime, serialiseDayTimes, deliver
 const { fetchHourlyForecast, nearestHourKey, buildAlerts } = commuteRouter;
 const teamMetricsRouter = require('./teamMetrics');
 const fatigueAuditRouter = require('./fatigueAudit');
+const rotaHistoryRouter = require('./rotaHistory');
 const webhooksRouter = require('./webhooks');
 const exportsV2Router = require('./exportsV2');
 const payslipFilesRouter = require('./payslipFiles');
@@ -54,6 +55,7 @@ app.use('/api', workingWithRouter);
 app.use('/api', commuteRouter);
 app.use('/api', teamMetricsRouter);
 app.use('/api', fatigueAuditRouter);
+app.use('/api', rotaHistoryRouter);
 app.use('/api', webhooksRouter);
 app.use('/api', exportsV2Router);
 app.use('/api', payslipFilesRouter);
@@ -1933,7 +1935,7 @@ app.post('/api/restore', (req, res) => {
           settings = [], calendar_notes = [] } = req.body;
 
   try {
-    db.transaction(() => {
+    db.withHistorySource('restore', db.transaction(() => {
       // Clear existing data
       db.prepare('DELETE FROM shifts').run();
       db.prepare('DELETE FROM payslips').run();
@@ -1972,7 +1974,7 @@ app.post('/api/restore', (req, res) => {
       calendar_notes.forEach(r => db.prepare(
         'INSERT INTO calendar_notes VALUES (@id,@date,@note,@created_at,@updated_at)'
       ).run(r));
-    })();
+    }));
 
     res.json({ success: true, message: 'Restore complete' });
   } catch(e) {
@@ -2232,7 +2234,7 @@ app.post('/api/import/ics-shifts', (req, res) => {
     }
   });
 
-  doImport();
+  db.withHistorySource('ics_import', doImport);
   // Mirror newly imported shifts to Google Calendar (fire-and-forget, after commit)
   for (const id of gcalUpsertIds) {
     const row = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
@@ -2351,7 +2353,7 @@ app.post('/api/import/shifts', (req, res) => {
     });
   });
 
-  doImport();
+  db.withHistorySource('csv_import', doImport);
   // Mirror newly imported shifts to Google Calendar (fire-and-forget, after commit)
   for (const id of gcalUpsertIds) {
     const row = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
@@ -3151,7 +3153,7 @@ app.post('/api/rotageek/import-schedule', (req, res) => {
       }
     }
   });
-  doImport();
+  db.withHistorySource('rotageek_import', doImport);
   // Mirror newly imported shifts to Google Calendar (fire-and-forget, after commit)
   for (const id of gcalUpsertIds) {
     const row = db.prepare('SELECT * FROM shifts WHERE id = ?').get(id);
@@ -3291,7 +3293,7 @@ app.post('/api/rotageek/apply-diffs', (req, res) => {
       } catch (e) { errors.push(e.message); skipped++; }
     }
   });
-  try { run(); } catch (e) { errors.push(e.message); }
+  try { db.withHistorySource('apply_diffs', run); } catch (e) { errors.push(e.message); }
 
   // Mirror the applied changes to Google Calendar (fire-and-forget, after commit)
   for (const id of gcalUpsertIds) {
@@ -3779,7 +3781,7 @@ async function runRotageekSync({ from: fromOverride, to: toOverride, source = 'a
     }
   });
 
-  try { doSync(); } catch (e) { errors.push(e.message); }
+  try { db.withHistorySource(source, doSync); } catch (e) { errors.push(e.message); }
 
   if (compareOnly) {
     // Merge same-date "new" + "missing(completed)" into a single "time changed (completed)"

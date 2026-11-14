@@ -486,6 +486,22 @@ The app can send push notifications to your phone using [ntfy](https://ntfy.sh) 
 
 ---
 
+### Past Rota (what the rota looked like, and what changed)
+
+**Tools → Past Rota.** Pick a week and see how it has changed since it was first put on the rota — for your own shifts and for the team.
+
+- **Changes** — each shift with a tag saying what happened to it and when: *added 9 Nov*, *removed 9 Nov*, *changed 5 Nov · was 09:00–17:00*. The header says when the main rota was added ("Main rota added Sun 1 Nov"), so only the exceptions are tagged. The Hours column shows each person's hours now against how they were first rostered.
+- **As at a date** — the rota as it stood at the end of any past day ("1 week ago", "2 weeks ago", or pick one). Shifts that were later removed or changed say so.
+- **Original** — each person's week as first added. **Now** — today's rota, with a tag on anything added or changed late.
+- **Log** — a list of every change, newest first, with where it came from (Rotageek sync, a team screenshot import, edited in the app…) and, for your own shifts, the reason ("Removed — no longer in Rotageek").
+- Click any shift for its full timeline: added, every change with before and after, removed.
+
+**How it works.** SQLite triggers on `shifts` and `colleague_shifts` record every insert, update and delete into `rota_history`, whichever code path made it (imports, syncs, bulk deletes, hand edits, restores), so nothing has to remember to log. `rotaHistoryCore.js` replays that log; it has no database dependency and is covered by `test/rota-history.test.js`.
+
+**How far back it goes.** Your own shifts were seeded from the existing audit log on first run, so their history reaches back as far as the audit log does. The team calendar had no log before this feature, so its history starts the day this shipped; earlier team shifts show the day they were added, but a team shift that was removed or changed before then can't be shown.
+
+---
+
 ### V3.0 Features
 
 Extra views on the **✨ Features** page (in the sidebar, or find any of them with quick
@@ -546,6 +562,8 @@ TrueNAS filesystem
     ├── server.js                      ← main Express server
     ├── db.js                          ← SQLite schema & helpers
     ├── working-with.js                ← colleagues/OCR routes
+    ├── rotaHistory.js                 ← Past Rota routes
+    ├── rotaHistoryCore.js             ← Past Rota replay logic (pure, unit-tested)
     ├── package.json                   ← Node dependencies
     ├── docker-compose.yml             ← Docker config
     ├── public/
@@ -705,6 +723,7 @@ Note: `docker-compose down` does **not** delete the `rota-data` volume or the da
 | `colleagues` | Colleague names with optional start date, birthday, left date, contract hours |
 | `colleague_shifts` | Colleagues' shift records (imported from Rotageek or OCR) |
 | `shift_audit_log` | Immutable log of every create/update/delete action on shifts |
+| `rota_history` | Every insert/update/delete on `shifts` and `colleague_shifts`, written by triggers — the data behind Past Rota. `rota_history_ctx` holds the label for the current import/sync and when recording began |
 | `ocr_jobs` / `ocr_job_files` | Background job queue for screenshot OCR processing |
 | `photo_folders` / `photo_files` | Uploaded rota screenshots — metadata here, files on disk under `data/photo-library/` |
 | `payslip_files` | Uploaded payslip PDFs — metadata here, files on disk under `data/payslip-files/` |
@@ -799,6 +818,8 @@ All endpoints are under `/api/`. The frontend communicates exclusively via these
 ### Other
 | Method | Endpoint | Description |
 |--------|---------|-------------|
+| GET | `/api/rota-history/week` | Every version of every shift in a Mon–Sun week, with when each was added / changed / removed — `?start=YYYY-MM-DD`, optional `?scope=all\|me\|team` |
+| GET | `/api/rota-history/log` | Readable list of changes, newest first — `?days=30`, optional `?scope=`, `?minor=1`, `?limit=` |
 | GET | `/api/settings` | Get all settings |
 | POST | `/api/settings` | Upsert settings (key-value map) |
 | GET | `/api/calendar-notes` | Get calendar notes — optional `?month=YYYY-MM` |

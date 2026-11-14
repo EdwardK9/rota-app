@@ -29,6 +29,8 @@
   <link rel="stylesheet" href="/css/refresh.css?v=1" />
   <!-- Phone layout pass (tables → cards, stat strips, timelines) -->
   <link rel="stylesheet" href="/css/mobile.css?v=1" />
+  <!-- Past Rota (rota history) -->
+  <link rel="stylesheet" href="/css/rotaHistory.css?v=1" />
   <!-- Theme (indigo palette, shift-type colours, phone tab bar, quick search) — last, so it wins -->
   <link rel="stylesheet" href="/css/theme.css?v=1" />
 </head>
@@ -96,6 +98,7 @@
           <li><a href="#" class="nav-link" data-view="notes"><span class="nav-icon">📝</span><span class="nav-label">Notes</span></a></li>
           <li><a href="#" class="nav-link" data-view="notifications"><span class="nav-icon">🔔</span><span class="nav-label">Notifications</span></a></li>
           <li><a href="#" class="nav-link" data-view="audit"><span class="nav-icon">📋</span><span class="nav-label">Audit Log</span></a></li>
+          <li><a href="#" class="nav-link" data-view="rota-history"><span class="nav-icon">🕰️</span><span class="nav-label">Past Rota</span></a></li>
           <li><a href="#" class="nav-link" data-view="key"><span class="nav-icon">🔑</span><span class="nav-label">Key</span></a></li>
         </ul>
       </li>
@@ -144,6 +147,7 @@
     <div id="view-notes" class="view hidden"></div>
     <div id="view-settings" class="view hidden"></div>
     <div id="view-audit" class="view hidden"></div>
+    <div id="view-rota-history" class="view hidden"></div>
     <div id="view-notifications" class="view hidden"></div>
     <div id="view-leaderboard" class="view hidden"></div>
     <div id="view-people" class="view hidden"></div>
@@ -253,6 +257,7 @@
   <script src="/js/insights.js?v=20260711c" defer></script>
   <script src="/js/whosin.js?v=20260714b" defer></script>
   <script src="/js/audit.js?v=20260710a" defer></script>
+  <script src="/js/rotaHistory.js?v=1" defer></script>
   <script src="/js/notifications.js?v=20260817b" defer></script>
   <script src="/js/clockInOut.js?v=20260711a" defer></script>
   <script src="/js/dashboard.js?v=20260821a" defer data-core></script>

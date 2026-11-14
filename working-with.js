@@ -1249,7 +1249,7 @@ router.delete('/colleagues/import-batches/:id', (req, res) => {
     db.prepare("UPDATE import_batches SET undone_at = datetime('now'), pending_conflicts = NULL, pending_schedule_data = NULL WHERE id = ?").run(batchId);
     return info.changes;
   });
-  const deleted = undo();
+  const deleted = db.withHistorySource('team_import_undo:' + batchId, undo);
   res.json({ deleted, batchId });
 });
 
@@ -1409,7 +1409,7 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
   const incomingAwayPresence = new Set(); // `${colleague_id}|${date}|${store lower-cased}`
   const resolvedDates = new Set();
 
-  db.transaction(() => {
+  db.withHistorySource('team_import:' + batchId, db.transaction(() => {
     for (const day of schedule_data.schedule) {
       const dayDate = resolveDayDate(day.date, weekDates);
 
@@ -1564,7 +1564,7 @@ function runJsonScheduleImport(schedule_data, overrides, batchId) {
         }
       }
     }
-  })();
+  }));
 
   // Accumulate rather than overwrite — resolve-conflicts re-runs this against the
   // same batchId, so a later pass's insert count must add to, not replace, an
@@ -1668,7 +1668,7 @@ router.post('/team-shifts/import', (req, res) => {
   const errors      = [];
   const unknownNames = [];
 
-  db.transaction(() => {
+  db.withHistorySource('team_import:' + batchId, db.transaction(() => {
     for (const s of shifts) {
       const name      = (s.name || s.colleague_name || '').trim();
       const date      = (s.date || '').trim();
@@ -1691,7 +1691,7 @@ router.post('/team-shifts/import', (req, res) => {
       if (info.changes > 0) imported++;
       else skipped++;
     }
-  })();
+  }));
 
   finalizeImportBatch(batchId, imported);
   res.json({ imported, skipped, errors, unknownNames, batchId });
