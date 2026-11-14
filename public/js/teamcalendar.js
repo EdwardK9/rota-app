@@ -750,9 +750,10 @@ const TeamCalendarView = {
               font-size:10px;line-height:1;cursor:pointer;padding:0"
               title="Edit">✎</button>`;
           if (s.shift_type === 'leave') {
+            const lh = s.leave_hours > 0 ? `<div style="opacity:0.8;font-weight:500">${this._fmtMins(Math.round(s.leave_hours * 60))}</div>` : '';
             return `<div style="position:relative;background:#10B981;color:#111420;border-radius:6px;
               padding:5px 7px;margin-bottom:3px;font-size:11px;line-height:1.3;font-weight:600">
-              🌴 Annual Leave${delBtn}</div>`;
+              🌴 Annual Leave${lh}${delBtn}</div>`;
           }
           if (s.shift_type === 'all_day') {
             return `<div style="position:relative;background:#F59E0B;color:#111420;border-radius:6px;
@@ -775,8 +776,12 @@ const TeamCalendarView = {
 
       const nameBg = row.isMe ? 'var(--sidebar-bg)' : 'var(--bg)';
       const nameFg = row.isMe ? '#fff' : 'var(--text)';
+      // Booked leave counts toward the week (as it does in Rotageek and on the
+      // Shifts page). Only my own leave carries hours — colleague leave chips
+      // don't, so theirs still add nothing.
       const totalMins = Object.values(row.dayMap).flat().reduce((acc, s) => {
-        if (s.shift_type === 'leave' || s.shift_type === 'all_day') return acc;
+        if (s.shift_type === 'leave') return acc + Math.round((s.leave_hours || 0) * 60);
+        if (s.shift_type === 'all_day') return acc;
         const gross = this._toMins(s.end_time) - this._toMins(s.start_time);
         if (gross <= 0) return acc;
         return acc + gross - this._breakMins(s.start_time, s.end_time);
@@ -789,10 +794,12 @@ const TeamCalendarView = {
       let contractCell = `<td style="border:1px solid var(--border);padding:6px 8px;text-align:center;white-space:nowrap;vertical-align:middle"></td>`;
       if (row.contractHours > 0 || !row.isMe) {
         const contract = row.contractHours || 0;
-        const diff = totalMins / 60 - contract;
-        const diffStr = diff === 0 ? 'on contract'
-          : diff > 0 ? `+${diff.toFixed(1).replace(/\.0$/,'')}h over`
-          : `${diff.toFixed(1).replace(/\.0$/,'')}h under`;
+        const diffMins = totalMins - Math.round(contract * 60);
+        const diff = diffMins / 60;
+        // Exact h/m, like the total above it — "9.3h" for 9h 15m didn't add up on paper.
+        const diffStr = diffMins === 0 ? 'on contract'
+          : diffMins > 0 ? `+${this._fmtMins(diffMins)} over`
+          : `-${this._fmtMins(-diffMins)} under`;
         const diffCol = diff > 0 ? '#10B981' : diff < 0 ? '#EF4444' : 'var(--text-muted)';
         contractCell = `
           <td style="border:1px solid var(--border);padding:6px 8px;text-align:center;white-space:nowrap;vertical-align:middle">

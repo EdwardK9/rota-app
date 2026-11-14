@@ -79,6 +79,13 @@ const CalendarView = {
       const firstDow = new Date(y, m - 1, 1).getDay();
       const firstIsMonday = firstDow === 1;
       const lastIsSunday  = lastDayDate.getDay() === 0;
+      // The grid runs Monday-of-the-first-week to Sunday-of-the-last-week, and the
+      // week totals cover all of it — so leave is fetched for that whole span, not
+      // just the month (otherwise 26 Oct–1 Nov showed no total for 20h of leave).
+      const gridFrom = new Date(y, m - 1, 1 - ((firstDow + 6) % 7));
+      const gridTo   = new Date(y, m - 1, lastDayDate.getDate() + (7 - lastDayDate.getDay()) % 7);
+      const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const gridFirst = ymd(gridFrom), gridLast = ymd(gridTo);
 
       const [shifts, prevShifts, nextShifts, bankHols, notesArr, birthdaysArr, leaveEntries] = await Promise.all([
         API.getShifts({ month: this.currentMonth }),
@@ -87,21 +94,13 @@ const CalendarView = {
         BankHols.forMonth(this.currentMonth).catch(() => new Set()),
         API.getCalendarNotes({ month: this.currentMonth }).catch(() => []),
         API.getColleagueBirthdays().catch(() => []),
-        API.getLeave({ from: firstDay, to: lastDay }).catch(() => [])
+        API.getLeave({ from: gridFirst, to: gridLast }).catch(() => [])
       ]);
 
-      // Helper: get Monday of week for a date string
-      const getWeekMon = (dateStr) => {
-        const d = new Date(dateStr + 'T00:00:00');
-        const dow = d.getDay();
-        d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      };
-      // Include adjacent shifts only if their week overlaps with current month's weeks
-      const mainWeeks = new Set(shifts.map(s => getWeekMon(s.date)));
-      const mainDates = new Set(shifts.map(s => s.date));
+      // Include adjacent-month shifts that fall in the grid's first or last week —
+      // whether or not that week also has a shift inside this month.
       const adjShifts = [...prevShifts, ...nextShifts]
-        .filter(s => mainWeeks.has(getWeekMon(s.date)) && !mainDates.has(s.date));
+        .filter(s => s.date >= gridFirst && s.date <= gridLast);
       // Store adjacent shifts separately so they don't appear as calendar cells
       this.adjShifts = adjShifts;
       this.shifts   = shifts;
@@ -137,9 +136,10 @@ const CalendarView = {
           cur.setDate(cur.getDate() + 1);
         }
         for (const [d, hrs] of Object.entries(le.daily_hours || {})) {
-          if (d >= firstDay && d <= lastDay && hrs) this.leaveHoursByDate[d] = (this.leaveHoursByDate[d] || 0) + hrs;
+          if (d >= gridFirst && d <= gridLast && hrs) this.leaveHoursByDate[d] = (this.leaveHoursByDate[d] || 0) + hrs;
         }
       }
+      this.monthRange = { firstDay, lastDay };
       this.renderStats();
       this.renderGrid();
     } catch(e) {
@@ -149,7 +149,14 @@ const CalendarView = {
 
   renderStats() {
     const completed = this.shifts.filter(s => s.completed);
-    const totalHours = completed.reduce((sum, s) => sum + (s.hours_worked || 0), 0);
+    // Paid hours (scheduled break deducted) — the figure pay is calculated on and
+    // what Rotageek shows. hours_worked is time on site, break included.
+    const paidOf = s => (s.hours_paid != null ? s.hours_paid : (s.hours_worked || 0));
+    const totalHours = completed.reduce((sum, s) => sum + paidOf(s), 0);
+    const { firstDay, lastDay } = this.monthRange || {};
+    const leaveHours = Object.entries(this.leaveHoursByDate || {})
+      .filter(([d]) => !firstDay || (d >= firstDay && d <= lastDay))
+      .reduce((sum, [, h]) => sum + h, 0);
     const totalPay   = completed.reduce((sum, s) => sum + (s.calculated_pay || 0), 0);
     const totalDist  = completed.reduce((sum, s) => sum + (s.distance_miles || 0), 0);
     const upcoming   = this.shifts.filter(s => !s.completed);
@@ -172,6 +179,10 @@ const CalendarView = {
         <div class="stat-label">Hours Worked</div>
         <div class="stat-value">${fmtHours(totalHours)}</div>
       </div>
+      ${leaveHours > 0 ? `<div class="stat-card">
+        <div class="stat-label">Annual Leave</div>
+        <div class="stat-value">${fmtHours(leaveHours)}</div>
+      </div>` : ''}
       <div class="stat-card">
         <div class="stat-label">Est. Pay</div>
         <div class="stat-value">${fmtCurrency(totalPay)}</div>
@@ -312,7 +323,10 @@ const CalendarView = {
 
       if (shift) {
         const payStr   = shift.calculated_pay ? fmtCurrency(shift.calculated_pay) : '';
-        const hoursStr = shift.hours_worked    ? fmtHours(shift.hours_worked) : '';
+        // Paid hours, so the cell, its pay and the week total all agree (the
+        // 09:45–15:45 shift is 5.75h paid / £77.51, not 6.00h).
+        const cellHours = shift.hours_paid != null ? shift.hours_paid : shift.hours_worked;
+        const hoursStr = cellHours ? fmtHours(cellHours) : '';
         innerHtml += `
           <div class="cal-shift-block ${shift.completed ? 'cal-shift-done' : 'cal-shift-upcoming'} st-${shiftType(shift.start_time)}" title="${SHIFT_TYPES[shiftType(shift.start_time)].label} shift${shift.completed ? ' — completed' : ''}">
             <div class="cal-shift-times"><span class="cal-t-start">${shift.start_time}</span><span class="cal-t-dash"> – </span><span class="cal-t-end">${shift.end_time}</span></div>
@@ -419,19 +433,24 @@ const CalendarView = {
     const numWeeks = Math.ceil((startOffset + daysInMonth) / 7);
     let weekBarsHtml = '';
     for (let wk = 0; wk < numWeeks; wk++) {
-      const wt = weekTotals[wk];
+      const wt = weekTotals[wk] || { worked: 0, scheduled: 0, unusedBreak: 0 };
       const leaveHrs = leaveHoursByWeek[wk] || 0;
-      if (!wt && leaveHrs <= 0) { weekBarsHtml += '<div class="cal-week-total"></div>'; continue; }
-      const workedStr    = wt && wt.worked    > 0 ? fmtHours(wt.worked)    : null;
-      const schedStr     = wt && wt.scheduled > 0 ? fmtHours(wt.scheduled) : null;
-      const showSched    = schedStr && Math.abs(wt.scheduled - wt.worked) > 0.05;
-      const unusedStr    = wt && wt.unusedBreak > 0.01 ? fmtHours(wt.unusedBreak) : null;
-      const leaveStr     = leaveHrs > 0 ? fmtHours(leaveHrs) : null;
+      // Week total = paid shift hours + annual leave — the same sum as the Shifts
+      // page's weekly row and Rotageek's "Total" column (2–8 Nov: 10.75 + 12 = 22.75).
+      const total = wt.scheduled + leaveHrs;
+      if (total <= 0.005) { weekBarsHtml += '<div class="cal-week-total"></div>'; continue; }
+      // "Done so far" only while the week is part-worked; once every shift is
+      // done it equals the shift part of the total and adds nothing.
+      const inProgress   = wt.worked > 0.005 && wt.scheduled - wt.worked > 0.05;
+      const unusedStr    = wt.unusedBreak > 0.01 ? fmtHours(wt.unusedBreak) : null;
+      const totalTitle   = leaveHrs > 0
+        ? `Week total: ${fmtHours(wt.scheduled)} shifts + ${fmtHours(leaveHrs)} annual leave`
+        : 'Week total: paid shift hours (scheduled break deducted)';
       weekBarsHtml += `<div class="cal-week-total">
-        ${workedStr ? `<span class="cal-wt-chip cal-wt-worked" title="Paid hours worked this week (scheduled break deducted)">${workedStr}</span>` : ''}
-        ${showSched ? `<span class="cal-wt-chip cal-wt-sched" title="Scheduled paid hours (incl. upcoming)">${schedStr}</span>` : ''}
-        ${unusedStr ? `<span class="cal-wt-chip cal-wt-break" title="Unused break — break time you worked through (paid extra, not counted as worked hours)">🍵 ${unusedStr}</span>` : ''}
-        ${leaveStr  ? `<span class="cal-wt-chip cal-wt-leave" title="Annual leave hours this week">🌴 ${leaveStr}</span>` : ''}
+        <span class="cal-wt-chip cal-wt-total" title="${totalTitle}">${fmtHours(total)}</span>
+        ${inProgress ? `<span class="cal-wt-chip cal-wt-worked" title="Paid hours worked so far this week">✓ ${fmtHours(wt.worked)}</span>` : ''}
+        ${leaveHrs > 0 ? `<span class="cal-wt-chip cal-wt-leave" title="Annual leave hours this week (included in the total)">🌴 ${fmtHours(leaveHrs)}</span>` : ''}
+        ${unusedStr ? `<span class="cal-wt-chip cal-wt-break" title="Unused break — break time you worked through (not counted in the total)">🍵 ${unusedStr}</span>` : ''}
       </div>`;
     }
 

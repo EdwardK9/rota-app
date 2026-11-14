@@ -17,6 +17,7 @@ const {
   fuzzyMatch, nameMatchesStrict, normName, extractJson, coerceSchedule,
 } = require('./teamImportParse');
 const { db, effectiveHourlyRate, rolePayForDate, contractHoursForColleagueOnDate, autoBreakMinutes, ROLES, ROLE_LABELS, ROLE_DEFAULT_PAY_TYPE } = require('./db');
+const { leaveHoursByDay } = require('./leaveHours');
 const router   = express.Router();
 
 // multer — store upload in memory (screenshots are typically <5 MB)
@@ -959,21 +960,29 @@ router.get('/working-with/team-week', (req, res) => {
     'SELECT date, start_time, end_time FROM shifts WHERE date >= ? AND date <= ? ORDER BY date, start_time'
   ).all(from, to);
 
-  // Expand own leave_entries that overlap this week into individual day entries
+  // Expand own leave_entries that overlap this week into individual day entries.
+  // Each day carries the leave hours leaveHours.js puts on it (4h a weekday on a
+  // 20h contract; 0 on the weekend days of a range), so the week's total counts
+  // leave the way Rotageek does — 2–8 Nov 2026 is 10.75h of shifts + 12h leave.
   const myLeaveEntries = db.prepare(
     'SELECT * FROM leave_entries WHERE start_date <= ? AND end_date >= ?'
   ).all(to, from);
-  const myLeave = [];
+  const leaveByDay = leaveHoursByDay(from, to);
+  const myLeaveDates = new Set();
   for (const le of myLeaveEntries) {
     const cur = new Date(le.start_date + 'T00:00:00');
     const end = new Date(le.end_date   + 'T00:00:00');
     while (cur <= end) {
       const d = fmt(cur);
-      if (d >= from && d <= to)
-        myLeave.push({ date: d, shift_type: 'leave', start_time: '00:00', end_time: '00:00' });
+      if (d >= from && d <= to) myLeaveDates.add(d);
       cur.setDate(cur.getDate() + 1);
     }
   }
+  // One chip per day even when two entries overlap it; hours are already summed per day.
+  const myLeave = [...myLeaveDates].sort().map(d => ({
+    date: d, shift_type: 'leave', start_time: '00:00', end_time: '00:00',
+    leave_hours: Math.round((leaveByDay[d] || 0) * 100) / 100,
+  }));
   const myShifts = [...myShiftsRaw, ...myLeave];
 
   // Only show colleagues who were employed during this week, or who have a shift this week
