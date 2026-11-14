@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-11-12T21:16:27.605Z",
-  "commit": "6ef7ab8",
+  "generated_at": "2026-11-14T05:57:45.665Z",
+  "commit": "4cf6801",
   "entries": [
+    {
+      "version": "8.1.1",
+      "date": "2026-11-14",
+      "summary": "Leave hours count toward the week totals, so they match Rotageek",
+      "details": "Team Calendar (week view)\n- Your booked leave now counts in your Hours figure, like it does in\n  Rotageek and on the Shifts page. 2–8 Nov reads 22h 45m (+2h 45m over)\n  instead of 10h 45m (-9.3h under); 23–29 Nov reads 22h 30m (+2h 30m over)\n  instead of 18h 30m (-1.5h under).\n- Each Annual Leave chip shows the hours it's worth (4h a weekday on a 20h\n  contract; weekend days inside a leave range carry none, as in Rotageek).\n- Over / under is shown in exact hours and minutes, so 9h 15m no longer\n  reads as \"9.3h\".\n- Colleagues' leave still adds nothing: it's entered without hours.\n\nCalendar (month view)\n- Each week's figure on the right is now one total, shifts + leave, and\n  it matches Rotageek's Total column: 20 / 22.75 / 23.5 / 20 / 22.5 /\n  23.75 for November 2026. The leave chip underneath shows how much of it\n  is leave; a \"done so far\" chip appears while a week is part-worked.\n- The first week of the month gets its total even when the leave or\n  shifts in it fall in the previous month (26 Oct – 1 Nov showed nothing\n  for 20h of leave).\n- Shift cells, Hours Worked and the week totals all use paid hours\n  (scheduled break taken off), which is what pay is worked out on. The\n  09:45–15:45 shift showed 6.00h next to £77.51 — that's 5.75h of pay.\n- New Annual Leave stat square with the month's leave hours."
+    },
     {
       "version": "8.1.0",
       "date": "2026-11-12",

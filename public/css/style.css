@@ -1459,6 +1459,8 @@ tr.bh-row td { background: rgba(239,68,68,0.04); }
 .cal-wt-sched  { background: rgba(59,130,246,0.12); color: var(--info); }
 .cal-wt-leave  { background: rgba(236,72,153,0.15); color: #ec4899; }
 .cal-wt-break  { background: rgba(245,158,11,0.15); color: var(--warning); }
+/* The week's headline figure (shifts + leave) — the other chips break it down. */
+.cal-wt-total  { background: transparent; color: var(--text); border: 1px solid var(--border); font-size: 11px; font-weight: 800; }
 @media (max-width: 600px) {
   .cal-week-totals { width: 50px; }
   .cal-wt-chip     { font-size: 9px; padding: 1px 4px; }
