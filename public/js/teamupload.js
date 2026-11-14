@@ -39,14 +39,22 @@ const TeamUploadView = {
     // Same for a "Same as…" dropdown that's being used — a redraw would snap it shut.
     if (el.querySelector('.tu-unknown-name select:focus')) return;
     try {
-      const { batches } = await API.getImportBatches(8);
-      // Only needed for the "Same as…" picker on unrecognised names.
+      const showAll = !!this._showAllImports;
+      const { batches, hidden } = await API.getImportBatches(showAll ? 100 : 8, showAll ? 'all' : 'recent');
+      // Needed for the "Same as…" picker on names the import didn't recognise or that can be re-mapped.
       let people = [];
-      if (batches.some(b => !b.undone_at && b.unknown_names.length)) {
+      if (batches.some(b => !b.undone_at && (b.unknown_names.length || b.resolved_names.length))) {
         try { people = (await API.getColleagues()).filter(c => !c.left_date); } catch (_) {}
       }
+      const toggle = `<div style="margin-top:10px"><button class="btn btn-sm btn-ghost" id="tuToggleHistory">${showAll
+        ? '← Back to recent imports'
+        : `Past imports${hidden ? ` (${hidden} older)` : ''} →`}</button></div>`;
+      const bindToggle = () => document.getElementById('tuToggleHistory')?.addEventListener('click', () => {
+        this._showAllImports = !this._showAllImports; this._loadImportBatches();
+      });
       if (!batches.length) {
-        el.innerHTML = '<span>No imports yet.</span>';
+        el.innerHTML = '<span>' + (showAll ? 'No imports yet.' : 'Nothing needs attention.') + '</span>' + toggle;
+        bindToggle();
         return;
       }
       const sourceLabel = { ocr: 'Screenshot OCR', gemini: 'Gemini', 'ollama-server': 'Ollama (server)',
@@ -83,6 +91,20 @@ const TeamUploadView = {
                         </div>
                         <div style="font-size:11.5px">Same person as someone already in your list? Pick them under "Same as…". "Ignore" skips a name (e.g. you) for good. Then Re-run.</div>
                       </div>` : ''}
+                    ${!b.undone_at && b.resolved_names.length ? `
+                      <div class="tu-resolved" style="margin-top:6px;font-size:11.5px">
+                        <div style="font-weight:600">${b.resolved_names.some(r => !r.applied) ? 'Names you\'ve sorted — tap Re-run to import their shifts:' : 'Names read from your saved choices:'}</div>
+                        <div class="tu-unknown-list">${b.resolved_names.map(r => `
+                          <span class="tu-unknown-name">${esc(r.name)} <span style="color:var(--text-muted)">${r.ignored ? '→ ignored' : '→ ' + esc(r.colleague.name)}</span>
+                            <select class="form-control" data-alias-person="${esc(r.name)}" title="Change who this name is read as" style="font-size:12px;padding:2px 4px;max-width:130px">
+                              <option value="">Change…</option>
+                              ${people.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+                            </select>
+                            ${r.ignored ? '' : `<button class="btn btn-sm btn-ghost" data-ignore-person="${esc(r.name)}">Ignore</button>`}
+                            ${r.alias ? `<button class="btn btn-sm btn-ghost" data-unalias-person="${esc(r.name)}" title="Forget this choice">Reset</button>` : ''}
+                          </span>`).join('')}
+                        </div>
+                      </div>` : ''}
                     ${!b.undone_at && b.warnings.length ? `
                       <details style="margin-top:4px;font-size:11.5px"><summary>${b.warnings.length} other issue${b.warnings.length === 1 ? '' : 's'}</summary>
                         ${b.warnings.map(w => `<div>• ${esc(w)}</div>`).join('')}
@@ -90,7 +112,7 @@ const TeamUploadView = {
                   </td>
                   <td style="padding:5px 8px">${b.remaining_count}${b.remaining_count !== b.inserted_count ? ` / ${b.inserted_count}` : ''}</td>
                   <td style="padding:5px 8px;text-align:right;white-space:nowrap">
-                    ${!b.undone_at && b.can_rerun && (b.unknown_names.length || b.warnings.length)
+                    ${!b.undone_at && b.can_rerun && (b.unknown_names.length || b.warnings.length || b.resolved_names.some(r => !r.applied) || b.resolved_names.length)
                       ? `<button class="btn btn-sm btn-ghost" data-rerun-batch="${b.id}" title="Run this import again — e.g. after adding the people it didn't recognise">↻ Re-run</button>`
                       : ''}
                     ${!b.undone_at && b.pending_conflict_count
@@ -123,6 +145,15 @@ const TeamUploadView = {
       el.querySelectorAll('[data-ignore-person]').forEach(btn =>
         btn.addEventListener('click', () => this._saveImportAlias(btn.dataset.ignorePerson, { ignore: true }, btn))
       );
+      el.querySelectorAll('[data-unalias-person]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try { await API.removeImportAlias(btn.dataset.unaliasPerson); showToast('Choice forgotten', 'success'); this._loadImportBatches(); }
+          catch (e) { btn.disabled = false; showToast('Could not reset: ' + e.message, 'error'); }
+        })
+      );
+      el.insertAdjacentHTML('beforeend', toggle);
+      bindToggle();
       el.querySelectorAll('[data-rerun-batch]').forEach(btn =>
         btn.addEventListener('click', () => this._rerunImportBatch(parseInt(btn.dataset.rerunBatch, 10), btn))
       );
@@ -441,7 +472,9 @@ const TeamUploadView = {
         <div class="card-body">
           <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
             Each import can be undone as a whole — this only removes the shifts that
-            specific import actually added, nothing else.
+            specific import actually added, nothing else. Sorted imports move to
+            "Past imports" once re-run. Changing a name's mapping only affects shifts
+            imported from the next Re-run on; use Undo first to redo an import.
           </p>
           <div id="tuBatchList" style="font-size:13px;color:var(--text-muted)">Loading…</div>
         </div>

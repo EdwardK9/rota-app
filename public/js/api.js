@@ -141,7 +141,8 @@ const API = {
   // Working-with — data
   getLeaderboard:   ()             => API.get('/api/working-with/leaderboard'),
   importColleagueJson: (data, overrides=[]) => API.post('/api/colleagues/import-json', { schedule_data: data, overrides }),
-  getImportBatches: (limit = 10) => API.get('/api/colleagues/import-batches?limit=' + limit),
+  getImportBatches: (limit = 10, scope = 'recent') => API.get(`/api/colleagues/import-batches?limit=${limit}&scope=${scope}`),
+  removeImportAlias: (name)      => API.delete('/api/colleagues/import-aliases?name=' + encodeURIComponent(name)),
   undoImportBatch:  (batchId)    => API.delete(`/api/colleagues/import-batches/${batchId}`),
   addImportAlias:   (name, opts) => API.post('/api/colleagues/import-aliases', { name, ...opts }),
   rerunImportBatch: (batchId)    => API.post(`/api/colleagues/import-batches/${batchId}/rerun`, {}),

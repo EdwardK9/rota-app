@@ -162,6 +162,10 @@ const fakeGemini = http.createServer((rq, rs) => {
     check('a name can be saved as an alias of an existing colleague', (await req('POST', '/api/colleagues/import-aliases', { name: 'Dani Reid-Smith', colleague_id: dana.id })).body.ok);
     const aliased = await req('POST', `/api/colleagues/import-batches/${nick.body.batchId}/rerun`, {});
     check('re-running imports the aliased person under the existing colleague', aliased.body.inserted === 1 && !aliased.body.unknownNames.length, aliased.body);
+    const listed = (await req('GET', '/api/colleagues/import-batches?scope=all')).body.batches.find(b => b.id === nick.body.batchId);
+    check('after re-run the name is listed as resolved (editable), not unknown', !listed.unknown_names.length && listed.resolved_names.some(r => r.name === 'Dani Reid-Smith' && r.colleague.id === dana.id) && !listed.needs_attention, listed);
+    await req('DELETE', '/api/colleagues/import-aliases?name=' + encodeURIComponent('Dani Reid-Smith'));
+    check('resetting a name\'s alias is remembered as removed', !(await req('GET', '/api/colleagues/import-batches?scope=all')).body.batches.find(b => b.id === nick.body.batchId).resolved_names.some(r => r.alias));
     await req('POST', '/api/colleagues/import-aliases', { name: 'Someone Else', ignore: true });
     const ign = await req('POST', '/api/colleagues/import-json', { schedule_data: {
       date_range: 'Nov 30 – Dec 6',
